@@ -22,11 +22,22 @@ public final class ServerHarness {
     }
 
     public static void run(String scratch, Probe probe) throws Exception {
+        run(scratch, new File[0], probe);
+    }
+
+    // As run(scratch, probe), but the given files are copied into the server's own save folder
+    // (<scratch>/Saves/Multiplayer/oracle/) before it boots, so the world loads them as its own (e.g. map_basements.bin).
+    public static void run(String scratch, File[] preseed, Probe probe) throws Exception {
         PrintStream out = new PrintStream(new java.io.BufferedOutputStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), 1 << 20), false, "UTF-8");
         System.setOut(System.err);
         File dir = new File(scratch);
         if (!dir.getName().startsWith("pz-oracle-")) throw new IllegalArgumentException("scratch dir must be named pz-oracle-*: " + scratch);
         delete(dir);
+        if (preseed.length > 0) {
+            File save = new File(dir, "Saves/Multiplayer/oracle");
+            if (!save.mkdirs()) throw new java.io.IOException("cannot create " + save);
+            for (File f : preseed) java.nio.file.Files.copy(f.toPath(), new File(save, f.getName()).toPath());
+        }
         // Hard limit: the native network start-up has been seen to spin forever on a loaded machine.
         Thread limit = new Thread(() -> { try { Thread.sleep(300000); } catch (InterruptedException e) { } System.err.println("ORACLE: 300 s limit"); Runtime.getRuntime().halt(6); });
         limit.setDaemon(true);

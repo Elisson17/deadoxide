@@ -1,4 +1,5 @@
 pub mod body_damage;
+pub mod faction;
 pub mod iso_game_character;
 pub mod iso_player;
 pub mod player_cheats;

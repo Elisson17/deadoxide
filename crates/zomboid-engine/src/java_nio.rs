@@ -90,6 +90,47 @@ pub fn read_string(b: &mut ByteBuffer) -> Result<String, String> {
     Ok(String::from_utf8_lossy(b.get_bytes(n as usize)?).into_owned())
 }
 
+/// java.io.DataInputStream.readUTF: an unsigned short byte count, then "modified UTF-8" (1-, 2- and 3-byte forms; NUL as
+/// `C0 80`; characters outside the BMP as two 3-byte surrogates). Malformed input is the original's
+/// `UTFDataFormatException`. Unpaired surrogates, which a Java String can hold, become U+FFFD.
+pub fn read_utf(b: &mut ByteBuffer) -> Result<String, String> {
+    let n = b.get_char()? as usize;
+    let bytes = b.get_bytes(n)?;
+    let bad = |i: usize| format!("java.io.UTFDataFormatException: malformed input around byte {i}");
+    let mut units: Vec<u16> = Vec::with_capacity(n);
+    let mut i = 0;
+    while i < n {
+        let c = u16::from(bytes[i]);
+        match c >> 4 {
+            0..=7 => {
+                units.push(c);
+                i += 1;
+            }
+            12 | 13 => {
+                let c2 = u16::from(*bytes.get(i + 1).ok_or_else(|| bad(n))?);
+                if c2 & 0xC0 != 0x80 {
+                    return Err(bad(i + 1));
+                }
+                units.push(((c & 0x1F) << 6) | (c2 & 0x3F));
+                i += 2;
+            }
+            14 => {
+                let (Some(&c2), Some(&c3)) = (bytes.get(i + 1), bytes.get(i + 2)) else {
+                    return Err(bad(n));
+                };
+                let (c2, c3) = (u16::from(c2), u16::from(c3));
+                if c2 & 0xC0 != 0x80 || c3 & 0xC0 != 0x80 {
+                    return Err(bad(i + 1));
+                }
+                units.push(((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F));
+                i += 3;
+            }
+            _ => return Err(bad(i)),
+        }
+    }
+    Ok(String::from_utf16_lossy(&units))
+}
+
 /// zombie.util.io.BitHeader.HeaderSize
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HeaderSize {
@@ -207,5 +248,18 @@ mod tests {
         assert_eq!(h.has_flags(64), Ok(true));
         assert_eq!(h.has_flags(2), Ok(false));
         assert!(h.has_flags(128).is_err());
+    }
+
+    /// Bytes as java.io.DataOutputStream.writeUTF("a\u0000\u00e9\u20ac") writes them (JDK spec of modified UTF-8):
+    /// length 8, then 61, C0 80, C3 A9, E2 82 AC.
+    #[test]
+    fn read_utf_decodes_modified_utf8() {
+        let data = [0, 8, 0x61, 0xC0, 0x80, 0xC3, 0xA9, 0xE2, 0x82, 0xAC, 0x7F];
+        let mut b = ByteBuffer::wrap(&data);
+        assert_eq!(read_utf(&mut b).as_deref(), Ok("a\u{0}\u{e9}\u{20ac}"));
+        assert_eq!(b.remaining(), 1);
+        // A continuation byte in first position is malformed (UTFDataFormatException).
+        let mut bad = ByteBuffer::wrap(&[0, 1, 0x80]);
+        assert!(read_utf(&mut bad).is_err());
     }
 }

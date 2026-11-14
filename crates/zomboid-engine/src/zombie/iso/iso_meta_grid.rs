@@ -177,6 +177,20 @@ impl IsoMetaGrid {
         (gx >= 0 && gy >= 0 && gx < self.width && gy < self.height)
             .then(|| (gx * self.height + gy) as usize)
     }
+    /// zombie.iso.IsoMetaGrid.gridX: the number of cell columns (`grid.length`).
+    pub fn grid_x(&self) -> i32 {
+        self.width
+    }
+    /// zombie.iso.IsoMetaGrid.gridY: the number of cell rows (`grid[0].length`).
+    pub fn grid_y(&self) -> i32 {
+        self.height
+    }
+    pub(crate) fn room_mut(&mut self, r: RoomRef) -> &mut RoomDef {
+        &mut self.room_defs[r.0 as usize]
+    }
+    pub(crate) fn building_mut(&mut self, b: BuildingRef) -> &mut BuildingDef {
+        &mut self.building_defs[b.0 as usize]
+    }
     /// zombie.iso.IsoMetaGrid.getCellData: by cell coordinates.
     pub fn get_cell_data(&self, x: i32, y: i32) -> Option<&IsoMetaCell> {
         self.cell_index(x, y).and_then(|i| self.grid[i].as_deref())

@@ -18,6 +18,13 @@ pub struct BuildingDef {
     pub y2: i32,
     pub id: i64,
     pub meta_id: i64,
+    pub seen: bool,
+    pub has_been_visited: bool,
+    pub loot_respawn_hour: i32,
+    /// `keyId`. The original's constructor sets it with `Rand.Next(100000000)`; that draw is not modelled here
+    /// (default -1, the field initialiser), so only a loaded value (`map_meta.bin`) is the original's.
+    pub key_id: i32,
+    pub user_defined: bool,
 }
 
 impl Default for BuildingDef {
@@ -34,6 +41,11 @@ impl Default for BuildingDef {
             y2: -10000000,
             id: 0,
             meta_id: 0,
+            seen: false,
+            has_been_visited: false,
+            loot_respawn_hour: -1,
+            key_id: -1,
+            user_defined: false,
         }
     }
 }

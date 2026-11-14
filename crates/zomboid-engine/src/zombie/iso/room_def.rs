@@ -42,6 +42,8 @@ pub struct RoomDef {
     pub area: i32,
     pub meta_id: i64,
     pub user_defined: bool,
+    /// `roofFixed` (private in the original; `isRoofFixed`/`setRoofFixed`).
+    pub roof_fixed: bool,
 }
 
 impl RoomDef {
@@ -65,6 +67,7 @@ impl RoomDef {
             area: 0,
             meta_id: 0,
             user_defined: false,
+            roof_fixed: false,
         }
     }
 

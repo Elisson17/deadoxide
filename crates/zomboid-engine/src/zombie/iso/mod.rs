@@ -1,3 +1,4 @@
+pub mod areas;
 pub mod building_def;
 pub mod building_id;
 pub mod cell_loader;
@@ -15,6 +16,7 @@ pub mod iso_object;
 pub mod iso_world;
 pub mod lot_header;
 pub mod map_files;
+pub mod map_meta;
 pub mod meta_object;
 pub mod objects;
 pub mod room_def;

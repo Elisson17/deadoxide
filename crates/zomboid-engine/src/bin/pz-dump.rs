@@ -2,6 +2,7 @@
 //!   pz-dump tiledefs <game root>                  (pairs with TileDefsProbe.java)
 //!   pz-dump lotheaders <game root> <map folder>   (pairs with LotHeadersProbe.java)
 //!   pz-dump lotpack <game root> <map folder> x1 y1 x2 y2   (pairs with LotPackProbe.java)
+//!   pz-dump mapmeta <game root> <save dir>    (pairs with MapMetaProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -43,6 +44,7 @@ fn main() {
         Some("basements") if a.len() == 7 => basements(Path::new(&a[2]), &a[3..7]),
         Some("worlddictionary") if a.len() == 4 => worlddictionary(Path::new(&a[3])),
         Some("chunksave") if a.len() == 4 => chunksave(Path::new(&a[2]), Path::new(&a[3])),
+        Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
         _ => Err("usage: see the header of pz-dump.rs".into()),
     };
     match r {
@@ -57,6 +59,224 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+/// The meta grid as a loaded save has it (pairs with MapMetaProbe.java): `IsoMetaGrid.Create`, the save's basements
+/// from `map_basements.bin`, then `IsoMetaGrid.load` of its `map_meta.bin` as a single-player game reads it.
+pub fn mapmeta(root: &Path, save: &Path) -> Result<String, String> {
+    use zomboid_engine::java_nio::ByteBuffer;
+    use zomboid_engine::zombie::basements::Basements;
+    use zomboid_engine::zombie::iso::map_meta::MetaSide;
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    for e in g.load_all_cells(&mut |_| 1, &mut |_, _| Vec::new()) {
+        eprintln!("{e}");
+    }
+    let alarm = AlarmSettings {
+        last_stand: false,
+        power_grid_exists: true,
+        alarm: 1,
+        alarm_decay: 1,
+    };
+    g.create_step2(&alarm, &mut |_| 1, &mut |a, _| a);
+    let read = |n: &str| {
+        let p = save.join(n);
+        std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))
+    };
+    let b = Basements::before_load_meta_grid_from_save(
+        &media,
+        &mut g,
+        &dirs,
+        &read("map_basements.bin")?,
+    )?;
+    for l in &b.log {
+        eprintln!("{l}");
+    }
+    let mut sb = String::new();
+    let mut h: u64 = 0xcbf29ce484222325;
+    for p in &b.basement_placements {
+        for v in [p.x, p.y, p.z, p.w, p.h] {
+            mix(&mut h, v);
+        }
+        for u in p.name.encode_utf16() {
+            mix(&mut h, i32::from(u));
+        }
+    }
+    let _ = writeln!(sb, "BP {} {h:x}", b.basement_placements.len());
+    let mut h: u64 = 0xcbf29ce484222325;
+    for bd in &g.buildings {
+        mix_long(&mut h, g.building(*bd).id);
+        mix_long(&mut h, g.building(*bd).meta_id);
+    }
+    let _ = writeln!(sb, "B {} {h:x}", g.buildings.len());
+    let data = read("map_meta.bin")?;
+    let mut bb = ByteBuffer::wrap(&data);
+    let int_at = |i: usize| {
+        data.get(i..i + 4)
+            .map_or(0, |s| i32::from_be_bytes([s[0], s[1], s[2], s[3]]))
+    };
+    let _ = writeln!(
+        sb,
+        "MM {} {} {} {} {}",
+        int_at(4),
+        int_at(8),
+        int_at(12),
+        int_at(16),
+        int_at(20)
+    );
+    // As MapMetaProbe: the state Create drew from Rand goes back to the field defaults before the load.
+    for r in &mut g.room_defs {
+        (r.explored, r.lights_active, r.done_spawn, r.roof_fixed) = (false, false, false, false);
+    }
+    for d in &mut g.building_defs {
+        (d.alarmed, d.key_id, d.seen, d.has_been_visited) = (false, -1, false, false);
+        (d.loot_respawn_hour, d.alarm_decay) = (-1, 10000000);
+    }
+    let m = g.load(&mut bb, MetaSide::SinglePlayer)?;
+    for l in &m.log {
+        eprintln!("{l}");
+    }
+    let _ = writeln!(sb, "REST {}", bb.remaining());
+    let mut t = [0i32; 9];
+    for x in g.min_x..=g.max_x {
+        for y in g.min_y..=g.max_y {
+            let Some(cell) = g.get_cell_data(x, y) else {
+                continue;
+            };
+            let mut detail = String::new();
+            let mut h: u64 = 0xcbf29ce484222325;
+            for rr in &cell.room_list {
+                let r = g.room(*rr);
+                let f = i32::from(r.explored)
+                    | i32::from(r.lights_active) << 1
+                    | i32::from(r.done_spawn) << 2
+                    | i32::from(r.roof_fixed) << 3;
+                mix_long(&mut h, r.meta_id);
+                mix(&mut h, f);
+                t[0] += 1;
+                for i in 0..4 {
+                    if f & 1 << i != 0 {
+                        t[2 + i] += 1;
+                    }
+                }
+                if f & !2 != 0 {
+                    let _ = writeln!(detail, "MR {} {f}", r.meta_id);
+                }
+            }
+            for bd in &cell.buildings {
+                let d = g.building(*bd);
+                mix_long(&mut h, d.meta_id);
+                for v in [
+                    i32::from(d.alarmed),
+                    d.key_id,
+                    i32::from(d.seen),
+                    i32::from(d.has_been_visited),
+                    d.loot_respawn_hour,
+                    d.alarm_decay,
+                ] {
+                    mix(&mut h, v);
+                }
+                t[1] += 1;
+                t[6] += i32::from(d.alarmed);
+                t[7] += i32::from(d.seen);
+                t[8] += i32::from(d.has_been_visited);
+                if d.alarmed || d.seen || d.has_been_visited {
+                    let _ = writeln!(
+                        detail,
+                        "MD {} {} {} {} {} {} {}",
+                        d.meta_id,
+                        u8::from(d.alarmed),
+                        d.key_id,
+                        u8::from(d.seen),
+                        u8::from(d.has_been_visited),
+                        d.loot_respawn_hour,
+                        d.alarm_decay
+                    );
+                }
+            }
+            let _ = writeln!(
+                sb,
+                "MC {x} {y} {} {} {h:x}",
+                cell.room_list.len(),
+                cell.buildings.len()
+            );
+            sb.push_str(&detail);
+        }
+    }
+    let _ = writeln!(
+        sb,
+        "MT {}",
+        t.iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let _ = writeln!(sb, "SH {}", m.safehouses.len());
+    for s in &m.safehouses {
+        let _ = writeln!(
+            sb,
+            "S {} {} {} {} {} {} [{}] {} {} {} {} [{}]",
+            s.x,
+            s.y,
+            s.w,
+            s.h,
+            s.owner,
+            s.hit_points,
+            s.players.join(", "),
+            s.last_visited,
+            s.title,
+            s.datetime_created,
+            s.location,
+            s.players_respawn.join(", ")
+        );
+    }
+    let _ = writeln!(sb, "NP {}", m.non_pvp_zones.len());
+    for z in &m.non_pvp_zones {
+        let _ = writeln!(
+            sb,
+            "N {} {} {} {} {} {}",
+            z.x, z.y, z.x2, z.y2, z.size, z.title
+        );
+    }
+    let _ = writeln!(sb, "FA {}", m.factions.len());
+    for f in &m.factions {
+        let _ = writeln!(
+            sb,
+            "F {} {} {} {} {} {} [{}]",
+            f.name,
+            f.owner,
+            f.tag.as_deref().unwrap_or("null"),
+            f.tag_color[0].to_bits() as i32,
+            f.tag_color[1].to_bits() as i32,
+            f.tag_color[2].to_bits() as i32,
+            f.players.join(", ")
+        );
+    }
+    let _ = writeln!(sb, "DZ {}", m.designation_zones.len());
+    let st = m.stash_system.unwrap_or_default();
+    let _ = writeln!(
+        sb,
+        "ST {} {} {}",
+        st.possible_stashes.len(),
+        st.buildings_to_do.len(),
+        st.already_read_map.len()
+    );
+    for s in &st.possible_stashes {
+        let _ = writeln!(sb, "SP {} {} {}", s.stash_name, s.building_x, s.building_y);
+    }
+    for s in &st.buildings_to_do {
+        let _ = writeln!(sb, "SB {} {} {}", s.stash_name, s.building_x, s.building_y);
+    }
+    for s in &st.already_read_map {
+        let _ = writeln!(sb, "SR {s}");
+    }
+    let _ = writeln!(sb, "RDS {}", m.unique_rds_spawned.len());
+    for s in &m.unique_rds_spawned {
+        let _ = writeln!(sb, "R {s}");
+    }
+    Ok(sb)
 }
 
 /// The loading sequence of IsoWorld.init without mods and without entity scripts, then one line per sprite.

@@ -337,6 +337,107 @@ impl Basements {
         Ok(b)
     }
 
+    /// zombie.basements.Basements.beforeLoadMetaGrid for a saved world: `loadSavefile` succeeds, so the placements and
+    /// the basement buildings come from `map_basements.bin` (`saved`) instead of the seed, and are merged into `grid` as
+    /// for a new world. The definitions are parsed but their layout headers are not loaded, as in the original. A file
+    /// that fails to load (the original logs it and falls back to choosing placements, keeping what it had read) is
+    /// `not ported:`. `BuildingRoomsEditor.checkBuildingAndRoomIDs` only logs and is not modelled.
+    pub fn before_load_meta_grid_from_save(
+        media: &Path,
+        grid: &mut IsoMetaGrid,
+        lot_directories: &[String],
+        saved: &[u8],
+    ) -> Result<Self, String> {
+        let mut b = Basements::default();
+        for dir in lot_directories {
+            let m = BasementsPerMap::load(media, dir)?;
+            if !m.basement_definitions.is_empty()
+                || !m.basement_access_definitions.is_empty()
+                || !m.basement_spawn_locations.is_empty()
+            {
+                b.per_map.push(m);
+            }
+        }
+        b.load_savefile(grid, saved).map_err(|e| {
+            crate::zombie::inventory::inventory_item::not_ported(&format!(
+                "map_basements.bin that fails to load ({e}): the original falls back to new placements"
+            ))
+        })?;
+        b.add_basement_building_defs_to_lot_headers(grid);
+        Ok(b)
+    }
+
+    /// zombie.basements.Basements.loadSavefile(File, DataInputStream): magic "BSMT", version, a second int, the
+    /// placements (x, y, z, short w, short h, UTF name), then per basement building its rooms (UTF name, byte level,
+    /// short rects). Building ids are list positions, room ids positions in their building; every room goes to `rooms`
+    /// (the file has no empty-outside rooms). The `Rand` draw of each `new BuildingDef()` (its key id) is not modelled.
+    /// The whole file is read before the grid is touched, so an error leaves `grid` unchanged.
+    fn load_savefile(&mut self, grid: &mut IsoMetaGrid, data: &[u8]) -> Result<(), String> {
+        use crate::java_nio::{read_utf, ByteBuffer};
+        if data.len() < 4 || &data[..4] != b"BSMT" {
+            return Err("java.io.IOException: does not appear to be map_basements.bin".into());
+        }
+        let mut r = ByteBuffer::wrap(data);
+        r.get_bytes(4)?;
+        let _version = r.get_int()?;
+        let _ = r.get_int()?;
+        let mut placements = Vec::new();
+        for _ in 0..r.get_int()? {
+            let (x, y, z) = (r.get_int()?, r.get_int()?, r.get_int()?);
+            let (w, h) = (i32::from(r.get_short()?), i32::from(r.get_short()?));
+            placements.push(BasementPlacement {
+                name: read_utf(&mut r)?,
+                x,
+                y,
+                z,
+                w,
+                h,
+            });
+        }
+        let mut buildings: Vec<Vec<(String, i32, Vec<RoomRect>)>> = Vec::new();
+        for _ in 0..r.get_int()? {
+            let mut rooms = Vec::new();
+            for _ in 0..r.get_short()? {
+                let name = read_utf(&mut r)?;
+                let level = i32::from(r.get()?);
+                let mut rects = Vec::new();
+                for _ in 0..r.get_short()? {
+                    rects.push(RoomRect {
+                        x: i32::from(r.get_short()?),
+                        y: i32::from(r.get_short()?),
+                        w: i32::from(r.get_short()?),
+                        h: i32::from(r.get_short()?),
+                    });
+                }
+                rooms.push((name, level, rects));
+            }
+            buildings.push(rooms);
+        }
+        self.basement_placements.extend(placements);
+        for (building_index, rooms) in buildings.into_iter().enumerate() {
+            let b = BuildingRef(grid.building_defs.len() as u32);
+            let mut building_def = BuildingDef {
+                id: building_index as i64,
+                ..BuildingDef::default()
+            };
+            for (room_index, (name, level, rects)) in rooms.into_iter().enumerate() {
+                let mut room = RoomDef::new(room_index as i64, name);
+                room.building = Some(b);
+                room.level = level;
+                room.rects = rects;
+                room.calculate_bounds();
+                building_def
+                    .rooms
+                    .push(RoomRef(grid.room_defs.len() as u32));
+                grid.room_defs.push(room);
+            }
+            building_def.calculate_bounds(&grid.room_defs);
+            grid.building_defs.push(building_def);
+            self.building_defs.push(b);
+        }
+        Ok(())
+    }
+
     /// The definition a name resolves to: `basementDefinitionByName` (a later map folder or definition wins).
     fn by_name<'a>(&'a self, name: &str, access: bool) -> Option<&'a BasementDefinition> {
         self.per_map
