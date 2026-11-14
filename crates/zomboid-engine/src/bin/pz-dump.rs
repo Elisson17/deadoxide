@@ -3104,7 +3104,7 @@ fn uuid_string(id: (i64, i64)) -> String {
 
 /// The save's zones (pairs with MapZoneProbe.java): the meta grid's cells from `IsoMetaGrid.Create`, then
 /// `IsoMetaGrid.loadZone` of the save's `map_zone.bin`; every registered zone, the outline of each wide polyline
-/// (rotated to start at its smallest point; only with `outlines`), the zones of every meta chunk per cell, and the
+/// (its points in the native order; only with `outlines`), the zones of every meta chunk per cell, and the
 /// spawned-zombie zones.
 pub fn mapzone(root: &Path, save: &Path, outlines: bool) -> Result<String, String> {
     use zomboid_engine::java_nio::ByteBuffer;
@@ -3161,21 +3161,9 @@ pub fn mapzone(root: &Path, save: &Path, outlines: bool) -> Result<String, Strin
         );
         if let Some(o) = z.polyline_outline_points.as_ref().filter(|_| outlines) {
             let n = o.len() / 2;
-            let mut s = 0;
-            for k in 1..n {
-                if o[k * 2] < o[s * 2] || o[k * 2] == o[s * 2] && o[k * 2 + 1] < o[s * 2 + 1] {
-                    s = k;
-                }
-            }
             let _ = write!(sb, "O {i} {n}");
-            for k in 0..n {
-                let j = (s + k) % n;
-                let _ = write!(
-                    sb,
-                    " {},{}",
-                    o[j * 2].to_bits() as i32,
-                    o[j * 2 + 1].to_bits() as i32
-                );
+            for p in o.chunks_exact(2) {
+                let _ = write!(sb, " {},{}", p[0].to_bits() as i32, p[1].to_bits() as i32);
             }
             sb.push('\n');
         }

@@ -28,7 +28,8 @@
       "specialcollide",
       "stairs",
       "tiledefs",
-      "worlddictionary"
+      "worlddictionary",
+      "zoneoutlines"
     ]
   },
   "areas": [
@@ -40,7 +41,7 @@
       "score": 0.5625,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 472 of 46121 method names (1.02%) in 162 of 3424 classes; byte-identical to the original in 19 oracle cases (basements, chunkobjects, chunksave, collide, doortoggle, entitysprites, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, sandbox, specialcollide, stairs, tiledefs, worlddictionary)",
+        "direct port from decompiled Java: 472 of 46121 method names (1.02%) in 162 of 3424 classes; byte-identical to the original in 20 oracle cases (basements, chunkobjects, chunksave, collide, doortoggle, entitysprites, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines)",
         "format families read: 9 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",

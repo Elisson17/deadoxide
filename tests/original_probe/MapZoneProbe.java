@@ -14,8 +14,8 @@ import zombie.iso.zones.Zone;
 
 // Inside the booted original (ServerHarness): the ORIGINAL IsoMetaGrid.loadZone(ByteBuffer, -1) reads the save's
 // map_zone.bin into the world's meta grid (dropping the zones the server registered at boot), then the probe prints
-// every registered zone, the outline the native ClipperOffset made for each wide polyline (rotated to start at its
-// smallest point, x then y; only with the "outlines" argument), which zones each meta chunk holds per cell, and
+// every registered zone, the outline the native ClipperOffset made for each wide polyline (its points in the
+// native order; only with the "outlines" argument), which zones each meta chunk holds per cell, and
 // IsoWorld.spawnedZombieZone.
 // Args: <scratch dir> <save dir> [outlines]
 public class MapZoneProbe {
@@ -45,12 +45,10 @@ public class MapZoneProbe {
                     + z.lastActionTimestamp + " " + z.getOriginalName() + " " + z.id + " " + b(z.isPreferredZoneForSquare));
                 float[] o = z.polylineOutlinePoints;
                 if (o != null && outlines) {
-                    int n = o.length / 2, s = 0;
-                    for (int k = 1; k < n; k++) if (o[k * 2] < o[s * 2] || o[k * 2] == o[s * 2] && o[k * 2 + 1] < o[s * 2 + 1]) s = k;
+                    int n = o.length / 2;
                     StringBuilder sb = new StringBuilder("O " + i + " " + n);
                     for (int k = 0; k < n; k++) {
-                        int j = (s + k) % n;
-                        sb.append(' ').append(Float.floatToIntBits(o[j * 2])).append(',').append(Float.floatToIntBits(o[j * 2 + 1]));
+                        sb.append(' ').append(Float.floatToIntBits(o[k * 2])).append(',').append(Float.floatToIntBits(o[k * 2 + 1]));
                     }
                     out.println(sb);
                 }

@@ -172,6 +172,15 @@ fn map_zone_matches_original() {
 }
 
 #[test]
+fn zone_outlines_match_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED zoneoutlines: the isolated profile's save is not present");
+        return;
+    };
+    check("zoneoutlines", &[&save, "outlines"]);
+}
+
+#[test]
 fn items_match_original() {
     // The field list tools/gen_item_params.py hands to both sides: the table's fields minus aimingMod.
     let names: Vec<&str> = zomboid_engine::zombie::scripting::item_params_table::FIELDS

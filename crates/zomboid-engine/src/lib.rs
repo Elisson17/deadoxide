@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 pub mod java;
 pub mod java_nio;
+pub mod native;
 pub mod se;
 pub mod vfs;
 pub mod zombie;
