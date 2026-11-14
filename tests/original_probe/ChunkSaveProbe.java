@@ -477,6 +477,163 @@ public class ChunkSaveProbe {
         }
     }
 
+    static String v(Object x) {
+        if (x == null) return "null";
+        if (x instanceof Float f) return fh(f);
+        if (x instanceof Double d) return dh(d);
+        if (x instanceof Boolean bo) return bo ? "1" : "0";
+        if (x instanceof String st) return "s:" + st;
+        return x.toString();
+    }
+
+    static String fields(Object o, String... names) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < names.length; i++) sb.append(i == 0 ? "" : ",").append(v(g(o, names[i])));
+        return sb.toString();
+    }
+
+    static String sortedMap(java.util.Map<?, ?> m) {
+        List<String> l = new ArrayList<>();
+        for (var e : m.entrySet()) l.add(e.getKey() + "=" + v(e.getValue()));
+        Collections.sort(l);
+        return l.toString();
+    }
+
+    static String sortedSet(java.util.Collection<?> c) {
+        List<String> l = new ArrayList<>();
+        for (Object o : c) l.add(String.valueOf(o));
+        Collections.sort(l);
+        return l.toString();
+    }
+
+    static int identityIndex(List<?> l, Object x) {
+        if (x != null) for (int i = 0; i < l.size(); i++) if (l.get(i) == x) return i;
+        return -1;
+    }
+
+    static final String[] BODY_PART_FIELDS = {"health", "bandaged", "bitten", "bleeding", "isBleedingStemmed", "isCauterized", "scratched", "stitched",
+        "deepWounded", "isInfected", "isFakeInfected", "bandageLife", "scratchTime", "biteTime", "alcoholicBandage", "stiffness", "woundInfectionLevel",
+        "infectedWound", "bleedingTime", "deepWoundTime", "haveGlass", "stitchTime", "alcoholLevel", "additionalPain", "bandageType", "getBandageXp",
+        "getStitchXp", "getSplintXp", "fractureTime", "splint", "splintFactor", "haveBullet", "burnTime", "needBurnWash", "lastTimeBurnWash", "splintItem",
+        "plantainFactor", "comfreyFactor", "garlicFactor", "cutTime", "cut", "wetness"};
+
+    // One local player after PlayerDB.loadPlayer's IsoPlayer.load: PL (row, unread bytes, IsoMovingObject part), SD, HV, the
+    // inventory, SI (null slots of savedInventoryItems), CH (IsoGameCharacter fields), XP, BD/BP/TH/TN (body), PLY (player).
+    // Not printed: the random speech colour, sprites, the animation variables.
+    static void player(StringBuilder sb, zombie.characters.IsoPlayer p, ByteBuffer bb) throws Exception {
+        sb.append('\t').append(bb.remaining()).append('\t').append(fh(p.getX())).append(',').append(fh(p.getY())).append(',').append(fh(p.getZ())).append('\t')
+            .append(fh(g(p, "offsetX"))).append(',').append(fh(g(p, "offsetY"))).append('\t').append(p.getForwardIsoDirection().ordinal()).append('\t')
+            .append(p.hasModData() ? lua(p.getModData()) : "-").append('\n');
+        zombie.characters.SurvivorDesc desc = p.getDescriptor();
+        sb.append("SD\t").append(desc.getID()).append('\t').append(desc.getForename()).append('\t').append(desc.getSurname()).append('\t').append(desc.getTorso())
+            .append('\t').append(desc.isFemale() ? 1 : 0).append('\t').append(g(desc, "extra")).append('\t').append(g(desc, "voicePrefix")).append('\t')
+            .append(fh(g(desc, "voicePitch"))).append('\t').append(g(desc, "voiceType")).append('\n');
+        humanVisual(sb, p.getHumanVisual());
+        container(sb, p.getInventory());
+        List<?> saved = (List<?>) g(p, "savedInventoryItems");
+        sb.append("SI\t").append(saved.size());
+        for (int i = 0; i < saved.size(); i++) if (saved.get(i) == null) sb.append('\t').append(i);
+        sb.append('\n');
+        sb.append("CH\t").append(fields(p, "asleep", "forceWakeUpTime")).append('\t');
+        for (int i = 0; i < zombie.characters.CharacterStat.ORDERED_STATS.length; i++) {
+            sb.append(i == 0 ? "" : ",").append(fh(p.getStats().get(zombie.characters.CharacterStat.ORDERED_STATS[i])));
+        }
+        sb.append('\t').append(identityIndex(saved, g(p, "leftHandItem"))).append(',').append(identityIndex(saved, g(p, "rightHandItem"))).append('\t')
+            .append(fields(p, "depressEffect", "depressFirstTakeTime", "betaEffect", "betaDelta", "painEffect", "painDelta", "sleepingTabletEffect",
+                "sleepingTabletDelta"))
+            .append('\t');
+        List<String> books = new ArrayList<>();
+        for (Object rb : (List<?>) g(p, "readBooks")) books.add(g(rb, "fullType") + ":" + g(rb, "alreadyReadPages"));
+        sb.append(books).append('\t').append(fh(g(p, "reduceInfectionPower"))).append('\t').append(g(p, "knownRecipes")).append('\t')
+            .append(fields(p, "lastHourSleeped", "timeSinceLastSmoke", "beardGrowTiming", "hairGrowTiming", "sneaking", "deathDragDown")).append('\t')
+            .append(sortedMap((java.util.Map<?, ?>) g(p, "readLiterature"))).append('\t').append(sortedSet((java.util.Collection<?>) g(p, "readPrintMedia")))
+            .append('\t').append(g(p, "lastAnimalPet")).append('\t');
+        List<Integer> cheats = new ArrayList<>();
+        for (Object c : (java.util.Collection<?>) g(g(p, "cheats"), "cheats")) cheats.add(((Enum<?>) c).ordinal());
+        Collections.sort(cheats);
+        sb.append(cheats).append('\n');
+        Object xp = p.getXp();
+        List<String> traits = new ArrayList<>();
+        for (Object t : (List<?>) g(g(p, "characterTraits"), "knownTraits")) traits.add(String.valueOf(t));
+        java.util.Map<String, Object> xpMap = new java.util.TreeMap<>();
+        for (var e : ((java.util.Map<?, ?>) g(xp, "xpMap")).entrySet()) xpMap.put((String) g(e.getKey(), "id"), e.getValue());
+        List<String> perks = new ArrayList<>();
+        for (Object pi : (List<?>) g(p, "perkList")) perks.add(g(g(pi, "perk"), "id") + "=" + g(pi, "level"));
+        List<String> mult = new ArrayList<>();
+        for (var e : ((java.util.Map<?, ?>) g(xp, "xpMapMultiplier")).entrySet()) {
+            mult.add(g(e.getKey(), "id") + "=" + fields(e.getValue(), "multiplier", "minLevel", "maxLevel"));
+        }
+        Collections.sort(mult);
+        sb.append("XP\t").append(traits).append('\t').append(fields(xp, "totalXp", "level", "lastlevel")).append('\t').append(sortedMap(xpMap)).append('\t')
+            .append(perks).append('\t').append(mult).append('\n');
+        Object bd = p.getBodyDamage();
+        sb.append("BD\t").append(fields(bd, "catchACold", "hasACold", "coldStrength", "timeToSneezeOrCough", "reduceFakeInfection", "healthFromFoodTimer",
+            "painReduction", "coldReduction", "infectionTime", "infectionMortalityDuration", "coldDamageStage", "overallBodyHealth")).append('\n');
+        List<?> parts = (List<?>) g(bd, "bodyParts");
+        for (int i = 0; i < parts.size(); i++) sb.append("BP\t").append(i).append('\t').append(fields(parts.get(i), BODY_PART_FIELDS)).append('\n');
+        Object th = g(bd, "thermoregulator");
+        sb.append("TH\t").append(fields(th, "setPoint", "metabolicRate", "metabolicRateReal", "metabolicTarget", "bodyHeatDelta", "coreHeatDelta",
+            "thermalDamage", "damageCounter", "thermalDuration")).append('\n');
+        java.util.TreeMap<Integer, String> nodes = new java.util.TreeMap<>();
+        for (Object n : (Object[]) g(th, "nodes")) {
+            nodes.put(((zombie.characters.BodyDamage.BodyPartType) g(n, "bodyPartType")).index(), fields(n, "celcius", "skinCelcius", "heatDelta",
+                "primaryDelta", "secondaryDelta", "insulation", "windresist", "bodyWetness", "clothingWetness"));
+        }
+        for (var e : nodes.entrySet()) sb.append("TN\t").append(e.getKey()).append('\t').append(e.getValue()).append('\n');
+        List<String> worn = new ArrayList<>();
+        zombie.characters.WornItems.WornItems wi = p.getWornItems();
+        for (int i = 0; i < wi.size(); i++) worn.add(wi.get(i).getLocation() + "=" + identityIndex(saved, wi.get(i).getItem()));
+        Collections.sort(worn);
+        Object fit = p.getFitness();
+        java.util.Map<String, String> craft = new java.util.TreeMap<>();
+        for (var e : ((java.util.Map<?, ?>) g(g(p, "craftHistory"), "craftHistory")).entrySet()) {
+            craft.put((String) e.getKey(), fields(e.getValue(), "craftCount", "lastCraftTime"));
+        }
+        zombie.core.textures.ColorInfo tc = p.getTagColor();
+        sb.append("PLY\t").append(fields(p, "hoursSurvived", "zombieKills", "survivorKills")).append('\t').append(worn).append('\t')
+            .append(fields(p.getNutrition(), "calories", "proteins", "lipids", "carbohydrates", "weight")).append('\t')
+            .append(fields(p, "allChatMuted", "tagPrefix")).append('\t').append(fh(tc.r)).append(',').append(fh(tc.g)).append(',').append(fh(tc.b)).append('\t')
+            .append(fields(p, "displayName", "showTag", "factionPvp", "autoDrink", "savedVehicleX", "savedVehicleY", "savedVehicleSeat", "savedVehicleRunning"))
+            .append('\t').append(sortedMap((java.util.Map<?, ?>) g(p, "mechanicsItem"))).append('\t')
+            .append(sortedMap((java.util.Map<?, ?>) g(fit, "stiffnessIncMap"))).append(sortedMap((java.util.Map<?, ?>) g(fit, "stiffnessTimerMap")))
+            .append(sortedMap((java.util.Map<?, ?>) g(fit, "regularityMap"))).append(g(fit, "bodypartToIncStiffness"))
+            .append(sortedMap((java.util.Map<?, ?>) g(fit, "exeTimer"))).append('\t').append(g(p, "alreadyReadBook")).append('\t')
+            .append(sortedSet((java.util.Collection<?>) g(p, "knownMediaLines"))).append('\t').append(sortedMap(craft)).append('\n');
+    }
+
+    // zombie.savefile.PlayerDB: every row of localPlayers, read as SQLPlayerStore.load does and loaded by IsoPlayer.load.
+    static void players(java.io.PrintStream out, File save) throws Exception {
+        org.sqlite.SQLiteConfig cfg = new org.sqlite.SQLiteConfig();
+        cfg.setReadOnly(true);
+        try (java.sql.Connection conn = cfg.createConnection("jdbc:sqlite:" + new File(save, "players.db").getAbsolutePath())) {
+            List<Integer> ids = new ArrayList<>();
+            try (var rs = conn.createStatement().executeQuery("SELECT id FROM localPlayers")) {
+                while (rs.next()) ids.add(rs.getInt(1));
+            }
+            for (int id : ids) {
+                try (var ps = conn.prepareStatement("SELECT data,worldversion,x,y,z,isDead,name FROM localPlayers WHERE id=?")) {
+                    ps.setInt(1, id);
+                    var rs = ps.executeQuery();
+                    if (!rs.next()) continue;
+                    ByteBuffer bb = ByteBuffer.wrap(rs.getBytes(1));
+                    int wv = rs.getInt(2);
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("PL\t").append(id).append('\t').append(rs.getString(7)).append('\t').append(fh(rs.getFloat(3))).append(',').append(fh(rs.getFloat(4)))
+                        .append(',').append(fh(rs.getFloat(5))).append('\t').append(wv).append('\t').append(rs.getBoolean(6) ? 1 : 0);
+                    zombie.characters.IsoPlayer p = new zombie.characters.IsoPlayer(zombie.iso.IsoWorld.instance.currentCell);
+                    try {
+                        p.load(bb, wv);
+                    } catch (Exception t) {
+                        out.println(sb + "\tFAIL\t" + t);
+                        continue;
+                    }
+                    player(sb, p, bb);
+                    out.print(sb);
+                }
+            }
+        }
+    }
+
     public static void main(String[] a) throws Exception {
         ServerHarness.run(a[0], out -> {
             SandboxOptions.instance.hoursForWorldItemRemoval.setValue(0.0);
@@ -545,6 +702,7 @@ public class ChunkSaveProbe {
                 out.print(sb);
             }
             vehicles(out, new File(a[1]));
+            players(out, new File(a[1]));
         });
     }
 }

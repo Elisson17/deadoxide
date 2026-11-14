@@ -1569,6 +1569,321 @@ mod save_dump {
         }
     }
 
+    /// `"s:" + v` / "null", as ChunkSaveProbe.v prints a String.
+    fn sv(v: Option<&str>) -> String {
+        v.map_or("null".to_string(), |v| format!("s:{v}"))
+    }
+    fn sorted(mut l: Vec<String>) -> String {
+        l.sort();
+        format!("[{}]", l.join(", "))
+    }
+
+    /// The rest of the PL line and the SD, HV, C/I, SI, CH, XP, BD, BP, TH, TN and PLY lines ChunkSaveProbe.java prints
+    /// for a loaded local player.
+    pub fn player(
+        sb: &mut String,
+        dict: &DictionaryData,
+        p: &zomboid_engine::zombie::characters::iso_player::IsoPlayer,
+        remaining: usize,
+    ) {
+        let c = &p.character;
+        let m = &c.moving;
+        let _ = writeln!(
+            sb,
+            "\t{remaining}\t{},{},{}\t{},{}\t{}\t{}",
+            fh(m.x),
+            fh(m.y),
+            fh(m.z),
+            fh(m.offset_x),
+            fh(m.offset_y),
+            m.dir & 7,
+            mod_data(m.table.as_ref())
+        );
+        if let Some(desc) = &c.descriptor {
+            let _ = writeln!(
+                sb,
+                "SD\t{}\t{}\t{}\t{}\t{}\t[{}]\t{}\t{}\t{}",
+                desc.id,
+                desc.forename,
+                desc.surname,
+                desc.torso,
+                b(desc.female),
+                desc.extra.join(", "),
+                desc.voice_prefix,
+                fh(desc.voice_pitch),
+                desc.voice_type
+            );
+        }
+        human_visual(sb, &c.visual);
+        container(sb, dict, &c.inventory);
+        let _ = write!(sb, "SI\t{}", c.saved_items.len());
+        for (i, it) in c.saved_items.iter().enumerate() {
+            if it.is_none() {
+                let _ = write!(sb, "\t{i}");
+            }
+        }
+        sb.push('\n');
+        let stats: Vec<String> = c.stats.values.iter().map(|v| fh(*v)).collect();
+        let hand = |h: Option<usize>| {
+            h.filter(|&i| c.saved_items[i].is_some())
+                .map_or(-1, |i| i as i64)
+        };
+        let effects = [
+            c.depress_effect,
+            c.depress_first_take_time,
+            c.beta_effect,
+            c.beta_delta,
+            c.pain_effect,
+            c.pain_delta,
+            c.sleeping_tablet_effect,
+            c.sleeping_tablet_delta,
+        ]
+        .map(fh)
+        .join(",");
+        let books: Vec<String> = c
+            .read_books
+            .iter()
+            .map(|(t, n)| format!("{t}:{n}"))
+            .collect();
+        let lit: Vec<String> = c
+            .read_literature
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let media: Vec<String> = c.read_print_media.iter().cloned().collect();
+        let cheats: Vec<String> = c.cheats.cheats.iter().map(|i| i.to_string()).collect();
+        let _ = writeln!(
+            sb,
+            "CH\t{},{}\t{}\t{},{}\t{effects}\t[{}]\t{}\t[{}]\t{},{},{},{},{},{}\t{}\t{}\t{}\t[{}]",
+            b(c.asleep),
+            fh(c.force_wake_up_time),
+            stats.join(","),
+            hand(c.left_hand),
+            hand(c.right_hand),
+            books.join(", "),
+            fh(c.reduce_infection_power),
+            c.known_recipes.join(", "),
+            c.last_hour_sleeped,
+            fh(c.time_since_last_smoke),
+            fh(c.beard_grow_timing),
+            fh(c.hair_grow_timing),
+            b(c.sneaking),
+            b(c.death_drag_down),
+            sorted(lit),
+            sorted(media),
+            c.last_animal_pet,
+            cheats.join(", ")
+        );
+        let traits: Vec<String> = c
+            .traits
+            .known_traits
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+        let xp_map: Vec<String> =
+            c.xp.xp_map
+                .iter()
+                .map(|(k, v)| format!("{k}={}", fh(*v)))
+                .collect();
+        let perks: Vec<String> =
+            c.xp.perk_list
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+        let mult: Vec<String> =
+            c.xp.xp_map_multiplier
+                .iter()
+                .map(|(k, x)| format!("{k}={},{},{}", fh(x.multiplier), x.min_level, x.max_level))
+                .collect();
+        let _ = writeln!(
+            sb,
+            "XP\t[{}]\t{},{},{}\t{}\t[{}]\t{}",
+            traits.join(", "),
+            fh(c.xp.total_xp),
+            c.xp.level,
+            c.xp.lastlevel,
+            sorted(xp_map),
+            perks.join(", "),
+            sorted(mult)
+        );
+        let bd = &c.body_damage;
+        let _ = writeln!(
+            sb,
+            "BD\t{},{},{},{},{},{},{},{},{},{},{},{}",
+            fh(bd.catch_a_cold),
+            b(bd.has_a_cold),
+            fh(bd.cold_strength),
+            fh(bd.time_to_sneeze_or_cough),
+            b(bd.reduce_fake_infection),
+            fh(bd.health_from_food_timer),
+            fh(bd.pain_reduction),
+            fh(bd.cold_reduction),
+            fh(bd.infection_time),
+            fh(bd.infection_mortality_duration),
+            fh(bd.cold_damage_stage),
+            fh(bd.overall_body_health)
+        );
+        for (i, q) in bd.body_parts.iter().enumerate() {
+            let f = [
+                fh(q.health),
+                b(q.bandaged).to_string(),
+                b(q.bitten).to_string(),
+                b(q.bleeding).to_string(),
+                b(q.is_bleeding_stemmed).to_string(),
+                b(q.is_cauterized).to_string(),
+                b(q.scratched).to_string(),
+                b(q.stitched).to_string(),
+                b(q.deep_wounded).to_string(),
+                b(q.is_infected).to_string(),
+                b(q.is_fake_infected).to_string(),
+                fh(q.bandage_life),
+                fh(q.scratch_time),
+                fh(q.bite_time),
+                b(q.alcoholic_bandage).to_string(),
+                fh(q.stiffness),
+                fh(q.wound_infection_level),
+                b(q.infected_wound).to_string(),
+                fh(q.bleeding_time),
+                fh(q.deep_wound_time),
+                b(q.have_glass).to_string(),
+                fh(q.stitch_time),
+                fh(q.alcohol_level),
+                fh(q.additional_pain),
+                sv(q.bandage_type.as_deref()),
+                b(q.get_bandage_xp).to_string(),
+                b(q.get_stitch_xp).to_string(),
+                b(q.get_splint_xp).to_string(),
+                fh(q.fracture_time),
+                b(q.splint).to_string(),
+                fh(q.splint_factor),
+                b(q.have_bullet).to_string(),
+                fh(q.burn_time),
+                b(q.need_burn_wash).to_string(),
+                fh(q.last_time_burn_wash),
+                sv(q.splint_item.as_deref()),
+                fh(q.plantain_factor),
+                fh(q.comfrey_factor),
+                fh(q.garlic_factor),
+                fh(q.cut_time),
+                b(q.cut).to_string(),
+                fh(q.wetness),
+            ];
+            let _ = writeln!(sb, "BP\t{i}\t{}", f.join(","));
+        }
+        if let Some(t) = &bd.thermoregulator {
+            let _ = writeln!(
+                sb,
+                "TH\t{},{},{},{},{},{},{},{},{}",
+                fh(t.set_point),
+                fh(t.metabolic_rate),
+                fh(t.metabolic_rate_real.unwrap_or(0.0)),
+                fh(t.metabolic_target),
+                fh(t.body_heat_delta),
+                fh(t.core_heat_delta),
+                fh(t.thermal_damage),
+                fh(t.damage_counter),
+                fh(t.thermal_duration.unwrap_or(0.0))
+            );
+            for (i, n) in &t.nodes {
+                let _ = writeln!(
+                    sb,
+                    "TN\t{i}\t{}",
+                    [
+                        n.celcius,
+                        n.skin_celcius,
+                        n.heat_delta,
+                        n.primary_delta,
+                        n.secondary_delta,
+                        n.insulation,
+                        n.windresist,
+                        n.body_wetness,
+                        n.clothing_wetness
+                    ]
+                    .map(fh)
+                    .join(",")
+                );
+            }
+        }
+        let worn: Vec<String> = p
+            .worn_items
+            .iter()
+            .map(|(l, i)| format!("{l}={i}"))
+            .collect();
+        let n = &p.nutrition;
+        let sv_ = p.saved_vehicle;
+        let mech: Vec<String> = p
+            .mechanics_item
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        let f = &p.fitness;
+        let fit = format!(
+            "{}{}{}[{}]{}",
+            sorted(
+                f.stiffness_inc_map
+                    .iter()
+                    .map(|(k, v)| format!("{k}={}", fh(*v)))
+                    .collect()
+            ),
+            sorted(
+                f.stiffness_timer_map
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect()
+            ),
+            sorted(
+                f.regularity_map
+                    .iter()
+                    .map(|(k, v)| format!("{k}={}", fh(*v)))
+                    .collect()
+            ),
+            f.bodypart_to_inc_stiffness.join(", "),
+            sorted(
+                f.exe_timer
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect()
+            )
+        );
+        let craft: Vec<String> = p
+            .craft_history
+            .craft_history
+            .iter()
+            .map(|(k, e)| format!("{k}=s:{},{}", e.craft_count, dh(e.last_craft_time)))
+            .collect();
+        let known: Vec<String> = p.known_media_lines.iter().cloned().collect();
+        let _ = writeln!(
+            sb,
+            "PLY\t{},{},{}\t{}\t{},{},{},{},{}\t{},s:{}\t{},{},{}\t{},{},{},{},{},{},{},{}\t{}\t{fit}\t[{}]\t{}\t{}",
+            dh(p.hours_survived),
+            p.zombie_kills,
+            p.survivor_kills,
+            sorted(worn),
+            fh(n.calories),
+            fh(n.proteins),
+            fh(n.lipids),
+            fh(n.carbohydrates),
+            dh(n.weight),
+            b(p.all_chat_muted),
+            p.tag_prefix,
+            fh(p.tag_color[0]),
+            fh(p.tag_color[1]),
+            fh(p.tag_color[2]),
+            sv(Some(&p.display_name)),
+            b(p.show_tag),
+            b(p.faction_pvp),
+            b(p.auto_drink.unwrap_or(true)),
+            fh(sv_.map_or(0.0, |v| v.x)),
+            fh(sv_.map_or(0.0, |v| v.y)),
+            sv_.map_or(-1, |v| i32::from(v.seat)),
+            b(sv_.is_some_and(|v| v.running)),
+            sorted(mech),
+            p.already_read_book.join(", "),
+            sorted(known),
+            sorted(craft)
+        );
+    }
+
     /// The I and J lines ChunkSaveProbe.java prints for an item (and its bag's contents).
     pub fn item(sb: &mut String, dict: &DictionaryData, it: &InventoryItem) {
         let cls = it.item_type.class_name().unwrap_or("?");
@@ -2505,6 +2820,43 @@ pub fn chunksave(root: &Path, save: &Path) -> Result<String, String> {
                 Err(e) => {
                     let _ = writeln!(sb, "\tFAIL\t{e}");
                 }
+            }
+        }
+    }
+    // zombie.savefile.PlayerDB: every local player, as PlayerDB.loadPlayer reads it.
+    use zomboid_engine::java_nio::ByteBuffer;
+    use zomboid_engine::zombie::characters::body_damage::body_part::BodySandbox;
+    use zomboid_engine::zombie::characters::iso_player::{player_db, IsoPlayer};
+    let sandbox = zomboid_engine::zombie::sandbox_options::SandboxOptions::new();
+    let opt = |n: &str| sandbox.get_int(n).unwrap_or(0);
+    let body_sandbox = BodySandbox {
+        transmission: opt("ZombieLore.Transmission"),
+        mortality: opt("ZombieLore.Mortality"),
+        injury_severity: opt("InjurySeverity"),
+    };
+    for pd in player_db::load_local_players(&save.join("players.db"))? {
+        let _ = write!(
+            sb,
+            "PL\t{}\t{}\t{},{},{}\t{}\t{}",
+            pd.sql_id,
+            pd.name.as_deref().unwrap_or("null"),
+            save_dump::fh(pd.x),
+            save_dump::fh(pd.y),
+            save_dump::fh(pd.z),
+            pd.world_version,
+            u8::from(pd.is_dead)
+        );
+        let mut b = ByteBuffer::wrap(&pd.data);
+        match IsoPlayer::load(
+            &mut b,
+            pd.world_version,
+            &factory,
+            &dictionary,
+            &body_sandbox,
+        ) {
+            Ok(p) => save_dump::player(&mut sb, &dictionary, &p, b.remaining()),
+            Err(e) => {
+                let _ = writeln!(sb, "\tFAIL\t{e}");
             }
         }
     }

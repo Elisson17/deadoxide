@@ -74,6 +74,10 @@ impl<'a> ByteBuffer<'a> {
     pub fn get_double(&mut self) -> Result<f64, String> {
         Ok(f64::from_bits(u64::from_be_bytes(self.take::<8>()?)))
     }
+    /// java.nio.ByteBuffer.getChar: one big-endian UTF-16 unit.
+    pub fn get_char(&mut self) -> Result<u16, String> {
+        Ok(u16::from_be_bytes(self.take::<2>()?))
+    }
 }
 
 /// zombie.GameWindow.ReadString (ByteBuffer) -> GameWindow.StringUTF.load: a short byte count, then that many bytes

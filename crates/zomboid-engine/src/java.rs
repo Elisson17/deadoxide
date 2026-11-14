@@ -62,6 +62,21 @@ fn lower(c: char) -> char {
     }
 }
 
+/// java.lang.Math.min(float, float): NaN if either is NaN, and -0.0 below 0.0.
+pub fn math_min_f32(a: f32, b: f32) -> f32 {
+    if a.is_nan() {
+        return a;
+    }
+    if a == 0.0 && b == 0.0 && b.to_bits() == (-0.0f32).to_bits() {
+        return b;
+    }
+    if a <= b {
+        a
+    } else {
+        b
+    }
+}
+
 /// java.util.Random: the 48-bit linear congruential generator, bit-for-bit.
 #[derive(Clone, Debug)]
 pub struct Random {

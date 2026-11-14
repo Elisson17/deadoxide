@@ -4,16 +4,16 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 133 of 3424 classes touched, 392 of 46121 method names cited (0.8%), 962280 decompiled lines.**
+**Total: 150 of 3424 classes touched, 430 of 46121 method names cited (0.9%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 49 | 7277 | 228 (3.1%) | 144530 |
 | zombie.core | 450 | 14 | 5920 | 61 (1.0%) | 93574 |
-| zombie.characters | 200 | 1 | 5028 | 1 (0.0%) | 77144 |
+| zombie.characters | 200 | 16 | 5028 | 38 (0.8%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
-| zombie.scripting | 205 | 8 | 2713 | 26 (1.0%) | 52509 |
+| zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
 | zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 9 | 1411 | 8 (0.6%) | 28275 |
@@ -38,7 +38,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.chat | 22 | 0 | 287 | 0 (0.0%) | 3622 |
 | zombie.world | 18 | 7 | 232 | 10 (4.3%) | 3415 |
 | zombie.input | 19 | 0 | 245 | 0 (0.0%) | 2598 |
-| zombie.savefile | 7 | 0 | 102 | 0 (0.0%) | 2538 |
+| zombie.savefile | 7 | 1 | 102 | 0 (0.0%) | 2538 |
 | zombie.creative | 1 | 0 | 5 | 0 (0.0%) | 2258 |
 | zombie.vispoly | 1 | 0 | 63 | 0 (0.0%) | 2052 |
 | zombie.gizmo | 13 | 0 | 97 | 0 (0.0%) | 1749 |
@@ -85,7 +85,22 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.basements.BasementsPerMap | 0 / 1 | crates/zomboid-engine/src/zombie/basements/mod.rs |
 | zombie.basements.BasementsV1 | 0 / 3 | crates/zomboid-engine/src/zombie/basements/mod.rs |
 | zombie.characterTextures.BloodBodyPartType | 0 / 7 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/item_visual.rs |
+| zombie.characters.BodyDamage.BodyDamage | 1 / 204 | crates/zomboid-engine/src/zombie/characters/body_damage/body_damage.rs |
+| zombie.characters.BodyDamage.BodyPart | 21 / 130 | crates/zomboid-engine/src/zombie/characters/body_damage/body_part.rs |
+| zombie.characters.BodyDamage.BodyPartType | 3 / 19 | crates/zomboid-engine/src/zombie/characters/body_damage/body_part_type.rs |
+| zombie.characters.BodyDamage.Fitness | 1 / 27 | crates/zomboid-engine/src/zombie/characters/body_damage/fitness.rs |
+| zombie.characters.BodyDamage.Nutrition | 1 / 26 | crates/zomboid-engine/src/zombie/characters/body_damage/nutrition.rs |
+| zombie.characters.BodyDamage.Thermoregulator | 2 / 90 | crates/zomboid-engine/src/zombie/characters/body_damage/body_damage.rs |
+| zombie.characters.CharacterStat | 0 / 11 | crates/zomboid-engine/src/zombie/characters/stats.rs |
+| zombie.characters.CheatType | 0 / 5 | crates/zomboid-engine/src/zombie/characters/player_cheats.rs |
+| zombie.characters.IsoGameCharacter | 3 / 1273 | crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
+| zombie.characters.IsoPlayer | 1 / 485 | crates/zomboid-engine/src/zombie/characters/iso_player.rs |
+| zombie.characters.PlayerCheats | 1 / 7 | crates/zomboid-engine/src/zombie/characters/player_cheats.rs |
+| zombie.characters.PlayerCraftHistory | 1 / 8 | crates/zomboid-engine/src/zombie/characters/player_craft_history.rs |
+| zombie.characters.Stats | 1 / 31 | crates/zomboid-engine/src/zombie/characters/stats.rs |
 | zombie.characters.SurvivorDesc | 1 / 81 | crates/zomboid-engine/src/zombie/characters/survivor_desc.rs |
+| zombie.characters.skills.PerkFactory | 0 / 31 | crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
+| zombie.characters.traits.CharacterTraits | 1 / 15 | crates/zomboid-engine/src/zombie/characters/traits/character_traits.rs |
 | zombie.config.DoubleConfigOption | 1 / 17 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
 | zombie.config.IntegerConfigOption | 1 / 16 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
 | zombie.core.TilePropertyAliasMap | 5 / 6 | crates/zomboid-engine/src/zombie/core/tile_property_alias_map.rs |
@@ -175,6 +190,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.radio.devices.DeviceData | 1 / 116 | crates/zomboid-engine/src/zombie/radio/devices/device_data.rs |
 | zombie.radio.devices.DevicePresets | 1 / 16 | crates/zomboid-engine/src/zombie/radio/devices/device_data.rs |
 | zombie.radio.media.RecordedMedia | 2 / 19 | crates/zomboid-engine/src/zombie/radio/media/recorded_media.rs |
+| zombie.savefile.PlayerDB | 0 / 33 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/characters/iso_player.rs |
 | zombie.scripting.ScriptManager | 5 / 134 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.ScriptParser | 4 / 17 | crates/zomboid-engine/src/zombie/scripting/script_parser.rs |
 | zombie.scripting.entity.GameEntityScript | 2 / 26 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
@@ -182,6 +198,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.scripting.objects.Item | 4 / 336 | crates/zomboid-engine/src/zombie/scripting/item.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.objects.ItemType | 1 / 6 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
 | zombie.scripting.objects.ModelScript | 4 / 28 | crates/zomboid-engine/src/zombie/scripting/model_script.rs |
+| zombie.scripting.objects.ResourceLocation | 1 / 7 | crates/zomboid-engine/src/zombie/scripting/objects/resource_location.rs |
 | zombie.scripting.objects.ScriptModule | 2 / 50 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.util.StringUtils | 3 / 36 | crates/zomboid-engine/src/zombie/util/string_utils.rs |
 | zombie.util.io.BitHeader | 1 / 27 | crates/zomboid-engine/src/java_nio.rs |
