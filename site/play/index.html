@@ -8,7 +8,9 @@
 <link rel="stylesheet" href="../style.css">
 <style>
   #view { width: 100%; height: 70vh; display: block; background: #141814; border-radius: 12px; outline: none; }
-  .bar { display: flex; gap: 16px; justify-content: space-between; align-items: baseline; margin: 10px 0; font-size: 14px; opacity: .85; }
+  #view[hidden] { display: none; }
+  /* Not `.bar`: ../style.css uses that name for the 8px progress bar (fixed height, overflow hidden). */
+  .statusline { display: flex; gap: 16px; justify-content: space-between; align-items: baseline; margin: 10px 0; font-size: 14px; opacity: .85; }
   #pick { margin: 26px 0; padding: 22px; border: 1px dashed #777; border-radius: 12px; }
   ul.plain { margin: 10px 0 0 18px; }
 </style>
@@ -27,7 +29,7 @@
       <li>What you get: the Rosewood start house and its 256x256 cell, walking with the ported collision (walls, closed doors, windows). No zombies, items, lighting, sound or interface yet.</li>
     </ul>
   </div>
-  <div class="bar"><span id="status">Waiting for a game folder.</span><span id="pos"></span></div>
+  <div class="statusline"><span id="status">Waiting for a game folder.</span><span id="pos"></span></div>
   <canvas id="view" tabindex="0" hidden></canvas>
 </main>
 <script type="module" src="play.js"></script>
