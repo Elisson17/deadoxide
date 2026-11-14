@@ -66,7 +66,10 @@ impl IsoMetaGrid {
         }
         for x in x1..=x2 {
             for y in y1..=y2 {
-                let loaded = self.get_cell_data(x, y).is_some();
+                // cell != null && cell.info != null
+                let loaded = self
+                    .get_cell_data(x, y)
+                    .is_some_and(|c| c.info_priority.is_some());
                 for _ in 0..b.get_int()? {
                     let meta_id = b.get_long()?;
                     let flags = b.get_short()?;

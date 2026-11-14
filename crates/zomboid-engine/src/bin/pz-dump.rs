@@ -3,6 +3,8 @@
 //!   pz-dump lotheaders <game root> <map folder>   (pairs with LotHeadersProbe.java)
 //!   pz-dump lotpack <game root> <map folder> x1 y1 x2 y2   (pairs with LotPackProbe.java)
 //!   pz-dump mapmeta <game root> <save dir>    (pairs with MapMetaProbe.java)
+//!   pz-dump mapzone <game root> <save dir>    (pairs with MapZoneProbe.java)
+//!   pz-dump zoneoutlines <game root> <save dir> outlines   (MapZoneProbe.java ... outlines)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -45,6 +47,10 @@ fn main() {
         Some("worlddictionary") if a.len() == 4 => worlddictionary(Path::new(&a[3])),
         Some("chunksave") if a.len() == 4 => chunksave(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
+        Some("mapzone") if a.len() == 4 => mapzone(Path::new(&a[2]), Path::new(&a[3]), false),
+        Some("zoneoutlines") if a.len() == 5 && a[4] == "outlines" => {
+            mapzone(Path::new(&a[2]), Path::new(&a[3]), true)
+        }
         _ => Err("usage: see the header of pz-dump.rs".into()),
     };
     match r {
@@ -3079,6 +3085,141 @@ pub fn chunksave(root: &Path, save: &Path) -> Result<String, String> {
                 let _ = writeln!(sb, "\tFAIL\t{e}");
             }
         }
+    }
+    Ok(sb)
+}
+
+/// java.util.UUID.toString of (most, least) significant bits.
+fn uuid_string(id: (i64, i64)) -> String {
+    let (m, l) = (id.0 as u64, id.1 as u64);
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        m >> 32,
+        (m >> 16) & 0xffff,
+        m & 0xffff,
+        l >> 48,
+        l & 0xffff_ffff_ffff
+    )
+}
+
+/// The save's zones (pairs with MapZoneProbe.java): the meta grid's cells from `IsoMetaGrid.Create`, then
+/// `IsoMetaGrid.loadZone` of the save's `map_zone.bin`; every registered zone, the outline of each wide polyline
+/// (rotated to start at its smallest point; only with `outlines`), the zones of every meta chunk per cell, and the
+/// spawned-zombie zones.
+pub fn mapzone(root: &Path, save: &Path, outlines: bool) -> Result<String, String> {
+    use zomboid_engine::java_nio::ByteBuffer;
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    for e in g.load_all_cells(&mut |_| 1, &mut |_, _| Vec::new()) {
+        eprintln!("{e}");
+    }
+    let p = save.join("map_zone.bin");
+    let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    let mut bb = ByteBuffer::wrap(&data);
+    let mut sb = String::new();
+    let wv = data
+        .get(4..8)
+        .map_or(0, |s| i32::from_be_bytes([s[0], s[1], s[2], s[3]]));
+    let _ = writeln!(
+        sb,
+        "MZ {wv} {} {} {} {}",
+        g.min_x, g.min_y, g.max_x, g.max_y
+    );
+    let m = g.load_zone(&mut bb, -1)?;
+    for l in &m.log {
+        eprintln!("{l}");
+    }
+    let _ = writeln!(sb, "REST {}", bb.remaining());
+    let _ = writeln!(sb, "ZN {}", g.zones.len());
+    let null = |s: &Option<String>| s.clone().unwrap_or_else(|| "null".to_string());
+    for (i, z) in g.zones.iter().enumerate() {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for &v in &z.points {
+            mix(&mut h, v);
+        }
+        let _ = writeln!(
+            sb,
+            "Z {i} {} {} {} {} {} {} {} {} {} {} {h:x} {} {} {} {} {} {}",
+            null(&z.type_),
+            null(&z.name),
+            z.x,
+            z.y,
+            z.z,
+            z.w,
+            z.h,
+            z.geometry_type.name(),
+            z.polyline_width,
+            z.points.len(),
+            z.hour_last_seen,
+            u8::from(z.have_construction),
+            z.last_action_timestamp,
+            null(&z.original_name),
+            z.id.map_or_else(|| "random".to_string(), uuid_string),
+            u8::from(z.is_preferred_zone_for_square)
+        );
+        if let Some(o) = z.polyline_outline_points.as_ref().filter(|_| outlines) {
+            let n = o.len() / 2;
+            let mut s = 0;
+            for k in 1..n {
+                if o[k * 2] < o[s * 2] || o[k * 2] == o[s * 2] && o[k * 2 + 1] < o[s * 2 + 1] {
+                    s = k;
+                }
+            }
+            let _ = write!(sb, "O {i} {n}");
+            for k in 0..n {
+                let j = (s + k) % n;
+                let _ = write!(
+                    sb,
+                    " {},{}",
+                    o[j * 2].to_bits() as i32,
+                    o[j * 2 + 1].to_bits() as i32
+                );
+            }
+            sb.push('\n');
+        }
+    }
+    let mut total = 0;
+    for x in g.min_x..=g.max_x {
+        for y in g.min_y..=g.max_y {
+            let Some(cell) = g.get_cell_data(x, y) else {
+                continue;
+            };
+            let mut chunks = 0;
+            let mut h: u64 = 0xcbf29ce484222325;
+            for i in 0..1024 {
+                let Some(c) = cell.chunk(i) else {
+                    continue;
+                };
+                if c.get_zones_size() == 0 {
+                    continue;
+                }
+                chunks += 1;
+                mix(&mut h, i as i32);
+                mix(&mut h, c.get_zones_size() as i32);
+                for zr in c.zones() {
+                    mix(&mut h, zr.0 as i32);
+                }
+                total += c.get_zones_size();
+            }
+            if chunks > 0 {
+                let _ = writeln!(
+                    sb,
+                    "ZC {x} {y} {} {chunks} {h:x}",
+                    u8::from(cell.info_priority.is_some())
+                );
+            }
+        }
+    }
+    let _ = writeln!(sb, "ZT {total}");
+    let _ = writeln!(sb, "SZ {}", m.spawned_zombie_zone.len());
+    for (k, ids) in &m.spawned_zombie_zone {
+        let ids: Vec<String> = ids
+            .iter()
+            .map(|id| id.map_or_else(|| "random".to_string(), uuid_string))
+            .collect();
+        let _ = writeln!(sb, "S {k} [{}]", ids.join(", "));
     }
     Ok(sb)
 }

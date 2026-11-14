@@ -21,6 +21,9 @@ pub struct RoomRef(pub u32);
 /// Handle to a `BuildingDef` in `IsoMetaGrid::building_defs`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BuildingRef(pub u32);
+/// Handle to a `Zone` in `IsoMetaGrid::zones`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub struct ZoneRef(pub u32);
 
 /// zombie.iso.areas.IsoRoom: the runtime room made from a `RoomDef` the first time a square of it is loaded.
 #[derive(Clone, Debug, PartialEq)]
@@ -78,6 +81,8 @@ pub struct IsoMetaGrid {
     pub iso_room_by_id: std::collections::HashMap<i64, usize>,
     /// zombie.iso.IsoMetaCell.isoBuildings of all cells.
     pub iso_building_by_id: std::collections::HashMap<i64, usize>,
+    /// zombie.iso.IsoMetaGrid.zones, in registration order.
+    pub zones: Vec<super::zones::zone::Zone>,
 }
 
 impl IsoMetaGrid {
@@ -172,10 +177,25 @@ impl IsoMetaGrid {
         Ok(())
     }
 
-    fn cell_index(&self, x: i32, y: i32) -> Option<usize> {
+    pub(crate) fn cell_index(&self, x: i32, y: i32) -> Option<usize> {
         let (gx, gy) = (x - self.min_x, y - self.min_y);
         (gx >= 0 && gy >= 0 && gx < self.width && gy < self.height)
             .then(|| (gx * self.height + gy) as usize)
+    }
+    /// zombie.iso.IsoMetaGrid.setCell (by grid index).
+    pub(crate) fn set_cell(&mut self, idx: usize, cell: IsoMetaCell) {
+        self.grid[idx] = Some(Box::new(cell));
+    }
+    /// Takes the cell at cell coordinates out of the grid, so that it can be changed while the grid is read.
+    pub(crate) fn take_cell(&mut self, x: i32, y: i32) -> Option<Box<IsoMetaCell>> {
+        let idx = self.cell_index(x, y)?;
+        self.grid[idx].take()
+    }
+    /// Puts a cell taken with `take_cell` back.
+    pub(crate) fn put_cell(&mut self, cell: Box<IsoMetaCell>) {
+        if let Some(idx) = self.cell_index(cell.get_x(), cell.get_y()) {
+            self.grid[idx] = Some(cell);
+        }
     }
     /// zombie.iso.IsoMetaGrid.gridX: the number of cell columns (`grid.length`).
     pub fn grid_x(&self) -> i32 {
@@ -331,7 +351,7 @@ impl IsoMetaGrid {
             .cell_index(w_x, w_y)
             .ok_or("java.lang.ArrayIndexOutOfBoundsException: cell outside the grid")?;
         if self.grid[cell_idx].is_none() {
-            self.grid[cell_idx] = Some(Box::new(IsoMetaCell::new(w_x, w_y, priority)));
+            self.grid[cell_idx] = Some(Box::new(IsoMetaCell::new(w_x, w_y, Some(priority))));
         }
         let r = self.load_cell_inner(
             priority,
@@ -556,7 +576,11 @@ impl IsoMetaGrid {
             &self.room_defs[r.0 as usize],
             cell_x * 256,
             cell_y * 256,
-            |cx, cy| self.get_zombie_intensity_for_chunk(priority, cell_x, cell_y, cx, cy),
+            |cx, cy| {
+                priority.map_or(-1, |p| {
+                    self.get_zombie_intensity_for_chunk(p, cell_x, cell_y, cx, cy)
+                })
+            },
         );
         self.grid[idx] = Some(cell);
     }

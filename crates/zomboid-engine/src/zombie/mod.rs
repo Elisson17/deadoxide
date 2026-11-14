@@ -5,6 +5,7 @@ pub mod erosion;
 pub mod game_states;
 pub mod inventory;
 pub mod iso;
+pub mod pathfind;
 pub mod radio;
 pub mod sandbox_options;
 pub mod sandbox_options_table;

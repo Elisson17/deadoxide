@@ -1,14 +1,36 @@
-use super::iso_meta_grid::RoomRef;
+use super::iso_meta_grid::{RoomRef, ZoneRef};
 use super::room_def::RoomDef;
 
-/// zombie.iso.IsoMetaChunk: per-chunk meta data: zombie intensity and the rooms overlapping the chunk. Zones are not ported yet.
+/// zombie.iso.IsoMetaChunk: per-chunk meta data: zombie intensity and the rooms and zones overlapping the chunk.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IsoMetaChunk {
     zombie_intensity: u8,
     rooms: Vec<RoomRef>,
+    zones: Vec<ZoneRef>,
 }
 
 impl IsoMetaChunk {
+    /// zombie.iso.IsoMetaChunk.getZonesSize
+    pub fn get_zones_size(&self) -> usize {
+        self.zones.len()
+    }
+    pub fn zones(&self) -> &[ZoneRef] {
+        &self.zones
+    }
+    /// zombie.iso.IsoMetaChunk.addZone
+    pub fn add_zone(&mut self, zone: ZoneRef) {
+        self.zones.push(zone);
+    }
+    /// zombie.iso.IsoMetaChunk.removeZone: the first occurrence.
+    pub fn remove_zone(&mut self, zone: ZoneRef) {
+        if let Some(i) = self.zones.iter().position(|z| *z == zone) {
+            self.zones.remove(i);
+        }
+    }
+    /// zombie.iso.IsoMetaChunk.clearZones
+    pub fn clear_zones(&mut self) {
+        self.zones.clear();
+    }
     /// zombie.iso.IsoMetaChunk.getRoomsSize
     pub fn get_rooms_size(&self) -> usize {
         self.rooms.len()

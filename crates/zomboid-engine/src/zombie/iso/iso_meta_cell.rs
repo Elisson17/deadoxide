@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 
 use super::iso_meta_chunk::IsoMetaChunk;
-use super::iso_meta_grid::{BuildingRef, RoomRef};
+use super::iso_meta_grid::{BuildingRef, RoomRef, ZoneRef};
 use super::room_def::RoomDef;
+use super::zones::zone::Zone;
+use crate::zombie::core::math::pz_math;
 
-/// zombie.iso.IsoMetaCell: per-cell meta data: rooms and buildings from the lotheader, and the 32x32 meta chunks.
-/// Zones, triggers and runtime rooms are not ported yet.
+/// zombie.iso.IsoMetaCell: per-cell meta data: rooms and buildings from the lotheader, the 32x32 meta chunks and the
+/// zones registered in them. Triggers, vehicle/animal/mannequin zones and runtime rooms are not ported yet.
 #[derive(Debug)]
 pub struct IsoMetaCell {
     wx: i32,
     wy: i32,
-    /// Priority index of the map folder whose header created the cell (`info.mapFiles`).
-    pub info_priority: usize,
+    /// zombie.iso.IsoMetaCell.info, as the priority index of the map folder whose header created the cell
+    /// (`info.mapFiles.priority`); `None` for a cell without a header (made by `getCellOrCreate` for a zone).
+    pub info_priority: Option<usize>,
     chunk_map: Vec<Option<IsoMetaChunk>>,
     /// zombie.iso.IsoMetaCell.roomList: a room's position here is the index part of its id.
     pub room_list: Vec<RoomRef>,
@@ -23,7 +26,8 @@ pub struct IsoMetaCell {
 }
 
 impl IsoMetaCell {
-    pub fn new(wx: i32, wy: i32, info_priority: usize) -> Self {
+    /// zombie.iso.IsoMetaCell(int, int), with `info` set as the lot loader does.
+    pub fn new(wx: i32, wy: i32, info_priority: Option<usize>) -> Self {
         IsoMetaCell {
             wx,
             wy,
@@ -63,6 +67,54 @@ impl IsoMetaCell {
             c.set_zombie_intensity(if v >= 0 { v as u8 } else { 0 });
             c
         })
+    }
+    /// zombie.iso.IsoMetaCell.clearChunk: drops the chunk when it holds neither rooms nor zones.
+    pub fn clear_chunk(&mut self, i: usize) {
+        if self.chunk_map[i]
+            .as_ref()
+            .is_some_and(|c| c.get_rooms_size() == 0 && c.get_zones_size() == 0)
+        {
+            self.chunk_map[i] = None;
+        }
+    }
+    /// The chunk if it exists, for changes that must not create it.
+    pub fn chunk_mut(&mut self, i: usize) -> Option<&mut IsoMetaChunk> {
+        self.chunk_map[i].as_mut()
+    }
+    /// zombie.iso.IsoMetaCell.addZone: registers the zone in every chunk of THIS cell (origin `cell_x`, `cell_y` in
+    /// squares) that its shape intersects. The chunk range is clamped to the cell; the lower bounds to
+    /// `(cell + 256) / 8`, one past the cell, as in the original (the loop is then empty).
+    pub fn add_zone(
+        &mut self,
+        r: ZoneRef,
+        zone: &mut Zone,
+        cell_x: i32,
+        cell_y: i32,
+        mut intensity: impl FnMut(i32, i32) -> i32,
+    ) {
+        let mut xmin = zone.x / 8;
+        let mut ymin = zone.y / 8;
+        let mut xmax = (zone.x + zone.w) / 8;
+        if (zone.x + zone.w) % 8 == 0 {
+            xmax -= 1;
+        }
+        let mut ymax = (zone.y + zone.h) / 8;
+        if (zone.y + zone.h) % 8 == 0 {
+            ymax -= 1;
+        }
+        xmin = pz_math::clamp_i32(xmin, cell_x / 8, (cell_x + 256) / 8);
+        ymin = pz_math::clamp_i32(ymin, cell_y / 8, (cell_y + 256) / 8);
+        xmax = pz_math::clamp_i32(xmax, cell_x / 8, (cell_x + 256) / 8 - 1);
+        ymax = pz_math::clamp_i32(ymax, cell_y / 8, (cell_y + 256) / 8 - 1);
+        for yy in ymin..=ymax {
+            for xx in xmin..=xmax {
+                if zone.intersects(xx * 8, yy * 8, zone.z, 8, 8) {
+                    let i = (xx - cell_x / 8 + (yy - cell_y / 8) * 32) as usize;
+                    self.get_chunk(i, || intensity((i % 32) as i32, (i / 32) as i32))
+                        .add_zone(r);
+                }
+            }
+        }
     }
     /// zombie.iso.IsoMetaCell.addRoom: registers the room in every chunk of THIS cell its bounding box touches.
     /// `cell_x`/`cell_y` are the cell origin in squares. Java's truncating division is kept.
