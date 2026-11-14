@@ -1401,6 +1401,174 @@ mod save_dump {
         v.map_or("null".to_string(), |v| format!("[{}]", v.join(", ")))
     }
 
+    /// The rest of the V line, the W line, the key and the P lines ChunkSaveProbe.java prints for a loaded vehicle.
+    pub fn vehicle(
+        sb: &mut String,
+        dict: &DictionaryData,
+        v: &zomboid_engine::zombie::vehicles::base_vehicle::BaseVehicle,
+    ) {
+        let m = &v.moving;
+        let _ = writeln!(
+            sb,
+            "\t{},{},{}\t{},{}\t{}\t{}",
+            fh(m.x),
+            fh(m.y),
+            fh(m.z),
+            fh(m.offset_x),
+            fh(m.offset_y),
+            m.dir & 7,
+            mod_data(m.table.as_ref())
+        );
+        let blood: Vec<String> = v
+            .blood_intensity
+            .iter()
+            .map(|(k, b)| format!("{k}={b}"))
+            .collect();
+        let mut by_id: Vec<String> = v
+            .parts
+            .parts_by_id
+            .iter()
+            .map(|(k, i)| format!("{k}={i}"))
+            .collect();
+        by_id.sort();
+        let idx = |i: Option<usize>| i.map_or(-1, |i| i as i64);
+        let q = v.saved_rot;
+        let _ = writeln!(
+            sb,
+            "W\t{}\t{},{},{},{}\t{}\t{}\t{},{},{},{}\t{}\t{}\t{}{}{}{}\t{},{}\t{}{}{}{}\t{},{},{},{}\t{}\t{}\t{}\t{}\t{}\t[{}]\t{},{},{},{}\t{}\t{}{}\t{}\t{}\t{},{}\t[{}]",
+            fh(v.saved_physics_z),
+            fh(q[0]),
+            fh(q[1]),
+            fh(q[2]),
+            fh(q[3]),
+            v.script_name,
+            v.skin_index,
+            v.front_end_durability,
+            v.rear_end_durability,
+            v.current_front_end_durability,
+            v.current_rear_end_durability,
+            v.key_id,
+            v.key_spawned,
+            b(v.headlights_on),
+            b(v.created),
+            b(v.sound_horn_on),
+            b(v.sound_back_move_on),
+            v.lightbar_lights_mode,
+            v.lightbar_siren_mode,
+            b(v.key_is_on_door),
+            b(v.hotwired),
+            b(v.hotwired_broken),
+            b(v.keys_in_ignition),
+            fh(v.rust),
+            fh(v.color_hue),
+            fh(v.color_saturation),
+            fh(v.color_value),
+            v.mechanical_id,
+            b(v.alarmed),
+            dh(v.vehicle_alarm.start_time),
+            s(v.vehicle_alarm.chosen_sound.as_deref()),
+            dh(v.siren_start_time),
+            blood.join(", "),
+            v.vehicle_towing_id,
+            s(v.tow_attachment_self.as_deref()),
+            s(v.tow_attachment_other.as_deref()),
+            fh(v.row_constraint_z_offset),
+            fh(v.regulator_speed),
+            b(v.previously_entered),
+            b(v.previously_moved),
+            b(v.do_damage_overlay),
+            v.parts.parts.len(),
+            idx(v.parts.engine),
+            idx(v.parts.battery),
+            by_id.join(", ")
+        );
+        if let Some(k) = &v.current_key {
+            sb.push_str("KEY\n");
+            item(sb, dict, k);
+        }
+        for (i, p) in v.parts.parts.iter().enumerate() {
+            let light = p.light.as_ref().map_or("-".to_string(), |l| {
+                format!(
+                    "{},{},{},{},{},{}",
+                    b(l.active),
+                    fh(l.offset_x),
+                    fh(l.offset_y),
+                    fh(l.intensity),
+                    fh(l.dist),
+                    l.focusing
+                )
+            });
+            let door = p.door.map_or("-".to_string(), |d| {
+                format!("{},{},{}", b(d.open), b(d.locked), b(d.lock_broken))
+            });
+            let window = p.window.map_or("-".to_string(), |w| {
+                format!("{},{}", b(w.open), fh(w.open_delta))
+            });
+            let engine = p.engine.map_or("-".to_string(), |e| {
+                format!("{},{},{},{}", b(e.running), e.quality, e.loudness, e.power)
+            });
+            let device = p.device_data.as_ref().map_or("-".to_string(), |d| {
+                format!(
+                    "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    d.device_name,
+                    b(d.two_way),
+                    d.transmit_range,
+                    d.mic_range,
+                    b(d.mic_is_muted),
+                    fh(d.base_volume_range),
+                    fh(d.device_volume),
+                    b(d.is_portable),
+                    b(d.is_television),
+                    b(d.is_high_tier),
+                    b(d.is_turned_on),
+                    d.channel,
+                    d.min_channel_range,
+                    d.max_channel_range,
+                    b(d.is_battery_powered),
+                    b(d.has_battery),
+                    fh(d.power_delta),
+                    fh(d.use_delta),
+                    d.headphone_type,
+                    d.media_index,
+                    d.media_type,
+                    s(d.media_item.as_deref()),
+                    b(d.no_transmit)
+                )
+            });
+            let mut comps: Vec<i16> = p.components.iter().flatten().map(|(id, _)| *id).collect();
+            comps.sort();
+            let comps: Vec<String> = comps.iter().map(|c| c.to_string()).collect();
+            let it = p.item.as_ref().map_or("-".to_string(), |it| {
+                format!(
+                    "{}:{},{}",
+                    it.full_type,
+                    it.id,
+                    b(it.broken.unwrap_or(false))
+                )
+            });
+            let _ = writeln!(
+                sb,
+                "P\t{i}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{light}\t{door}\t{window}\t{engine}\t{device}\t[{}]\t{it}",
+                p.part_id,
+                b(p.created),
+                fh(p.last_updated),
+                p.condition,
+                fh(p.wheel_friction),
+                p.mechanic_skill_installer,
+                fh(p.suspension_compression),
+                fh(p.suspension_damping),
+                mod_data(p.mod_data.as_ref()),
+                comps.join(", ")
+            );
+            if let Some(it) = &p.item {
+                item(sb, dict, it);
+            }
+            if let Some(c) = &p.container {
+                container(sb, dict, c);
+            }
+        }
+    }
+
     /// The I and J lines ChunkSaveProbe.java prints for an item (and its bag's contents).
     pub fn item(sb: &mut String, dict: &DictionaryData, it: &InventoryItem) {
         let cls = it.item_type.class_name().unwrap_or("?");
@@ -2070,9 +2238,9 @@ mod save_dump {
         let _ = write!(
             sb,
             "D\t{},{},{}\t{}{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            fh(d.x),
-            fh(d.y),
-            fh(d.z),
+            fh(d.moving.x),
+            fh(d.moving.y),
+            fh(d.moving.z),
             b(d.female),
             b(d.was_zombie),
             d.object_id.0,
@@ -2094,7 +2262,7 @@ mod save_dump {
             b(d.crawling),
             b(d.fake_dead),
             b(d.ragdoll_fall),
-            mod_data(d.mod_data.as_ref())
+            mod_data(d.moving.table.as_ref())
         );
         if let Some(desc) = &d.desc {
             let _ = writeln!(
@@ -2315,6 +2483,28 @@ pub fn chunksave(root: &Path, save: &Path) -> Result<String, String> {
             Ok(ch) => save_dump::chunk(&mut sb, ctx.sprites, &dictionary, &ch),
             Err(e) => {
                 let _ = writeln!(sb, "K\t{wx}\t{wy}\tFAIL\t{e}");
+            }
+        }
+    }
+    // zombie.vehicles.VehiclesDB2: every chunk that holds vehicles, its rows as SQLStore.loadChunk reads them.
+    use zomboid_engine::zombie::vehicles::vehicles_db2::SqlStore;
+    let store = SqlStore::open(&save.join("vehicles.db"))?;
+    for (wx, wy) in store.chunks()? {
+        for vb in store.load_chunk(wx, wy)? {
+            let _ = write!(
+                sb,
+                "V\t{}\t{wx}\t{wy}\t{},{}\t{}\t{}",
+                vb.id,
+                save_dump::fh(vb.x),
+                save_dump::fh(vb.y),
+                vb.world_version,
+                u8::from(vb.in_meta)
+            );
+            match vb.load_vehicle(&factory) {
+                Ok(v) => save_dump::vehicle(&mut sb, &dictionary, &v),
+                Err(e) => {
+                    let _ = writeln!(sb, "\tFAIL\t{e}");
+                }
             }
         }
     }

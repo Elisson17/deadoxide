@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Direct Rust port of the game's own Java classes; module paths mirror the zombie.* packages."
 [dependencies]
+
+# zombie.vehicles.VehiclesDB2.SQLStore and the other SQLite stores of a save; not in the browser build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 [dev-dependencies]
 sha2 = "0.10"

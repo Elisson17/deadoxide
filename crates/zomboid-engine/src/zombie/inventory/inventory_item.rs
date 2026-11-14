@@ -268,6 +268,15 @@ impl InventoryItem {
         }
     }
 
+    /// zombie.inventory.InventoryItem.setCondition (int, boolean) with `doSound` false, outside the debug cheat and the
+    /// tutorial: clamped to [0, conditionMax], then `setBroken(condition <= 0)`. `setBroken(true)` runs the script's
+    /// Lua `OnBreak` function (`onBreak`), which is not modelled.
+    pub fn set_condition(&mut self, condition: i32) {
+        let condition = condition.max(0).min(self.condition_max);
+        self.condition = condition;
+        self.broken = Some(condition <= 0);
+    }
+
     /// zombie.inventory.InventoryItem.loadItem (ByteBuffer, int): an int length, the registry id, the save type, then
     /// the item. `Ok(None)` where the original gets a null item (it cannot create it, or its load throws); the length
     /// tells it where the next item starts either way.

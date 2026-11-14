@@ -10,6 +10,7 @@ pub mod iso_lot;
 pub mod iso_meta_cell;
 pub mod iso_meta_chunk;
 pub mod iso_meta_grid;
+pub mod iso_moving_object;
 pub mod iso_object;
 pub mod iso_world;
 pub mod lot_header;

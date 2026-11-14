@@ -4,7 +4,7 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 124 of 3424 classes touched, 383 of 46121 method names cited (0.8%), 962280 decompiled lines.**
+**Total: 133 of 3424 classes touched, 392 of 46121 method names cited (0.8%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
@@ -15,8 +15,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 8 | 2713 | 26 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
-| zombie.inventory | 40 | 14 | 2100 | 15 (0.7%) | 28391 |
-| zombie.vehicles | 42 | 0 | 1411 | 0 (0.0%) | 28275 |
+| zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
+| zombie.vehicles | 42 | 9 | 1411 | 8 (0.6%) | 28275 |
 | zombie | 60 | 3 | 1192 | 12 (1.0%) | 22185 |
 | zombie.randomizedWorld | 149 | 0 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 0 | 823 | 0 (0.0%) | 18680 |
@@ -109,7 +109,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.erosion.categories.ErosionCategory | 1 / 12 | crates/zomboid-engine/src/zombie/erosion/erosion_data.rs |
 | zombie.gameStates.ChooseGameInfo | 1 / 76 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs |
 | zombie.inventory.CompressIdenticalItems | 0 / 9 | crates/zomboid-engine/src/zombie/inventory/compress_identical_items.rs |
-| zombie.inventory.InventoryItem | 2 / 613 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
+| zombie.inventory.InventoryItem | 3 / 613 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
 | zombie.inventory.InventoryItemFactory | 1 / 3 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs, crates/zomboid-engine/src/zombie/inventory/inventory_item_factory.rs |
 | zombie.inventory.ItemContainer | 1 / 304 | crates/zomboid-engine/src/zombie/inventory/item_container.rs |
 | zombie.inventory.types.AlarmClock | 1 / 32 | crates/zomboid-engine/src/zombie/inventory/types/alarm_clock.rs |
@@ -135,8 +135,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.IsoMetaCell | 5 / 28 | crates/zomboid-engine/src/zombie/iso/iso_meta_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaChunk | 7 / 27 | crates/zomboid-engine/src/zombie/iso/iso_meta_chunk.rs |
 | zombie.iso.IsoMetaGrid | 15 / 98 | crates/zomboid-content/src/fishing_zones.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
-| zombie.iso.IsoMovingObject | 6 / 194 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs, crates/zomboid-scene/src/scene.rs |
-| zombie.iso.IsoObject | 7 / 393 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/iso_object.rs, crates/zomboid-scene/src/scene.rs |
+| zombie.iso.IsoMovingObject | 6 / 194 | crates/zomboid-engine/src/zombie/iso/iso_moving_object.rs, crates/zomboid-scene/src/scene.rs |
+| zombie.iso.IsoObject | 7 / 393 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/iso_object.rs, crates/zomboid-engine/src/zombie/vehicles/vehicles_db2.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoWallBloodSplat | 0 / 6 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs |
 | zombie.iso.IsoWorld | 11 / 131 | crates/zomboid-engine/src/zombie/iso/iso_world.rs |
 | zombie.iso.LosUtil | 1 / 7 | crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-scene/src/scene.rs |
@@ -186,6 +186,15 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.util.StringUtils | 3 / 36 | crates/zomboid-engine/src/zombie/util/string_utils.rs |
 | zombie.util.io.BitHeader | 1 / 27 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.util.io.BitHeaderRead | 0 / 0 | crates/zomboid-engine/src/java_nio.rs |
+| zombie.vehicles.BaseVehicle | 1 / 659 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
+| zombie.vehicles.VehicleAlarm | 0 / 20 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
+| zombie.vehicles.VehicleDoor | 1 / 10 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
+| zombie.vehicles.VehicleEngine | 1 / 50 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
+| zombie.vehicles.VehicleLight | 1 / 11 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
+| zombie.vehicles.VehiclePart | 2 / 105 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
+| zombie.vehicles.VehicleParts | 1 / 38 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
+| zombie.vehicles.VehicleWindow | 1 / 15 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
+| zombie.vehicles.VehiclesDB2 | 0 / 35 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/vehicles/vehicles_db2.rs |
 | zombie.world.DictionaryData | 2 / 30 | crates/zomboid-engine/src/zombie/world/dictionary_data.rs |
 | zombie.world.DictionaryInfo | 1 / 19 | crates/zomboid-engine/src/zombie/world/dictionary_data.rs |
 | zombie.world.DictionaryScriptInfo | 1 / 9 | crates/zomboid-engine/src/zombie/world/dictionary_data.rs |

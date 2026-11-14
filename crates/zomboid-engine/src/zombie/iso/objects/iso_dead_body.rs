@@ -1,23 +1,16 @@
 //! zombie.iso.objects.IsoDeadBody: a corpse lying on a square (`IsoGridSquare.staticMovingObjects`), as a save
 //! stores it. Animal corpses are not ported.
 use crate::java_nio::{read_string, ByteBuffer};
-use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTable;
 use crate::zombie::characters::survivor_desc::SurvivorDesc;
 use crate::zombie::core::skinnedmodel::visual::human_visual::HumanVisual;
 use crate::zombie::inventory::inventory_item::ItemFactory;
 use crate::zombie::inventory::item_container::ItemContainer;
+use crate::zombie::iso::iso_moving_object::IsoMovingObject;
 
 /// zombie.iso.objects.IsoDeadBody, the saved fields.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IsoDeadBody {
-    // zombie.iso.IsoMovingObject.load
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub dir: i32,
-    pub mod_data: Option<KahluaTable>,
+    pub moving: IsoMovingObject,
     // zombie.iso.objects.IsoDeadBody.load
     pub female: bool,
     pub was_zombie: bool,
@@ -57,18 +50,7 @@ impl IsoDeadBody {
         world_version: i32,
         items: &dyn ItemFactory,
     ) -> Result<Self, String> {
-        let offset_x = b.get_float()?;
-        let offset_y = b.get_float()?;
-        // IsoWorld.saveoffsetx/saveoffsety are 0 outside the old world-shift code.
-        let x = b.get_float()?;
-        let y = b.get_float()?;
-        let z = b.get_float()?;
-        let dir = b.get_int()?;
-        let mod_data = if b.get()? != 0 {
-            Some(KahluaTable::load(b, world_version)?)
-        } else {
-            None
-        };
+        let moving = IsoMovingObject::load(b, world_version)?;
         let female = b.get()? != 0;
         let was_zombie = b.get()? != 0;
         if b.get()? != 0 {
@@ -147,13 +129,7 @@ impl IsoDeadBody {
             }
         }
         Ok(IsoDeadBody {
-            offset_x,
-            offset_y,
-            x,
-            y,
-            z,
-            dir,
-            mod_data,
+            moving,
             female,
             was_zombie,
             object_id,

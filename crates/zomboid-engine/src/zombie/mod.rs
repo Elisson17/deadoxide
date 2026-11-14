@@ -10,5 +10,6 @@ pub mod sandbox_options;
 pub mod sandbox_options_table;
 pub mod scripting;
 pub mod util;
+pub mod vehicles;
 pub mod world;
 pub mod world_map;

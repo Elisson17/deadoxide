@@ -359,6 +359,124 @@ public class ChunkSaveProbe {
         if (d.getContainer() != null) container(sb, d.getContainer());
     }
 
+    static final String[] DEVICE_FIELDS = {"twoWay", "transmitRange", "micRange", "micIsMuted", "baseVolumeRange", "deviceVolume", "isPortable", "isTelevision",
+        "isHighTier", "isTurnedOn", "channel", "minChannelRange", "maxChannelRange", "isBatteryPowered", "hasBattery", "powerDelta", "useDelta",
+        "headphoneType", "mediaIndex", "mediaType", "mediaItem", "noTransmit"};
+
+    // One vehicle after BaseVehicle.load: V (store row and IsoMovingObject part), W (vehicle fields), KEY + item (the
+    // key in the ignition), then P per part with its item and container. Not printed: what the vehicle script sets
+    // later (scriptPart, physics, the jniTransform with WorldSimulation offsets), DeviceData presets of parts.
+    static void vehicle(StringBuilder sb, zombie.vehicles.BaseVehicle v) throws Exception {
+        sb.append('\t').append(fh(v.getX())).append(',').append(fh(v.getY())).append(',').append(fh(v.getZ())).append('\t')
+            .append(fh(g(v, "offsetX"))).append(',').append(fh(g(v, "offsetY"))).append('\t').append(v.getForwardIsoDirection().ordinal()).append('\t')
+            .append(v.hasModData() ? lua(v.getModData()) : "-").append('\n');
+        org.joml.Quaternionf q = (org.joml.Quaternionf) g(v, "savedRot");
+        zombie.vehicles.VehicleAlarm al = (zombie.vehicles.VehicleAlarm) g(v, "vehicleAlarm");
+        java.util.Map<?, ?> blood = (java.util.Map<?, ?>) g(v, "bloodIntensity");
+        List<String> bl = new ArrayList<>();
+        for (var e : blood.entrySet()) bl.add(e.getKey() + "=" + e.getValue());
+        Collections.sort(bl);
+        zombie.vehicles.VehicleParts parts = (zombie.vehicles.VehicleParts) g(v, "parts");
+        List<String> byId = new ArrayList<>();
+        for (var e : ((java.util.Map<?, ?>) g(parts, "partsById")).entrySet()) {
+            byId.add(e.getKey() + "=" + parts.indexOf((zombie.vehicles.VehiclePart) e.getValue()));
+        }
+        Collections.sort(byId);
+        sb.append("W\t").append(fh(v.savedPhysicsZ)).append('\t').append(fh(q.x)).append(',').append(fh(q.y)).append(',').append(fh(q.z)).append(',')
+            .append(fh(q.w)).append('\t').append(v.getScriptName()).append('\t').append(v.getSkinIndex()).append('\t').append(g(v, "frontEndDurability")).append(',')
+            .append(g(v, "rearEndDurability")).append(',').append(g(v, "currentFrontEndDurability")).append(',').append(g(v, "currentRearEndDurability")).append('\t')
+            .append(v.getKeyId()).append('\t').append(v.keySpawned).append('\t').append(b(g(v, "headlightsOn"))).append(b(g(v, "created"))).append(b(g(v, "soundHornOn")))
+            .append(b(g(v, "soundBackMoveOn"))).append('\t').append(((zombie.vehicles.LightbarLightsMode) g(v, "lightbarLightsMode")).get()).append(',')
+            .append(((zombie.vehicles.LightbarSirenMode) g(v, "lightbarSirenMode")).get()).append('\t').append(b(g(v, "keyIsOnDoor"))).append(b(g(v, "hotwired")))
+            .append(b(g(v, "hotwiredBroken"))).append(b(g(v, "keysInIgnition"))).append('\t').append(fh(g(v, "rust"))).append(',').append(fh(g(v, "colorHue")))
+            .append(',').append(fh(g(v, "colorSaturation"))).append(',').append(fh(g(v, "colorValue"))).append('\t').append(g(v, "mechanicalId")).append('\t')
+            .append(b(g(v, "alarmed"))).append('\t').append(dh(al.getStartTime())).append('\t').append(s(g(al, "chosenSound"))).append('\t')
+            .append(dh((Double) g(v, "sirenStartTime"))).append('\t').append(bl).append('\t').append(g(v, "vehicleTowingId")).append(',')
+            .append(s(g(v, "towAttachmentSelf"))).append(',').append(s(g(v, "towAttachmentOther"))).append(',').append(fh(g(v, "rowConstraintZOffset"))).append('\t')
+            .append(fh(g(v, "regulatorSpeed"))).append('\t').append(v.previouslyEntered ? 1 : 0).append(v.previouslyMoved ? 1 : 0).append('\t')
+            .append(b(g(v, "doDamageOverlay"))).append('\t').append(v.getPartCount()).append('\t').append(parts.indexOf(parts.getEngine())).append(',')
+            .append(parts.indexOf((zombie.vehicles.VehiclePart) g(parts, "battery"))).append('\t').append(byId).append('\n');
+        if (v.getCurrentKey() != null) {
+            sb.append("KEY\n");
+            item(sb, v.getCurrentKey());
+        }
+        for (int i = 0; i < v.getPartCount(); i++) {
+            zombie.vehicles.VehiclePart p = v.getPartByIndex(i);
+            sb.append("P\t").append(i).append('\t').append(p.getId()).append('\t').append(b(g(p, "created"))).append('\t').append(fh(g(p, "lastUpdated"))).append('\t')
+                .append(p.getCondition()).append('\t').append(fh(p.getWheelFriction())).append('\t').append(p.getMechanicSkillInstaller()).append('\t')
+                .append(fh(p.getSuspensionCompression())).append('\t').append(fh(p.getSuspensionDamping())).append('\t').append(p.hasModData() ? lua(p.getModData()) : "-")
+                .append('\t');
+            zombie.vehicles.VehicleLight l = p.getLight();
+            sb.append(l == null ? "-" : b(l.active) + "," + fh(l.offset.x) + "," + fh(l.offset.y) + "," + fh(l.intensity) + "," + fh(l.dist) + "," + l.focusing)
+                .append('\t');
+            zombie.vehicles.VehicleDoor d = p.getDoor();
+            sb.append(d == null ? "-" : (d.isOpen() ? 1 : 0) + "," + (d.isLocked() ? 1 : 0) + "," + (d.isLockBroken() ? 1 : 0)).append('\t');
+            zombie.vehicles.VehicleWindow w = p.getWindow();
+            sb.append(w == null ? "-" : (w.isOpen() ? 1 : 0) + "," + fh(g(w, "openDelta"))).append('\t');
+            zombie.vehicles.VehicleEngine en = p.getVehicleEngine();
+            sb.append(en == null ? "-" : (en.getState() == zombie.vehicles.BaseVehicle.engineStateTypes.Running ? 1 : 0) + "," + en.getQuality() + "," + en.getLoudness()
+                + "," + en.getPower()).append('\t');
+            Object dd = p.getDeviceData();
+            if (dd == null) sb.append('-');
+            else {
+                sb.append(s(g(dd, "deviceName")));
+                for (String n : DEVICE_FIELDS) {
+                    Object x = g(dd, n);
+                    sb.append(',').append(x instanceof Float ? fh(x) : x instanceof Boolean ? b(x) : s(x));
+                }
+            }
+            List<Integer> comps = new ArrayList<>();
+            for (int k = 0; k < p.componentSize(); k++) comps.add((int) p.getComponentForIndex(k).getComponentType().GetID());
+            Collections.sort(comps);
+            InventoryItem it = p.getInventoryItem();
+            sb.append('\t').append(comps).append('\t').append(it == null ? "-" : zombie.world.WorldDictionary.getItemTypeFromID(it.getRegistry_id()) + ":" + it.getID()
+                + "," + (it.isBroken() ? 1 : 0)).append('\n');
+            if (it != null) item(sb, it);
+            if (p.getItemContainer() != null) container(sb, p.getItemContainer());
+        }
+    }
+
+    // zombie.vehicles.VehiclesDB2.SQLStore.loadChunk over every chunk that holds vehicles, then QueueLoadChunk.vehicleLoaded.
+    static void vehicles(java.io.PrintStream out, File save) throws Exception {
+        org.sqlite.SQLiteConfig cfg = new org.sqlite.SQLiteConfig();
+        cfg.setReadOnly(true);
+        try (java.sql.Connection conn = cfg.createConnection("jdbc:sqlite:" + new File(save, "vehicles.db").getAbsolutePath())) {
+            List<int[]> chunks = new ArrayList<>();
+            try (var rs = conn.createStatement().executeQuery("SELECT DISTINCT wx, wy FROM vehicles ORDER BY wx, wy")) {
+                while (rs.next()) chunks.add(new int[]{rs.getInt(1), rs.getInt(2)});
+            }
+            for (int[] c : chunks) {
+                try (var ps = conn.prepareStatement("SELECT id, x, y, data, worldversion, inMeta FROM vehicles WHERE wx=? AND wy=?")) {
+                    ps.setInt(1, c[0]);
+                    ps.setInt(2, c[1]);
+                    var rs = ps.executeQuery();
+                    while (rs.next()) {
+                        int id = rs.getInt(1);
+                        float x = rs.getFloat(2), y = rs.getFloat(3);
+                        ByteBuffer bb = ByteBuffer.wrap(rs.getBytes(4));
+                        int wv = rs.getInt(5);
+                        boolean inMeta = rs.getBoolean(6);
+                        boolean serialise = bb.get() != 0;
+                        byte classID = bb.get();
+                        if (classID != IsoObject.getFactoryVehicle().getClassID() || !serialise) continue;
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("V\t").append(id).append('\t').append(c[0]).append('\t').append(c[1]).append('\t').append(fh(x)).append(',').append(fh(y)).append('\t')
+                            .append(wv).append('\t').append(inMeta ? 1 : 0);
+                        zombie.vehicles.BaseVehicle v = new zombie.vehicles.BaseVehicle(zombie.iso.IsoWorld.instance.currentCell);
+                        try {
+                            v.load(bb, wv);
+                        } catch (Exception t) {
+                            out.println(sb + "\tFAIL\t" + t);
+                            continue;
+                        }
+                        vehicle(sb, v);
+                        out.print(sb);
+                    }
+                }
+            }
+        }
+    }
+
     public static void main(String[] a) throws Exception {
         ServerHarness.run(a[0], out -> {
             SandboxOptions.instance.hoursForWorldItemRemoval.setValue(0.0);
@@ -426,6 +544,7 @@ public class ChunkSaveProbe {
                 }
                 out.print(sb);
             }
+            vehicles(out, new File(a[1]));
         });
     }
 }
