@@ -4,14 +4,14 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 163 of 3424 classes touched, 480 of 46121 method names cited (1.0%), 962280 decompiled lines.**
+**Total: 165 of 3424 classes touched, 487 of 46121 method names cited (1.1%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 55 | 7277 | 272 (3.7%) | 144530 |
+| zombie.iso | 346 | 55 | 7277 | 275 (3.8%) | 144530 |
 | zombie.core | 450 | 16 | 5920 | 62 (1.0%) | 93574 |
-| zombie.characters | 200 | 17 | 5028 | 39 (0.8%) | 77144 |
+| zombie.characters | 200 | 19 | 5028 | 43 (0.9%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
@@ -100,6 +100,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.PlayerCraftHistory | 1 / 8 | crates/zomboid-engine/src/zombie/characters/player_craft_history.rs |
 | zombie.characters.Stats | 1 / 31 | crates/zomboid-engine/src/zombie/characters/stats.rs |
 | zombie.characters.SurvivorDesc | 1 / 81 | crates/zomboid-engine/src/zombie/characters/survivor_desc.rs |
+| zombie.characters.animals.AnimalZone | 4 / 18 | crates/zomboid-engine/src/zombie/characters/animals/animal_zone.rs |
+| zombie.characters.animals.AnimalZoneJunction | 0 / 10 | crates/zomboid-engine/src/zombie/characters/animals/animal_zone_junction.rs |
 | zombie.characters.skills.PerkFactory | 0 / 31 | crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
 | zombie.characters.traits.CharacterTraits | 1 / 15 | crates/zomboid-engine/src/zombie/characters/traits/character_traits.rs |
 | zombie.config.DoubleConfigOption | 1 / 17 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
@@ -152,7 +154,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.IsoLot | 4 / 9 | crates/zomboid-engine/src/zombie/iso/iso_lot.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaCell | 7 / 28 | crates/zomboid-engine/src/zombie/iso/iso_meta_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaChunk | 11 / 27 | crates/zomboid-engine/src/zombie/iso/iso_meta_chunk.rs |
-| zombie.iso.IsoMetaGrid | 22 / 98 | crates/zomboid-content/src/fishing_zones.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/iso/map_meta.rs, crates/zomboid-engine/src/zombie/iso/map_zone.rs, crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
+| zombie.iso.IsoMetaGrid | 25 / 98 | crates/zomboid-content/src/fishing_zones.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/iso/map_animals.rs, crates/zomboid-engine/src/zombie/iso/map_meta.rs, crates/zomboid-engine/src/zombie/iso/map_zone.rs, crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
 | zombie.iso.IsoMovingObject | 6 / 194 | crates/zomboid-engine/src/zombie/iso/iso_moving_object.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoObject | 7 / 393 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/iso_object.rs, crates/zomboid-engine/src/zombie/vehicles/vehicles_db2.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoWallBloodSplat | 0 / 6 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs |

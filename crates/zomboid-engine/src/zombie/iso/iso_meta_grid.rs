@@ -25,6 +25,10 @@ pub struct BuildingRef(pub u32);
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct ZoneRef(pub u32);
 
+/// A handle to an animal zone of `IsoMetaGrid.animal_zones`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub struct AnimalZoneRef(pub u32);
+
 /// zombie.iso.areas.IsoRoom: the runtime room made from a `RoomDef` the first time a square of it is loaded.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IsoRoom {
@@ -83,6 +87,11 @@ pub struct IsoMetaGrid {
     pub iso_building_by_id: std::collections::HashMap<i64, usize>,
     /// zombie.iso.IsoMetaGrid.zones, in registration order.
     pub zones: Vec<super::zones::zone::Zone>,
+    /// Every animal zone registered since the last `loadAnimalZones`, in registration order (what the original's
+    /// cells and handler point at).
+    pub animal_zones: Vec<crate::zombie::characters::animals::animal_zone::AnimalZone>,
+    /// zombie.iso.IsoMetaGrid.animalZoneHandler (`ZoneHandler<AnimalZone>`): zone id -> zone.
+    pub animal_zone_handler: std::collections::HashMap<(i64, i64), AnimalZoneRef>,
 }
 
 impl IsoMetaGrid {

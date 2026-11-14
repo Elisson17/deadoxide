@@ -15,6 +15,7 @@ pub mod iso_moving_object;
 pub mod iso_object;
 pub mod iso_world;
 pub mod lot_header;
+pub mod map_animals;
 pub mod map_files;
 pub mod map_meta;
 pub mod map_zone;

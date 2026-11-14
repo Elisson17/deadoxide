@@ -23,6 +23,10 @@ pub struct IsoMetaCell {
     pub room_by_meta_id: HashMap<i64, RoomRef>,
     pub buildings: Vec<BuildingRef>,
     pub building_by_meta_id: HashMap<i64, BuildingRef>,
+    /// zombie.iso.IsoMetaCell.animalZones
+    pub animal_zones: Vec<super::iso_meta_grid::AnimalZoneRef>,
+    /// zombie.iso.IsoMetaCell.animalZonesGenerated (`metagrid/metacell_X_Y.bin`, `IsoMetaCell.load`).
+    pub animal_zones_generated: bool,
 }
 
 impl IsoMetaCell {
@@ -38,6 +42,8 @@ impl IsoMetaCell {
             room_by_meta_id: HashMap::new(),
             buildings: Vec::new(),
             building_by_meta_id: HashMap::new(),
+            animal_zones: Vec::new(),
+            animal_zones_generated: false,
         }
     }
     /// zombie.iso.IsoMetaCell.getX

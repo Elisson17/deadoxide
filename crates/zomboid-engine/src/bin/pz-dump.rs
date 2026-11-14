@@ -4,6 +4,7 @@
 //!   pz-dump lotpack <game root> <map folder> x1 y1 x2 y2   (pairs with LotPackProbe.java)
 //!   pz-dump mapmeta <game root> <save dir>    (pairs with MapMetaProbe.java)
 //!   pz-dump mapzone <game root> <save dir>    (pairs with MapZoneProbe.java)
+//!   pz-dump animalzones <game root> <save dir>   (pairs with AnimalZonesProbe.java)
 //!   pz-dump zoneoutlines <game root> <save dir> outlines   (MapZoneProbe.java ... outlines)
 //!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
 use std::fmt::Write as _;
@@ -48,6 +49,7 @@ fn main() {
         Some("worlddictionary") if a.len() == 4 => worlddictionary(Path::new(&a[3])),
         Some("chunksave") if a.len() == 4 => chunksave(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
+        Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -3247,6 +3249,130 @@ pub fn mapzone(
             .map(|id| id.map_or_else(|| "random".to_string(), uuid_string))
             .collect();
         let _ = writeln!(sb, "S {k} [{}]", ids.join(", "));
+    }
+    Ok(sb)
+}
+
+/// `metagrid/metacell_*.bin` through `IsoMetaCell.load`, then `IsoMetaGrid.loadAnimalZones` of the save's
+/// `map_animals.bin` into a meta grid built from the lot headers; every animal zone ordered by id (`UUID.compareTo`:
+/// signed most, then least significant bits) with its junctions, and the zones of each cell (pairs with
+/// AnimalZonesProbe.java).
+pub fn animalzones(root: &Path, save: &Path) -> Result<String, String> {
+    use zomboid_engine::java_nio::ByteBuffer;
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    for e in g.load_all_cells(&mut |_| 1, &mut |_, _| Vec::new()) {
+        eprintln!("{e}");
+    }
+    let mut sb = String::new();
+    for l in g.load_metacells(save) {
+        eprintln!("{l}");
+    }
+    let mut names: Vec<String> = std::fs::read_dir(save.join("metagrid"))
+        .map(|rd| {
+            rd.filter_map(|e| e.ok().and_then(|e| e.file_name().into_string().ok()))
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    for name in names {
+        let Some(rest) = name
+            .strip_prefix("metacell_")
+            .and_then(|r| r.strip_suffix(".bin"))
+        else {
+            continue;
+        };
+        let Some((cx, cy)) = rest
+            .split_once('_')
+            .and_then(|(a, b)| Some((a.parse::<i32>().ok()?, b.parse::<i32>().ok()?)))
+        else {
+            continue;
+        };
+        let generated = g
+            .get_cell_data(cx, cy)
+            .is_some_and(|c| c.animal_zones_generated);
+        let _ = writeln!(sb, "MC {cx} {cy} {}", u8::from(generated));
+    }
+    let p = save.join("map_animals.bin");
+    let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    let mut bb = ByteBuffer::wrap(&data);
+    let wv = data
+        .get(4..8)
+        .map_or(0, |s| i32::from_be_bytes([s[0], s[1], s[2], s[3]]));
+    let _ = writeln!(sb, "MA {wv}");
+    let m = g.load_animal_zones(&mut bb, -1)?;
+    for l in &m.log {
+        eprintln!("{l}");
+    }
+    let _ = writeln!(sb, "REST {}", bb.remaining());
+    // the handler's zones ordered by id; arena index -> that order
+    let mut handler: Vec<((i64, i64), u32)> = g
+        .animal_zone_handler
+        .iter()
+        .map(|(id, r)| (*id, r.0))
+        .collect();
+    handler.sort();
+    let mut index = vec![-1i32; g.animal_zones.len()];
+    for (i, (_, r)) in handler.iter().enumerate() {
+        index[*r as usize] = i as i32;
+    }
+    let _ = writeln!(sb, "AZN {}", handler.len());
+    let null = |s: &Option<String>| s.clone().unwrap_or_else(|| "null".to_string());
+    for (i, (id, r)) in handler.iter().enumerate() {
+        let a = &g.animal_zones[*r as usize];
+        let z = &a.zone;
+        let mut h: u64 = 0xcbf29ce484222325;
+        for &v in &z.points {
+            mix(&mut h, v);
+        }
+        let nj = a.junctions.as_ref().map_or(-1, |j| j.len() as i64);
+        let _ = writeln!(
+            sb,
+            "AZ {i} {} {} {} {} {} {} {} {} {} {} {} {h:x} {} {} {} {} {} {nj}",
+            uuid_string(*id),
+            null(&z.type_),
+            null(&z.name),
+            z.x,
+            z.y,
+            z.z,
+            z.w,
+            z.h,
+            z.geometry_type.name(),
+            z.polyline_width,
+            z.points.len(),
+            null(&z.original_name),
+            null(&a.action),
+            null(&a.animal_type),
+            u8::from(a.spawn_animal),
+            u8::from(a.spawned_animals)
+        );
+        for j in a.junctions.iter().flatten() {
+            let other = j.zone_other.map_or(-1, |o| index[o.0 as usize]);
+            let _ = writeln!(
+                sb,
+                "AJ {i} {} {other} {} {}",
+                j.point_index_self,
+                j.point_index_other,
+                j.distance_from_start.to_bits() as i32
+            );
+        }
+    }
+    for x in g.min_x..=g.max_x {
+        for y in g.min_y..=g.max_y {
+            let Some(cell) = g.get_cell_data(x, y) else {
+                continue;
+            };
+            if cell.animal_zones.is_empty() {
+                continue;
+            }
+            let mut h: u64 = 0xcbf29ce484222325;
+            for r in &cell.animal_zones {
+                mix(&mut h, index[r.0 as usize]);
+            }
+            let _ = writeln!(sb, "AC {x} {y} {} {h:x}", cell.animal_zones.len());
+        }
     }
     Ok(sb)
 }
