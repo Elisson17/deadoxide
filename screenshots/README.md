@@ -14,3 +14,6 @@ Command: `zomboid-client .. 32_45 --shot screenshots/<name>.png -216704 639720 1
 
 - `port_save_auto_2026-11-11.png`: port screenshot from the isolated saved player, z=0, experimental room lighting; matches explicit port coordinates byte-for-byte.
 - `port_save_z1_auto_2026-11-11.png`: port screenshot from a scratch copy of that database with synthetic z=1; this is not an original upstairs save or a game comparison.
+
+- `port_map_rosewood_2026-11-14.png`: Rust client, map-only scene (no save), Rosewood spawn, camera -216704 639720, zoom 1.0, 1920x1050, player 8303.5 11689.5, `--level 2 --lit-room`. imgdiff vs `game_clean2.png` (crop 650 300 1280 600): 12.54.
+- `port_save_rosewood_2026-11-14.png`: same view with `--save profile/Saves/Sandbox/2026-11-07_22-34-13` (380 chunks from the save, overlay sprites drawn). imgdiff vs `game_clean2.png`, same crop: 12.44.

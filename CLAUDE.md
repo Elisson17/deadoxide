@@ -44,7 +44,7 @@ node tools/class_ledger.mjs  # docs/CLASS_LEDGER.md: which Java classes/methods 
 cargo test -q --release
 sh tests/lua_require_parity.sh
 cargo run -q --release -p zomboid-lua -- .. run
-cargo run -q --release -p zomboid-client -- .. 32_45 --shot screenshots/p.png -216704 639720 1.0 1920 1050 --player 8303.5 11689.5 --level 2 [--zones TownZone] [--lit-room]
+cargo run -q --release -p zomboid-client -- .. 32_45 --shot screenshots/p.png -216704 639720 1.0 1920 1050 --player 8303.5 11689.5 --level 2 [--zones TownZone] [--lit-room] [--save profile/Saves/Sandbox/<name>]
 cargo run -q --release -p zomboid-ctl -- imgdiff .. screenshots/game.png screenshots/p.png 650 300 1280 600
 ```
 

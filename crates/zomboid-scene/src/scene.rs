@@ -12,7 +12,9 @@ use zomboid_content::tiledefs::TileDefs;
 use zomboid_engine::java;
 use zomboid_engine::vfs;
 use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
+use zomboid_engine::zombie::inventory::inventory_item_factory::InventoryItemFactory;
 use zomboid_engine::zombie::iso::cell_loader::{self, LoadContext};
+use zomboid_engine::zombie::iso::chunk_save::SaveLoadContext;
 use zomboid_engine::zombie::iso::iso_chunk::IsoChunk;
 use zomboid_engine::zombie::iso::iso_grid_square::{
     line_clear, GetSquare, IsoGridSquare, TestResults,
@@ -23,7 +25,11 @@ use zomboid_engine::zombie::iso::iso_world::IsoWorld;
 use zomboid_engine::zombie::iso::sprite::iso_sprite_manager::SpriteRef;
 use zomboid_engine::zombie::iso::sprite_details::iso_flag_type::IsoFlagType;
 use zomboid_engine::zombie::iso::sprite_details::iso_object_type::IsoObjectType;
+use zomboid_engine::zombie::iso::worldgen::world_gen_params::WorldGenParams;
+use zomboid_engine::zombie::radio::media::recorded_media::RecordedMedia;
 use zomboid_engine::zombie::sandbox_options::SandboxOptions;
+use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
+use zomboid_engine::zombie::world::dictionary_data::DictionaryData;
 
 /// Instance layout matches the shader: rect (x,y,w,h in world px), uv (u0,v0,u1,v1), atlas layer.
 #[repr(C)]
@@ -140,6 +146,12 @@ fn sprite_collision_flags(world: &IsoWorld, spr: SpriteRef) -> u16 {
     })
 }
 
+/// zombie.iso.IsoObject.overlaySprite: so far only objects loaded from a save carry one (loot spawning, which sets it
+/// on new chunks, is not ported). Its `overlaySpriteColor` tint is not applied.
+fn overlay_sprite(o: &zomboid_engine::zombie::iso::iso_object::IsoObject) -> Option<SpriteRef> {
+    o.save.as_ref().and_then(|s| s.overlay_sprite)
+}
+
 /// World seed used until the client reads `map_worldgen.bin` of a save or creates worlds itself: the Java hash of
 /// the oracle's seed text "DeadOxideOracle", so basements match the reference server world.
 const WORLD_SEED: i64 = -1594728997;
@@ -156,6 +168,79 @@ impl GetSquare for RegionGrid<'_> {
 /// object order, overlays, open curtains, removed trees and table stacking are the original's. `Rand` is seeded with a
 /// fixed value here; random fields (locks, tints) are therefore the same on every run and tints are not drawn yet.
 pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Scene> {
+    load_region_from_save(root, None, x0, y0, x1, y1)
+}
+
+/// What chunk loading reads from a save folder (`Saves/<mode>/<name>`).
+struct SaveFiles {
+    dir: std::path::PathBuf,
+    dictionary: DictionaryData,
+    scripts: ScriptManager,
+    recorded_media: RecordedMedia,
+    recorded_media_lua: String,
+}
+
+impl SaveFiles {
+    fn open(root: &Path, dir: &Path) -> Result<Self> {
+        let read =
+            |p: std::path::PathBuf| vfs::read(&p).map_err(|e| anyhow!("{}: {e}", p.display()));
+        let dictionary =
+            DictionaryData::load_from_byte_buffer(&read(dir.join("WorldDictionary.bin"))?)
+                .map_err(|e| anyhow!("WorldDictionary.bin: {e}"))?;
+        // A save without recorded_media.bin: RecordedMedia.load logs and keeps an empty table.
+        let recorded_media = match read(dir.join("recorded_media.bin")) {
+            Ok(b) => RecordedMedia::load(&b).map_err(|e| anyhow!("recorded_media.bin: {e}"))?,
+            Err(e) => {
+                log::warn!("{e}");
+                RecordedMedia::default()
+            }
+        };
+        let lua = read(root.join("media/lua/shared/RecordedMedia/recorded_media.lua"))?;
+        Ok(SaveFiles {
+            dir: dir.to_path_buf(),
+            dictionary,
+            scripts: ScriptManager::load(root).map_err(|e| anyhow!(e))?,
+            recorded_media,
+            recorded_media_lua: String::from_utf8_lossy(&lua).into_owned(),
+        })
+    }
+
+    /// zombie.iso.worldgen.WorldGenParams.load: the save's world seed (`None` without `map_worldgen.bin`).
+    fn world_seed(dir: &Path) -> Option<i64> {
+        let data = vfs::read(&dir.join("map_worldgen.bin")).ok()?;
+        let (params, err) = WorldGenParams::load(&data);
+        if let Some(e) = err {
+            log::warn!("map_worldgen.bin: {e}");
+        }
+        Some(params.get_seed())
+    }
+}
+
+/// Like `load_region`, but as the game opens a save: chunks that the save's `map/<wx>/<wy>.bin` holds are read from it
+/// (zombie.iso.IsoChunk.LoadOrCreate → LoadFromDisk), the others are created from the map (`LoadBrandNew`, without
+/// world generation); a chunk whose file fails to load is created from the map as `LoadChunk` does after `Blam`. The
+/// world seed for basements is the save's (`map_worldgen.bin`).
+pub fn load_region_from_save(
+    root: &Path,
+    save: Option<&Path>,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+) -> Result<Scene> {
+    let save = save.map(|d| SaveFiles::open(root, d)).transpose()?;
+    let factory = save.as_ref().map(|s| {
+        InventoryItemFactory::new(
+            &s.dictionary,
+            &s.scripts,
+            s.recorded_media.clone(),
+            &s.recorded_media_lua,
+        )
+    });
+    let world_seed = save
+        .as_ref()
+        .and_then(|s| SaveFiles::world_seed(&s.dir))
+        .unwrap_or(WORLD_SEED);
     let mut rand = RandAbstract::new(java::Random::new(1));
     // zombie.SandboxOptions as its constructor leaves it: declared defaults, then the "Apocalypse" preset.
     let mut sandbox = SandboxOptions::new();
@@ -173,7 +258,7 @@ pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Sc
         "Muldraugh, KY",
         &|_| true,
         &alarm,
-        Some(WORLD_SEED),
+        Some(world_seed),
         &mut rand,
     )
     .map_err(|e| anyhow!(e))?;
@@ -199,6 +284,7 @@ pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Sc
         lotpack_cache: None,
     };
     let mut chunks = Vec::new();
+    let mut loaded_from_save = 0usize;
     let (mut zmin, mut zmax) = (i32::MAX, i32::MIN);
     for cx in x0..=x1 {
         for cy in y0..=y1 {
@@ -207,12 +293,53 @@ pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Sc
             }
             for wx in cx * 32..cx * 32 + 32 {
                 for wy in cy * 32..cy * 32 + 32 {
-                    let mut ch = IsoChunk::new(wx, wy);
-                    let mut errors = Vec::new();
-                    cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut errors);
-                    for e in errors {
-                        log::warn!("chunk {wx},{wy}: {e}");
-                    }
+                    let from_save = save.as_ref().zip(factory.as_ref()).and_then(|(sv, f)| {
+                        let path = sv
+                            .dir
+                            .join("map")
+                            .join(wx.to_string())
+                            .join(format!("{wy}.bin"));
+                        let data = vfs::read(&path).ok()?;
+                        let mut sctx = SaveLoadContext {
+                            sprites: &mut *ctx.sprites,
+                            alias: ctx.alias,
+                            dictionary: &sv.dictionary,
+                            items: f,
+                            meta_grid: &mut *ctx.meta_grid,
+                            rand: &mut *ctx.rand,
+                            has_lot_header: true,
+                        };
+                        match IsoChunk::load_from_disk_or_buffer(&data, wx, wy, &mut sctx) {
+                            Ok(ch) => Some(ch),
+                            Err(e) => {
+                                log::warn!(
+                                    "chunk {wx},{wy} from the save: {e}; created from the map"
+                                );
+                                None
+                            }
+                        }
+                    });
+                    let ch = match from_save {
+                        Some(ch) => {
+                            loaded_from_save += 1;
+                            ch
+                        }
+                        None => {
+                            let mut ch = IsoChunk::new(wx, wy);
+                            let mut errors = Vec::new();
+                            cell_loader::load_cell_binary_chunk(
+                                &mut ctx,
+                                wx,
+                                wy,
+                                &mut ch,
+                                &mut errors,
+                            );
+                            for e in errors {
+                                log::warn!("chunk {wx},{wy}: {e}");
+                            }
+                            ch
+                        }
+                    };
                     zmin = zmin.min(ch.get_min_level());
                     zmax = zmax.max(ch.get_max_level());
                     chunks.push(ch);
@@ -225,6 +352,12 @@ pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Sc
     }
     let missing = ctx.missing_tiles.len() as u64;
     drop(ctx);
+    if save.is_some() {
+        log::info!(
+            "{loaded_from_save} of {} chunks loaded from the save",
+            chunks.len()
+        );
+    }
     // zombie.iso.IsoGridSquare.RecalcProperties for every square, then the collide matrices over the loaded region.
     for ch in &mut chunks {
         for z in ch.get_min_level()..=ch.get_max_level() {
@@ -247,6 +380,7 @@ pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Sc
                     for s in o
                         .sprite
                         .iter()
+                        .chain(overlay_sprite(o).iter())
                         .chain(o.attached_anim_sprite.iter().flatten())
                     {
                         wanted.extend(world.sprites.sprite(*s).name.clone());
@@ -284,6 +418,7 @@ pub fn load_region(root: &Path, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<Sc
         bounds: (x0, y0, x1, y1),
         levels: (zmin, zmax),
         missing,
+        loaded_from_save,
     };
     let mut scene = Scene {
         atlas,
@@ -308,6 +443,8 @@ pub struct SceneState {
     bounds: (i32, i32, i32, i32),
     levels: (i32, i32),
     missing: u64,
+    /// Chunks read from the save's `map/*.bin` (the rest were created from the map).
+    pub loaded_from_save: usize,
 }
 
 impl SceneState {
@@ -818,6 +955,7 @@ impl Scene {
                 bounds,
                 levels,
                 missing,
+                ..
             } = &state;
             let (x0, y0, x1, y1) = *bounds;
             let (zmin, zmax) = *levels;
@@ -898,9 +1036,11 @@ impl Scene {
                         let (px, py) = (p[0] as i32, p[1] as i32);
                         let room = rooms.get(&(gx, gy, z)).copied().unwrap_or(-1);
                         for o in &sq.objects {
+                            // IsoObject.render: the sprite, then renderOverlaySprites, then renderAttachedSprites.
                             for (k, spr) in o
                                 .sprite
                                 .iter()
+                                .chain(overlay_sprite(o).iter())
                                 .chain(o.attached_anim_sprite.iter().flatten())
                                 .enumerate()
                             {
@@ -1183,6 +1323,57 @@ mod collision_oracle_tests {
                     );
                 }
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "real-content acceptance: loads a complete cell, the player's own save and the texture atlas"]
+    fn the_players_save_supplies_its_chunks_and_their_overlay_sprites() -> anyhow::Result<()> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let save = root.join("zomboid-rs/profile/Saves/Sandbox/2026-11-07_22-34-13");
+        if !save.join("map_worldgen.bin").exists() {
+            eprintln!("skipped: no save at {}", save.display());
+            return Ok(());
+        }
+        // Chunk files of cell 32,45 in the save folder (chunks 1024..1056 x 1440..1472).
+        let mut in_save = 0;
+        for wx in 1024..1056 {
+            for wy in 1440..1472 {
+                in_save += usize::from(save.join(format!("map/{wx}/{wy}.bin")).exists());
+            }
+        }
+        let scene = load_region_from_save(&root, Some(&save), 32, 45, 32, 45)?;
+        let state = scene.state.as_ref().ok_or_else(|| anyhow!("no state"))?;
+        assert!(in_save > 0);
+        assert_eq!(state.loaded_from_save, in_save, "every chunk file loads");
+        // Overlay sprites of two bookshelves in the spawn house, as the ORIGINAL's IsoChunk.LoadFromDisk leaves them
+        // (tests/original_probe/ChunkSaveProbe.java on this save, 2026-11-14).
+        for ((x, y), base, overlay) in [
+            (
+                (8304, 11688),
+                "furniture_shelving_01_40",
+                "books&misc_01_62",
+            ),
+            (
+                (8305, 11693),
+                "furniture_shelving_01_41",
+                "books&misc_02_63",
+            ),
+        ] {
+            let sq = state
+                .get_grid_square(x, y, 0)
+                .ok_or_else(|| anyhow!("no square {x},{y}"))?;
+            let name = |s: SpriteRef| state.world.sprites.sprite(s).name.clone();
+            let found = sq.objects.iter().find_map(|o| {
+                (o.sprite.and_then(name).as_deref() == Some(base))
+                    .then(|| overlay_sprite(o).and_then(name))
+            });
+            assert_eq!(found, Some(Some(overlay.to_string())), "{x},{y}");
+            assert!(
+                scene.atlas.sprites.contains_key(overlay),
+                "{overlay} in atlas"
+            );
         }
         Ok(())
     }

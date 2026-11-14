@@ -653,7 +653,24 @@ fn main() -> anyhow::Result<()> {
     };
     let ((x0, y0), (x1, y1)) = (pc(r0), pc(r1));
     let t0 = std::time::Instant::now();
-    let mut scene = load_region(&root, x0, y0, x1, y1)?;
+    // --save: chunks the save holds come from its map/*.bin (IsoChunk.LoadOrCreate), the rest from the map.
+    let save_dir = a.iter().position(|s| s == "--save").map(|j| {
+        let p = std::path::Path::new(&a[j + 1]);
+        if p.is_dir() {
+            p.to_path_buf()
+        } else {
+            p.parent().unwrap_or(p).to_path_buf()
+        }
+    });
+    let mut scene = scene::load_region_from_save(&root, save_dir.as_deref(), x0, y0, x1, y1)?;
+    if let Some(st) = &scene.state {
+        if save_dir.is_some() {
+            println!(
+                "save map: {} chunks loaded from the save",
+                st.loaded_from_save
+            );
+        }
+    }
     println!(
         "cell {cell}: {} sprites, atlas {}x{}, unresolved {}, levels {}, loaded in {:.2}s",
         scene.instances.len(),

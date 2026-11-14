@@ -2232,62 +2232,11 @@ mod save_dump {
 /// runs (seeded basements merged into the meta grid); pairs with ChunkSaveProbe.java.
 pub fn chunksave(root: &Path, save: &Path) -> Result<String, String> {
     use zomboid_engine::zombie::basements::Basements;
-    use zomboid_engine::zombie::inventory::inventory_item::{ItemFactory, ItemTemplate, ItemType};
+    use zomboid_engine::zombie::inventory::inventory_item_factory::InventoryItemFactory;
     use zomboid_engine::zombie::iso::chunk_save::SaveLoadContext;
     use zomboid_engine::zombie::radio::media::recorded_media::RecordedMedia;
-    use zomboid_engine::zombie::scripting::item::Value;
     use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
     use zomboid_engine::zombie::world::dictionary_data::DictionaryData;
-
-    /// What the factory needs from an item script: obsolete, ItemType (`None` when unknown) and conditionMax.
-    struct ScriptInfo {
-        obsolete: bool,
-        item_type: Option<ItemType>,
-        condition_max: i32,
-        hunger_change: f32,
-    }
-    /// InventoryItemFactory.CreateItem(short): a valid dictionary entry whose item script exists.
-    struct Factory<'a> {
-        dictionary: &'a DictionaryData,
-        scripts: std::collections::HashMap<String, ScriptInfo>,
-        recorded_media: RecordedMedia,
-        /// The `RecMedia["<id>"]` keys of media/lua/shared/RecordedMedia/recorded_media.lua, which the Lua
-        /// `OnInitRecordedMedia` handler registers.
-        media_ids: std::collections::HashSet<String>,
-    }
-    impl ItemFactory for Factory<'_> {
-        fn create_item(&self, registry_id: i16) -> Option<ItemTemplate> {
-            let info = self.dictionary.items.get(&registry_id)?;
-            if info.obsolete || info.removed {
-                return None;
-            }
-            let script = if info.full_type.starts_with("Moveables.") {
-                "Moveables.Moveable"
-            } else {
-                info.full_type.as_str()
-            };
-            let si = self.scripts.get(script)?;
-            Some(ItemTemplate {
-                full_type: info.full_type.clone(),
-                item_type: si.item_type?,
-                condition_max: si.condition_max,
-                // Item.InstanceItem: food.setBaseHunger(this.hungerChange / 100.0F)
-                base_hunger: if si.item_type == Some(ItemType::Food) {
-                    si.hunger_change / 100.0
-                } else {
-                    0.0
-                },
-            })
-        }
-        fn is_obsolete(&self, full_type: &str) -> bool {
-            self.scripts.get(full_type).is_some_and(|s| s.obsolete)
-        }
-        fn media_data_from_index(&self, index: i16) -> Option<String> {
-            self.recorded_media
-                .get_media_data_from_index(index, &|id| self.media_ids.contains(id))
-                .map(str::to_string)
-        }
-    }
 
     let media = root.join("media");
     let (mut sm, alias, mut defs) = load_tile_definitions(root)?;
@@ -2318,50 +2267,12 @@ pub fn chunksave(root: &Path, save: &Path) -> Result<String, String> {
         &std::fs::read(&media_path).map_err(|e| format!("{}: {e}", media_path.display()))?,
     )?;
     let lua_path = media.join("lua/shared/RecordedMedia/recorded_media.lua");
-    let media_ids = std::fs::read_to_string(&lua_path)
-        .map_err(|e| format!("{}: {e}", lua_path.display()))?
-        .lines()
-        .filter_map(|l| {
-            l.strip_prefix("RecMedia[\"")?
-                .split('"')
-                .next()
-                .map(str::to_string)
-        })
-        .collect();
-    let factory = Factory {
+    let factory = InventoryItemFactory::new(
+        &dictionary,
+        &scripts,
         recorded_media,
-        media_ids,
-        dictionary: &dictionary,
-        scripts: scripts
-            .items
-            .iter()
-            .map(|i| {
-                let item_type = i
-                    .unported
-                    .iter()
-                    .rev()
-                    .find(|(k, _)| k == "itemtype")
-                    .and_then(|(_, v)| ItemType::from_script(java::trim(v)));
-                let condition_max = match i.get("conditionMax") {
-                    Some(Value::I32(v)) => *v,
-                    _ => 10,
-                };
-                let hunger_change = match i.get("hungerChange") {
-                    Some(Value::F32(v)) => *v,
-                    _ => 0.0,
-                };
-                (
-                    i.full_name(),
-                    ScriptInfo {
-                        obsolete: matches!(i.get("obsolete"), Some(Value::Bool(true))),
-                        item_type,
-                        condition_max,
-                        hunger_change,
-                    },
-                )
-            })
-            .collect(),
-    };
+        &std::fs::read_to_string(&lua_path).map_err(|e| format!("{}: {e}", lua_path.display()))?,
+    );
     let mut files = std::collections::BTreeMap::new();
     let map = save.join("map");
     for xd in std::fs::read_dir(&map).map_err(|e| format!("{}: {e}", map.display()))? {

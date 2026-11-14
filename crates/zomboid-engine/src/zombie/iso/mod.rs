@@ -20,3 +20,4 @@ pub mod room_def;
 pub mod room_id;
 pub mod sprite;
 pub mod sprite_details;
+pub mod worldgen;

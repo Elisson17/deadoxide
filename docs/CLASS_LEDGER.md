@@ -4,12 +4,12 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 123 of 3424 classes touched, 380 of 46121 method names cited (0.8%), 962280 decompiled lines.**
+**Total: 124 of 3424 classes touched, 383 of 46121 method names cited (0.8%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 48 | 7277 | 225 (3.1%) | 144530 |
+| zombie.iso | 346 | 49 | 7277 | 228 (3.1%) | 144530 |
 | zombie.core | 450 | 14 | 5920 | 61 (1.0%) | 93574 |
 | zombie.characters | 200 | 1 | 5028 | 1 (0.0%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
@@ -110,7 +110,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.gameStates.ChooseGameInfo | 1 / 76 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs |
 | zombie.inventory.CompressIdenticalItems | 0 / 9 | crates/zomboid-engine/src/zombie/inventory/compress_identical_items.rs |
 | zombie.inventory.InventoryItem | 2 / 613 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
-| zombie.inventory.InventoryItemFactory | 1 / 3 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
+| zombie.inventory.InventoryItemFactory | 1 / 3 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs, crates/zomboid-engine/src/zombie/inventory/inventory_item_factory.rs |
 | zombie.inventory.ItemContainer | 1 / 304 | crates/zomboid-engine/src/zombie/inventory/item_container.rs |
 | zombie.inventory.types.AlarmClock | 1 / 32 | crates/zomboid-engine/src/zombie/inventory/types/alarm_clock.rs |
 | zombie.inventory.types.Clothing | 2 / 115 | crates/zomboid-engine/src/zombie/inventory/types/clothing.rs |
@@ -136,7 +136,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.IsoMetaChunk | 7 / 27 | crates/zomboid-engine/src/zombie/iso/iso_meta_chunk.rs |
 | zombie.iso.IsoMetaGrid | 15 / 98 | crates/zomboid-content/src/fishing_zones.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMovingObject | 6 / 194 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs, crates/zomboid-scene/src/scene.rs |
-| zombie.iso.IsoObject | 7 / 393 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/iso_object.rs |
+| zombie.iso.IsoObject | 7 / 393 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/iso_object.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoWallBloodSplat | 0 / 6 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs |
 | zombie.iso.IsoWorld | 11 / 131 | crates/zomboid-engine/src/zombie/iso/iso_world.rs |
 | zombie.iso.LosUtil | 1 / 7 | crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-scene/src/scene.rs |
@@ -170,6 +170,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.sprite.IsoSpriteGrid | 15 / 16 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_grid.rs |
 | zombie.iso.sprite.IsoSpriteManager | 2 / 6 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_manager.rs |
 | zombie.iso.sprite.SpriteGridParseData | 3 / 3 | crates/zomboid-engine/src/zombie/iso/sprite/sprite_grid_parse_data.rs |
+| zombie.iso.worldgen.WorldGenParams | 3 / 15 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_params.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.network.id.ObjectID | 1 / 17 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs |
 | zombie.radio.devices.DeviceData | 1 / 116 | crates/zomboid-engine/src/zombie/radio/devices/device_data.rs |
 | zombie.radio.devices.DevicePresets | 1 / 16 | crates/zomboid-engine/src/zombie/radio/devices/device_data.rs |
