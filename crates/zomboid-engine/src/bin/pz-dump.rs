@@ -50,6 +50,7 @@ fn main() {
         Some("chunksave") if a.len() == 4 => chunksave(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
         Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
+        Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -1507,7 +1508,7 @@ mod save_dump {
     pub fn fh(f: f32) -> String {
         format!("{:x}", f.to_bits())
     }
-    fn dh(d: f64) -> String {
+    pub fn dh(d: f64) -> String {
         format!("{:x}", d.to_bits())
     }
     fn b(v: bool) -> char {
@@ -1534,7 +1535,7 @@ mod save_dump {
             LuaValue::Table(t) => table(t),
         }
     }
-    fn table(t: &KahluaTable) -> String {
+    pub fn table(t: &KahluaTable) -> String {
         let mut l: Vec<String> = t
             .entries
             .iter()
@@ -3374,5 +3375,175 @@ pub fn animalzones(root: &Path, save: &Path) -> Result<String, String> {
             let _ = writeln!(sb, "AC {x} {y} {} {h:x}", cell.animal_zones.len());
         }
     }
+    Ok(sb)
+}
+
+/// The save's `map_t.bin` through `GameTime.load` as a single-player game reads it, into a new game time and climate;
+/// what the load sets, in GameTimeProbe.java's format.
+pub fn gametime(save: &Path) -> Result<String, String> {
+    use save_dump::{dh, fh, table};
+    use zomboid_engine::zombie::game_time::{CorePoisonous, GameTime};
+    use zomboid_engine::zombie::iso::map_meta::MetaSide;
+    use zomboid_engine::zombie::iso::weather::climate_color_info::ClimateColorInfo;
+    use zomboid_engine::zombie::iso::weather::climate_manager::{AirFront, ClimateManager};
+    let p = save.join("map_t.bin");
+    let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    let mut gt = GameTime::default();
+    let mut core = CorePoisonous::default();
+    let mut cm = ClimateManager::default();
+    let mut log = Vec::new();
+    gt.load(
+        &data,
+        -1,
+        MetaSide::SinglePlayer,
+        &mut core,
+        &mut cm,
+        &mut log,
+    )?;
+    for l in &log {
+        eprintln!("{l}");
+    }
+    let b = |v: bool| u8::from(v);
+    let null = |s: &Option<String>| s.clone().unwrap_or_else(|| "null".to_string());
+    let front = |f: &AirFront| {
+        format!(
+            "{} {} {} {} {} {} {} {}",
+            fh(f.days),
+            fh(f.max_noise),
+            fh(f.total_noise),
+            f.type_,
+            fh(f.strength),
+            fh(f.front_wind_angle_degrees),
+            fh(f.noise_cache[0]),
+            fh(f.noise_cache[1])
+        )
+    };
+    let color = |c: &ClimateColorInfo| {
+        c.interior
+            .iter()
+            .chain(c.exterior.iter())
+            .map(|v| format!(" {}", fh(*v)))
+            .collect::<String>()
+    };
+    let idx = |i: Option<usize>| i.map_or(-1, |i| i as i64);
+    let mut sb = String::new();
+    let _ = writeln!(
+        sb,
+        "GT {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+        fh(gt.multiplier),
+        gt.nights_survived,
+        gt.target_zombies,
+        fh(gt.last_time_of_day),
+        fh(gt.time_of_day),
+        gt.day,
+        gt.month,
+        gt.year,
+        gt.helicopter_day1,
+        gt.helicopter_time1_start,
+        gt.helicopter_time1_end,
+        gt.minutes_stamp,
+        gt.get_hour(),
+        gt.get_minutes(),
+        dh(gt.get_world_age_hours())
+    );
+    let _ = writeln!(
+        sb,
+        "GTT {}",
+        gt.table.as_ref().map_or("null".to_string(), table)
+    );
+    let _ = writeln!(
+        sb,
+        "CORE {} {}",
+        null(&core.poisonous_berry),
+        null(&core.poisonous_mushroom)
+    );
+    let _ = writeln!(
+        sb,
+        "CM {} {} {} {} {} {} {} {} {}",
+        dh(cm.simplex_offset_a),
+        dh(cm.simplex_offset_b),
+        dh(cm.simplex_offset_c),
+        dh(cm.simplex_offset_d),
+        fh(cm.snow_frac_now),
+        fh(cm.snow_strength),
+        b(cm.can_do_winter_sprites),
+        b(cm.day_do_fog),
+        fh(cm.day_fog_strength)
+    );
+    let _ = writeln!(sb, "CF {}", front(&cm.current_front));
+    let wp = &cm.weather_period;
+    let _ = writeln!(sb, "WP {}", b(wp.is_running));
+    if wp.is_running {
+        let _ = writeln!(
+            sb,
+            "WPR {} {} {} {} {} {} {} {} {} {}",
+            wp.weather_stage_index,
+            fh(wp.current_strength),
+            fh(wp.rain_threshold),
+            b(wp.is_thunder_storm),
+            b(wp.is_tropical_storm),
+            b(wp.is_blizzard),
+            fh(wp.wind_angle_dir_mod),
+            dh(wp.duration),
+            wp.weather_stages.len(),
+            idx(wp.current_stage)
+        );
+        let _ = writeln!(sb, "WPF {}", front(&wp.front_cache));
+        for (i, s) in wp.weather_stages.iter().enumerate() {
+            let lerp = |v: Option<_>| {
+                v.map_or(
+                    "null",
+                    |v: zomboid_engine::zombie::iso::weather::weather_period::StrLerpVal| v.name(),
+                )
+            };
+            let _ = writeln!(
+                sb,
+                "WS {i} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+                s.stage_id,
+                dh(s.stage_start),
+                dh(s.stage_end),
+                dh(s.stage_duration),
+                fh(s.entry_strength),
+                fh(s.exit_strength),
+                fh(s.target_strength),
+                lerp(s.lerp_mid_val),
+                lerp(s.lerp_end_val),
+                b(s.has_started_cloud),
+                null(&s.mod_id),
+                fh(s.fog_strength),
+                idx(s.previous_stage),
+                idx(s.next_stage),
+                b(s.creation_finished)
+            );
+        }
+        let _ = writeln!(sb, "WPC{}", color(&wp.cloud_color));
+    }
+    for (i, c) in cm.thunder_storm.clouds.iter().enumerate() {
+        if c.is_running {
+            let _ = writeln!(
+                sb,
+                "TS {i} 1 {} {} {} {} {} {} {} {} {} {} {} {}",
+                c.start_x,
+                c.start_y,
+                c.end_x,
+                c.end_y,
+                fh(c.radius),
+                fh(c.angle),
+                fh(c.strength),
+                fh(c.thunder_ratio),
+                dh(c.start_time),
+                dh(c.end_time),
+                dh(c.duration),
+                fh(c.percentage_offset)
+            );
+        } else {
+            let _ = writeln!(sb, "TS {i} 0");
+        }
+    }
+    let _ = writeln!(
+        sb,
+        "CMT {}",
+        cm.mod_data_table.as_ref().map_or("null".to_string(), table)
+    );
     Ok(sb)
 }

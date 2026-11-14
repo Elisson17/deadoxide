@@ -26,5 +26,6 @@ pub mod room_id;
 pub mod sprite;
 pub mod sprite_details;
 pub mod vector2;
+pub mod weather;
 pub mod worldgen;
 pub mod zones;

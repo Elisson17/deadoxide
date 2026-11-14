@@ -3,6 +3,7 @@ pub mod characters;
 pub mod core;
 pub mod erosion;
 pub mod game_states;
+pub mod game_time;
 pub mod inventory;
 pub mod iso;
 pub mod pathfind;

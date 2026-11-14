@@ -1,5 +1,5 @@
 //! se.krka.kahlua.j2se.KahluaTableImpl: the save form of a Lua table (object and square `modData`).
-use crate::java_nio::{read_string, ByteBuffer};
+use crate::java_nio::{read_string, read_string_stream, ByteBuffer};
 
 /// A Lua value as a saved table can hold it.
 #[derive(Clone, Debug, PartialEq)]
@@ -57,6 +57,51 @@ impl KahluaTable {
             }
         }
         Ok(t)
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.load(DataInputStream, int): as the ByteBuffer form, but into this table
+    /// without wiping it (entries already there stay unless a loaded key replaces them), with strings as
+    /// `GameWindow.ReadString(DataInputStream)`, and a boolean true only for byte 1.
+    pub fn load_stream(&mut self, b: &mut ByteBuffer, world_version: i32) -> Result<(), String> {
+        let count = b.get_int()?;
+        for _ in 0..count {
+            if world_version >= 25 {
+                let key_byte = b.get()?;
+                let key = Self::load_value_stream(b, world_version, key_byte)?;
+                let value_byte = b.get()?;
+                let value = Self::load_value_stream(b, world_version, value_byte)?;
+                self.rawset(key, value);
+            } else {
+                let value_byte = b.get()?;
+                let key = LuaValue::String(read_string_stream(b)?);
+                let value = Self::load_value_stream(b, world_version, value_byte)?;
+                self.rawset(key, value);
+            }
+        }
+        Ok(())
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.load(DataInputStream, int, byte): a nested table is a new table.
+    fn load_value_stream(
+        b: &mut ByteBuffer,
+        world_version: i32,
+        sbyt: i8,
+    ) -> Result<LuaValue, String> {
+        Ok(match sbyt {
+            0 => LuaValue::String(read_string_stream(b)?),
+            1 => LuaValue::Number(b.get_double()?),
+            3 => LuaValue::Boolean(b.get()? == 1),
+            2 => {
+                let mut t = KahluaTable::default();
+                t.load_stream(b, world_version)?;
+                LuaValue::Table(t)
+            }
+            _ => {
+                return Err(format!(
+                    "java.lang.RuntimeException: invalid lua table type {sbyt}"
+                ))
+            }
+        })
     }
 
     /// se.krka.kahlua.j2se.KahluaTableImpl.load (ByteBuffer, int, byte)

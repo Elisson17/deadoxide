@@ -4,20 +4,20 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 165 of 3424 classes touched, 487 of 46121 method names cited (1.1%), 962280 decompiled lines.**
+**Total: 170 of 3424 classes touched, 497 of 46121 method names cited (1.1%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 55 | 7277 | 275 (3.8%) | 144530 |
-| zombie.core | 450 | 16 | 5920 | 62 (1.0%) | 93574 |
+| zombie.iso | 346 | 59 | 7277 | 284 (3.9%) | 144530 |
+| zombie.core | 450 | 17 | 5920 | 62 (1.0%) | 93574 |
 | zombie.characters | 200 | 19 | 5028 | 43 (0.9%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
 | zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 11 | 1411 | 10 (0.7%) | 28275 |
-| zombie | 60 | 3 | 1192 | 12 (1.0%) | 22185 |
+| zombie | 60 | 3 | 1192 | 13 (1.1%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 5 | 1328 | 3 (0.2%) | 18604 |
@@ -75,7 +75,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | Class | Cited / method names | Rust |
 |---|---:|---|
 | se.krka.kahlua.j2se.KahluaTableImpl | 2 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
-| zombie.GameTime | 7 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-scene/src/sim.rs |
+| zombie.GameTime | 8 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.GameWindow | 1 / 47 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.SandboxOptions | 4 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.basements.BasementDefinition | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
@@ -106,6 +106,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.traits.CharacterTraits | 1 / 15 | crates/zomboid-engine/src/zombie/characters/traits/character_traits.rs |
 | zombie.config.DoubleConfigOption | 1 / 17 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
 | zombie.config.IntegerConfigOption | 1 / 16 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
+| zombie.core.Color | 0 / 58 | crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
 | zombie.core.TilePropertyAliasMap | 5 / 6 | crates/zomboid-engine/src/zombie/core/tile_property_alias_map.rs |
 | zombie.core.Translator | 5 / 41 | crates/zomboid-engine/src/zombie/core/translator.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-lua/src/text.rs |
 | zombie.core.math.PZMath | 13 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
@@ -194,6 +195,10 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.sprite.IsoSpriteGrid | 15 / 16 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_grid.rs |
 | zombie.iso.sprite.IsoSpriteManager | 2 / 6 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_manager.rs |
 | zombie.iso.sprite.SpriteGridParseData | 3 / 3 | crates/zomboid-engine/src/zombie/iso/sprite/sprite_grid_parse_data.rs |
+| zombie.iso.weather.ClimateColorInfo | 1 / 15 | crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
+| zombie.iso.weather.ClimateManager | 2 / 221 | crates/zomboid-engine/src/zombie/iso/weather/climate_manager.rs |
+| zombie.iso.weather.ThunderStorm | 1 / 30 | crates/zomboid-engine/src/zombie/iso/weather/thunder_storm.rs |
+| zombie.iso.weather.WeatherPeriod | 5 / 87 | crates/zomboid-engine/src/zombie/iso/weather/weather_period.rs |
 | zombie.iso.worldgen.WorldGenParams | 3 / 15 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_params.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.zones.Zone | 25 / 68 | crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
 | zombie.iso.zones.ZoneGeometryType | 0 / 0 | crates/zomboid-engine/src/zombie/iso/zones/zone_geometry_type.rs |

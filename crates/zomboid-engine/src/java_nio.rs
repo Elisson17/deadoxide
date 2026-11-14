@@ -90,6 +90,29 @@ pub fn read_string(b: &mut ByteBuffer) -> Result<String, String> {
     Ok(String::from_utf8_lossy(b.get_bytes(n as usize)?).into_owned())
 }
 
+/// zombie.GameWindow.ReadString(DataInputStream): an int length (0 is ""; over 65536 the original throws, and a
+/// negative one fails in `new StringBuilder(len)`), then that many UTF-16 chars (`readChar`). Unpaired surrogates,
+/// which a Java String can hold, become U+FFFD.
+pub fn read_string_stream(b: &mut ByteBuffer) -> Result<String, String> {
+    let len = b.get_int()?;
+    if len == 0 {
+        return Ok(String::new());
+    }
+    if len > 65536 {
+        return Err(
+            "java.lang.RuntimeException: GameWindow.ReadString: string is too long, corrupted save?".to_string(),
+        );
+    }
+    if len < 0 {
+        return Err(format!("java.lang.NegativeArraySizeException: {len}"));
+    }
+    let mut units = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        units.push(b.get_char()?);
+    }
+    Ok(String::from_utf16_lossy(&units))
+}
+
 /// java.io.DataInputStream.readUTF: an unsigned short byte count, then "modified UTF-8" (1-, 2- and 3-byte forms; NUL as
 /// `C0 80`; characters outside the BMP as two 3-byte surrogates). Malformed input is the original's
 /// `UTFDataFormatException`. Unpaired surrogates, which a Java String can hold, become U+FFFD.

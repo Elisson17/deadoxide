@@ -199,6 +199,15 @@ fn animal_zones_match_original() {
 }
 
 #[test]
+fn game_time_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED gametime: the isolated profile's save is not present");
+        return;
+    };
+    check("gametime", &[&save]);
+}
+
+#[test]
 fn items_match_original() {
     // The field list tools/gen_item_params.py hands to both sides: the table's fields minus aimingMod.
     let names: Vec<&str> = zomboid_engine::zombie::scripting::item_params_table::FIELDS
