@@ -72,6 +72,8 @@ sel mapmeta && server_case mapmeta MapMetaProbe "$HERE/profile/Saves/Sandbox/202
 sel mapzone && server_case mapzone MapZoneProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the same plus the outline of every wide polyline zone (native ClipperOffset + the Clipper64 union, ported Clipper2)
 sel zoneoutlines && server_case zoneoutlines MapZoneProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" outlines
+# the same plus Zone.getTotalArea of every zone: the native Clipper union and earcut triangles of polygons and outlines
+sel zonetriangles && server_case zonetriangles MapZoneProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" triangles
 sel doortoggle && { cp tests/golden/engine/specialcollide.sha256 target/oracle/sc.keep 2>/dev/null; server_case specialcollide SpecialCollideProbe 129 182 toggle; mv tests/golden/engine/specialcollide.sha256 tests/golden/engine/doortoggle.sha256 2>/dev/null; cp target/oracle/sc.keep tests/golden/engine/specialcollide.sha256 2>/dev/null; }
 sel los && server_case los LosProbe 129 182
 sel losdoors && { server_case los LosProbe 129 182 toggle; cp tests/golden/engine/los.sha256 tests/golden/engine/losdoors.sha256 2>/dev/null; server_case los LosProbe 129 182; }

@@ -4,19 +4,19 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 162 of 3424 classes touched, 472 of 46121 method names cited (1.0%), 962280 decompiled lines.**
+**Total: 163 of 3424 classes touched, 480 of 46121 method names cited (1.0%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 55 | 7277 | 266 (3.7%) | 144530 |
+| zombie.iso | 346 | 55 | 7277 | 272 (3.7%) | 144530 |
 | zombie.core | 450 | 16 | 5920 | 62 (1.0%) | 93574 |
 | zombie.characters | 200 | 17 | 5028 | 39 (0.8%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
 | zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
-| zombie.vehicles | 42 | 10 | 1411 | 8 (0.6%) | 28275 |
+| zombie.vehicles | 42 | 11 | 1411 | 10 (0.7%) | 28275 |
 | zombie | 60 | 3 | 1192 | 12 (1.0%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
@@ -152,7 +152,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.IsoLot | 4 / 9 | crates/zomboid-engine/src/zombie/iso/iso_lot.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaCell | 7 / 28 | crates/zomboid-engine/src/zombie/iso/iso_meta_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaChunk | 11 / 27 | crates/zomboid-engine/src/zombie/iso/iso_meta_chunk.rs |
-| zombie.iso.IsoMetaGrid | 22 / 98 | crates/zomboid-content/src/fishing_zones.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/iso/map_meta.rs, crates/zomboid-engine/src/zombie/iso/map_zone.rs |
+| zombie.iso.IsoMetaGrid | 22 / 98 | crates/zomboid-content/src/fishing_zones.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/iso/map_meta.rs, crates/zomboid-engine/src/zombie/iso/map_zone.rs, crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
 | zombie.iso.IsoMovingObject | 6 / 194 | crates/zomboid-engine/src/zombie/iso/iso_moving_object.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoObject | 7 / 393 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/iso_object.rs, crates/zomboid-engine/src/zombie/vehicles/vehicles_db2.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoWallBloodSplat | 0 / 6 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs |
@@ -193,7 +193,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.sprite.IsoSpriteManager | 2 / 6 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_manager.rs |
 | zombie.iso.sprite.SpriteGridParseData | 3 / 3 | crates/zomboid-engine/src/zombie/iso/sprite/sprite_grid_parse_data.rs |
 | zombie.iso.worldgen.WorldGenParams | 3 / 15 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_params.rs, crates/zomboid-scene/src/scene.rs |
-| zombie.iso.zones.Zone | 19 / 68 | crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
+| zombie.iso.zones.Zone | 25 / 68 | crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
 | zombie.iso.zones.ZoneGeometryType | 0 / 0 | crates/zomboid-engine/src/zombie/iso/zones/zone_geometry_type.rs |
 | zombie.network.id.ObjectID | 1 / 17 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs |
 | zombie.pathfind.LiangBarsky | 1 / 1 | crates/zomboid-engine/src/zombie/pathfind/liang_barsky.rs |
@@ -215,6 +215,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.util.io.BitHeader | 1 / 27 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.util.io.BitHeaderRead | 0 / 0 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.vehicles.BaseVehicle | 1 / 659 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
+| zombie.vehicles.Clipper | 2 / 6 | crates/zomboid-engine/src/zombie/vehicles/clipper.rs |
 | zombie.vehicles.ClipperOffset | 0 / 0 | crates/zomboid-engine/src/zombie/vehicles/clipper_offset.rs |
 | zombie.vehicles.VehicleAlarm | 0 / 20 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
 | zombie.vehicles.VehicleDoor | 1 / 10 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |

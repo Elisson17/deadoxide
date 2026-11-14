@@ -6,7 +6,11 @@ use crate::java_nio::ByteBuffer;
 use crate::zombie::core::math::pz_math;
 use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::pathfind::liang_barsky;
+use crate::zombie::vehicles::clipper::{Clipper, JavaException};
 use crate::zombie::vehicles::clipper_offset;
+
+/// zombie.iso.IsoMetaGrid.clipperBuffer: `ByteBuffer.allocateDirect(3072)`, shared by every zone's triangulation.
+const CLIPPER_BUFFER_CAPACITY: usize = 3072;
 
 /// zombie.iso.zones.Zone.s_PreferredZoneTypes
 const PREFERRED_ZONE_TYPES: [&str; 8] = [
@@ -21,7 +25,7 @@ const PREFERRED_ZONE_TYPES: [&str; 8] = [
 ];
 
 /// zombie.iso.zones.Zone. Strings are `None` where the original holds null (an index missing from the save's string
-/// map). The triangulation fields and the zone-story picks are not ported.
+/// map). The zone-story picks are not ported.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Zone {
     pub name: Option<String>,
@@ -45,6 +49,28 @@ pub struct Zone {
     /// (saves before world version 215), which is not modelled.
     pub id: Option<(i64, i64)>,
     pub is_preferred_zone_for_square: bool,
+    /// zombie.iso.zones.Zone.triangles: the triangulation's corners as x, y pairs, made on first use.
+    pub triangles: Option<Vec<f32>>,
+    /// zombie.iso.zones.Zone.triangleAreas
+    pub triangle_areas: Option<Vec<f32>>,
+    /// zombie.iso.zones.Zone.totalArea
+    pub total_area: f32,
+    /// zombie.iso.zones.Zone.triangulateFailed
+    pub triangulate_failed: bool,
+}
+
+/// org.joml.Vector2f.length(float, float): `(float) Math.sqrt(x * x + y * y)`, the sum in float.
+fn vector2f_length(x: f32, y: f32) -> f32 {
+    f64::from(x * x + y * y).sqrt() as f32
+}
+
+/// zombie.iso.zones.Zone.triangleArea: Heron's formula in float, the root in double.
+fn triangle_area(x0: f32, y0: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let a = vector2f_length(x1 - x0, y1 - y0);
+    let b = vector2f_length(x2 - x1, y2 - y1);
+    let c = vector2f_length(x0 - x2, y0 - y2);
+    let s = (a + b + c) / 2.0;
+    f64::from(s * (s - a) * (s - b) * (s - c)).sqrt() as f32
 }
 
 /// zombie.iso.zones.Zone.isLeft
@@ -421,10 +447,123 @@ impl Zone {
             || self.is_point_in_polyline_winding_number((sx + ex) / 2.0, (sy + ey) / 2.0)
     }
 
+    /// zombie.iso.zones.Zone.getTotalArea: the triangulated area of a polygon or wide polyline (triangulating it on
+    /// first use), otherwise `width * height` (int multiplication). `Err` for an exception the triangulation raises.
+    pub fn get_total_area(&mut self, clipper: &mut Clipper) -> Result<f32, JavaException> {
+        if !self.is_rectangle()
+            && !self.is_point()
+            && (!self.is_polyline() || self.polyline_width > 0)
+        {
+            self.get_polygon_triangles(clipper)?;
+            self.get_polyline_outline_triangles(clipper)?;
+            Ok(self.total_area)
+        } else {
+            Ok(self.w.wrapping_mul(self.h) as f32)
+        }
+    }
+
+    /// zombie.iso.zones.Zone.isClockwise: polygons only; the int products summed in float.
+    fn is_clockwise(&self) -> bool {
+        if !self.is_polygon() {
+            return false;
+        }
+        let p = &self.points;
+        let n = p.len();
+        let mut sum = 0.0f32;
+        let mut i = 0;
+        while i < n {
+            let (p1x, p1y) = (p[i], p[i + 1]);
+            let (p2x, p2y) = (p[(i + 2) % n], p[(i + 3) % n]);
+            sum += p2x.wrapping_sub(p1x).wrapping_mul(p2y.wrapping_add(p1y)) as f32;
+            i += 2;
+        }
+        f64::from(sum) > 0.0
+    }
+
+    /// zombie.iso.zones.Zone.getPolygonTriangles
+    pub fn get_polygon_triangles(
+        &mut self,
+        clipper: &mut Clipper,
+    ) -> Result<Option<&[f32]>, JavaException> {
+        if self.triangles.is_some() {
+            return Ok(self.triangles.as_deref());
+        }
+        if self.triangulate_failed || !self.is_polygon() {
+            return Ok(None);
+        }
+        let pts: Vec<f32> = self.points.iter().map(|&v| v as f32).collect();
+        self.triangulate_points(clipper, &pts)
+    }
+
+    /// zombie.iso.zones.Zone.getPolylineOutlineTriangles
+    pub fn get_polyline_outline_triangles(
+        &mut self,
+        clipper: &mut Clipper,
+    ) -> Result<Option<&[f32]>, JavaException> {
+        if self.triangles.is_some() {
+            return Ok(self.triangles.as_deref());
+        }
+        if !self.is_polyline() || self.polyline_width <= 0 || self.triangulate_failed {
+            return Ok(None);
+        }
+        self.check_polyline_outline();
+        let Some(points) = self.polyline_outline_points.clone() else {
+            self.triangulate_failed = true;
+            return Ok(None);
+        };
+        self.triangulate_points(clipper, &points)
+    }
+
+    /// The common tail of getPolygonTriangles / getPolylineOutlineTriangles: the points go into the shared clipper
+    /// buffer (pairs in reverse order when the polygon is clockwise), the native Clipper unions them
+    /// (`generatePolygons()`: difference, no offset) and triangulates its first polygon; then `initTriangleAreas`.
+    fn triangulate_points(
+        &mut self,
+        clipper: &mut Clipper,
+        pts: &[f32],
+    ) -> Result<Option<&[f32]>, JavaException> {
+        if pts.len() * 4 > CLIPPER_BUFFER_CAPACITY {
+            return Err(JavaException("java/nio/BufferOverflowException"));
+        }
+        let pairs: Vec<(f32, f32)> = if self.is_clockwise() {
+            // for (i = size - 1; i > 0; i -= 2) put(points[i - 1]), put(points[i])
+            pts.chunks_exact(2).rev().map(|c| (c[0], c[1])).collect()
+        } else {
+            pts.chunks_exact(2).map(|c| (c[0], c[1])).collect()
+        };
+        clipper.clear();
+        clipper.add_path(&pairs, false, true);
+        let num_polys = clipper
+            .generate_polygons(3, 0.0, 0)
+            .map_err(|_| JavaException("not ported"))?;
+        if num_polys < 1 {
+            self.triangulate_failed = true;
+            return Ok(None);
+        }
+        self.triangles = Some(clipper.triangulate(0, CLIPPER_BUFFER_CAPACITY)?);
+        self.init_triangle_areas();
+        Ok(self.triangles.as_deref())
+    }
+
+    /// zombie.iso.zones.Zone.initTriangleAreas
+    fn init_triangle_areas(&mut self) {
+        let t = self.triangles.as_deref().unwrap_or(&[]);
+        let mut areas = vec![0.0f32; t.len() / 6];
+        let mut total = 0.0f32;
+        for (k, c) in t.chunks_exact(6).enumerate() {
+            let area = triangle_area(c[0], c[1], c[2], c[3], c[4], c[5]);
+            areas[k] = area;
+            total += area;
+        }
+        self.triangle_areas = Some(areas);
+        self.total_area = total;
+    }
+
     /// zombie.iso.zones.Zone.Dispose
     pub fn dispose(&mut self) {
         self.points.clear();
         self.polyline_outline_points = None;
+        self.triangles = None;
     }
 }
 

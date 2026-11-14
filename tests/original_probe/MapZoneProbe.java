@@ -15,9 +15,10 @@ import zombie.iso.zones.Zone;
 // Inside the booted original (ServerHarness): the ORIGINAL IsoMetaGrid.loadZone(ByteBuffer, -1) reads the save's
 // map_zone.bin into the world's meta grid (dropping the zones the server registered at boot), then the probe prints
 // every registered zone, the outline the native ClipperOffset made for each wide polyline (its points in the
-// native order; only with the "outlines" argument), which zones each meta chunk holds per cell, and
-// IsoWorld.spawnedZombieZone.
-// Args: <scratch dir> <save dir> [outlines]
+// native order; only with the "outlines" or "triangles" argument), with "triangles" every zone's Zone.getTotalArea
+// and the triangles and triangle areas the native Clipper/earcut made, which zones each meta chunk holds per cell,
+// and IsoWorld.spawnedZombieZone.
+// Args: <scratch dir> <save dir> [outlines|triangles]
 public class MapZoneProbe {
     static long h;
     static void mix(int v) { for (int i = 0; i < 4; i++) { h ^= (v >>> (8 * i)) & 255; h *= 0x100000001b3L; } }
@@ -25,7 +26,8 @@ public class MapZoneProbe {
 
     public static void main(String[] a) throws Exception {
         File save = new File(a[1]);
-        boolean outlines = a.length > 2 && a[2].equals("outlines");
+        boolean triangles = a.length > 2 && a[2].equals("triangles");
+        boolean outlines = triangles || a.length > 2 && a[2].equals("outlines");
         ServerHarness.run(a[0], out -> {
             IsoMetaGrid g = IsoWorld.instance.getMetaGrid();
             byte[] data = Files.readAllBytes(new File(save, "map_zone.bin").toPath());
@@ -50,6 +52,27 @@ public class MapZoneProbe {
                     for (int k = 0; k < n; k++) {
                         sb.append(' ').append(Float.floatToIntBits(o[k * 2])).append(',').append(Float.floatToIntBits(o[k * 2 + 1]));
                     }
+                    out.println(sb);
+                }
+            }
+            if (triangles) {
+                for (int i = 0; i < g.zones.size(); i++) {
+                    Zone z = g.zones.get(i);
+                    float area;
+                    try {
+                        area = z.getTotalArea();
+                    } catch (Throwable e) {
+                        out.println("AX " + i + " " + e.getClass().getName());
+                        continue;
+                    }
+                    out.println("A " + i + " " + Float.floatToIntBits(area));
+                    float[] t = z.triangles;
+                    if (t == null) continue;
+                    StringBuilder sb = new StringBuilder("T " + i + " " + t.length);
+                    for (float v : t) sb.append(' ').append(Float.floatToIntBits(v));
+                    out.println(sb);
+                    sb = new StringBuilder("TA " + i + " " + z.triangleAreas.length);
+                    for (float v : z.triangleAreas) sb.append(' ').append(Float.floatToIntBits(v));
                     out.println(sb);
                 }
             }

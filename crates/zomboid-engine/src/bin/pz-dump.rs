@@ -5,6 +5,7 @@
 //!   pz-dump mapmeta <game root> <save dir>    (pairs with MapMetaProbe.java)
 //!   pz-dump mapzone <game root> <save dir>    (pairs with MapZoneProbe.java)
 //!   pz-dump zoneoutlines <game root> <save dir> outlines   (MapZoneProbe.java ... outlines)
+//!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -47,9 +48,14 @@ fn main() {
         Some("worlddictionary") if a.len() == 4 => worlddictionary(Path::new(&a[3])),
         Some("chunksave") if a.len() == 4 => chunksave(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
-        Some("mapzone") if a.len() == 4 => mapzone(Path::new(&a[2]), Path::new(&a[3]), false),
+        Some("mapzone") if a.len() == 4 => {
+            mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
+        }
+        Some("zonetriangles") if a.len() == 5 && a[4] == "triangles" => {
+            mapzone(Path::new(&a[2]), Path::new(&a[3]), true, true)
+        }
         Some("zoneoutlines") if a.len() == 5 && a[4] == "outlines" => {
-            mapzone(Path::new(&a[2]), Path::new(&a[3]), true)
+            mapzone(Path::new(&a[2]), Path::new(&a[3]), true, false)
         }
         _ => Err("usage: see the header of pz-dump.rs".into()),
     };
@@ -3104,9 +3110,15 @@ fn uuid_string(id: (i64, i64)) -> String {
 
 /// The save's zones (pairs with MapZoneProbe.java): the meta grid's cells from `IsoMetaGrid.Create`, then
 /// `IsoMetaGrid.loadZone` of the save's `map_zone.bin`; every registered zone, the outline of each wide polyline
-/// (its points in the native order; only with `outlines`), the zones of every meta chunk per cell, and the
+/// (its points in the native order; only with `outlines`), with `triangles` every zone's `Zone.getTotalArea` and the
+/// triangles and triangle areas behind it, the zones of every meta chunk per cell, and the
 /// spawned-zombie zones.
-pub fn mapzone(root: &Path, save: &Path, outlines: bool) -> Result<String, String> {
+pub fn mapzone(
+    root: &Path,
+    save: &Path,
+    outlines: bool,
+    triangles: bool,
+) -> Result<String, String> {
     use zomboid_engine::java_nio::ByteBuffer;
     let media = root.join("media");
     let mut g = IsoMetaGrid::default();
@@ -3164,6 +3176,33 @@ pub fn mapzone(root: &Path, save: &Path, outlines: bool) -> Result<String, Strin
             let _ = write!(sb, "O {i} {n}");
             for p in o.chunks_exact(2) {
                 let _ = write!(sb, " {},{}", p[0].to_bits() as i32, p[1].to_bits() as i32);
+            }
+            sb.push('\n');
+        }
+    }
+    if triangles {
+        // Zone.clipper, shared by every zone
+        let mut clipper = zomboid_engine::zombie::vehicles::clipper::Clipper::new();
+        for (i, z) in g.zones.iter_mut().enumerate() {
+            let area = match z.get_total_area(&mut clipper) {
+                Ok(a) => a,
+                Err(e) => {
+                    let _ = writeln!(sb, "AX {i} {}", e.0.replace('/', "."));
+                    continue;
+                }
+            };
+            let _ = writeln!(sb, "A {i} {}", area.to_bits() as i32);
+            let Some(t) = &z.triangles else {
+                continue;
+            };
+            let _ = write!(sb, "T {i} {}", t.len());
+            for v in t {
+                let _ = write!(sb, " {}", v.to_bits() as i32);
+            }
+            let areas = z.triangle_areas.as_deref().unwrap_or(&[]);
+            let _ = write!(sb, "\nTA {i} {}", areas.len());
+            for v in areas {
+                let _ = write!(sb, " {}", v.to_bits() as i32);
             }
             sb.push('\n');
         }
