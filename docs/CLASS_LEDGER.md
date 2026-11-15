@@ -4,20 +4,20 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 179 of 3424 classes touched, 531 of 46121 method names cited (1.2%), 962280 decompiled lines.**
+**Total: 184 of 3424 classes touched, 542 of 46121 method names cited (1.2%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 60 | 7277 | 292 (4.0%) | 144530 |
-| zombie.core | 450 | 20 | 5920 | 69 (1.2%) | 93574 |
+| zombie.core | 450 | 22 | 5920 | 74 (1.3%) | 93574 |
 | zombie.characters | 200 | 20 | 5028 | 44 (0.9%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
 | zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 11 | 1411 | 10 (0.7%) | 28275 |
-| zombie | 60 | 5 | 1192 | 24 (2.0%) | 22185 |
+| zombie | 60 | 8 | 1192 | 30 (2.5%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 5 | 1328 | 3 (0.2%) | 18604 |
@@ -75,11 +75,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | Class | Cited / method names | Rust |
 |---|---:|---|
 | se.krka.kahlua.j2se.KahluaTableImpl | 2 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
+| zombie.FileGuidPair | 0 / 0 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
+| zombie.FileGuidTable | 5 / 6 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.GameTime | 8 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.GameWindow | 1 / 47 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.PersistentOutfits | 10 / 20 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.SandboxOptions | 4 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.SharedDescriptors | 1 / 16 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
+| zombie.ZomboidFileSystem | 1 / 114 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.basements.BasementDefinition | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
 | zombie.basements.BasementPlacement | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
 | zombie.basements.BasementSpawnLocation | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
@@ -119,9 +122,11 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.random.Rand | 1 / 5 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandAbstract | 1 / 2 | crates/zomboid-content/src/rng.rs, crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandInterface | 1 / 2 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
+| zombie.core.skinnedmodel.population.ClothingItem | 3 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item.rs |
+| zombie.core.skinnedmodel.population.ClothingItemAssetManager | 0 / 7 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_manager.rs |
 | zombie.core.skinnedmodel.population.ClothingItemReference | 1 / 6 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item_reference.rs |
 | zombie.core.skinnedmodel.population.Outfit | 1 / 12 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit.rs |
-| zombie.core.skinnedmodel.population.OutfitManager | 5 / 29 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_manager.rs |
+| zombie.core.skinnedmodel.population.OutfitManager | 7 / 29 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_manager.rs |
 | zombie.core.skinnedmodel.visual.HumanVisual | 2 / 66 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/human_visual.rs |
 | zombie.core.skinnedmodel.visual.ItemVisual | 1 / 57 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/item_visual.rs |
 | zombie.core.stash.StashBuilding | 0 / 2 | crates/zomboid-engine/src/zombie/core/stash/stash_system.rs |

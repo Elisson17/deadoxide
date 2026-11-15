@@ -99,23 +99,102 @@ pub fn parse_xml(path: &Path) -> Result<XmlElement, String> {
     parse_xml_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// XML whitespace as JAXB's `WhiteSpaceProcessor` trims it: space, tab, line feed, carriage return.
+/// com.sun.xml.bind.WhiteSpaceProcessor.isWhiteSpace(char): space, tab, line feed, carriage return.
+fn jaxb_is_white_space(ch: u16) -> bool {
+    matches!(ch, 0x20 | 0x09 | 0x0a | 0x0d)
+}
+
+/// com.sun.xml.bind.WhiteSpaceProcessor.trim
 fn xml_trim(s: &str) -> &str {
     s.trim_matches(|c| matches!(c, ' ' | '\t' | '\n' | '\r'))
 }
 
-/// javax.xml.bind.DatatypeConverter.parseBoolean as JAXB fills a `boolean` field: "true" or "1", "false" or "0",
-/// around XML whitespace. Anything else is `None` and the field keeps its value (what the original does with other
-/// text was not measured).
-pub fn jaxb_parse_boolean(s: &str) -> Option<bool> {
-    match xml_trim(s) {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
+/// com.sun.xml.bind.DatatypeConverterImpl._parseBoolean (the JAXB runtime the game bundles), as JAXB fills a
+/// `boolean` field. Kept as written, quirks included: after skipping leading whitespace, '0' and '1' are false and
+/// true; 't' must continue "rue" and 'f' "alse", else the result is false; then one more character is read past
+/// trailing whitespace and the value stands only if that reaches the end (so "1x" is true and "1xy" is null).
+/// `None` is the original's null and also its exception for text that ends inside "true"/"false" (what JAXB then
+/// does with a primitive field was not measured; here the field keeps its value).
+pub fn jaxb_parse_boolean(literal: &str) -> Option<bool> {
+    let s: Vec<u16> = literal.encode_utf16().collect();
+    let len = s.len();
+    if len == 0 {
+        return None;
     }
+    let mut i = 0usize;
+    let mut ch;
+    loop {
+        ch = s[i];
+        i += 1;
+        if !(jaxb_is_white_space(ch) && i < len) {
+            break;
+        }
+    }
+    let mut value = false;
+    let rest = |word: &[u8], i: &mut usize| -> Option<bool> {
+        let mut str_index = 0usize;
+        loop {
+            let c = *s.get(*i)?;
+            *i += 1;
+            let matched = u16::from(word[str_index]) == c;
+            str_index += 1;
+            if !(matched && *i < len && str_index < word.len()) {
+                break;
+            }
+        }
+        Some(str_index == word.len())
+    };
+    match ch {
+        0x30 => value = false,
+        0x31 => value = true,
+        0x66 => {
+            if !rest(b"alse", &mut i)? {
+                return Some(false);
+            }
+            value = false;
+        }
+        0x74 => {
+            if !rest(b"rue", &mut i)? {
+                return Some(false);
+            }
+            value = true;
+        }
+        _ => {}
+    }
+    if i < len {
+        loop {
+            ch = s[i];
+            i += 1;
+            if !(jaxb_is_white_space(ch) && i < len) {
+                break;
+            }
+        }
+    }
+    (i == len).then_some(value)
 }
 
-/// javax.xml.bind.DatatypeConverter.parseFloat as JAXB fills a `float` field: trimmed; "NaN", "INF", "-INF"; else
+/// com.sun.xml.bind.DatatypeConverterImpl._parseInt: whitespace anywhere is skipped, digits accumulate (wrapping as
+/// int), any '-' makes it negative, '+' is ignored; another character is the original's NumberFormatException
+/// (`None`: the list element is not added).
+pub fn jaxb_parse_int(s: &str) -> Option<i32> {
+    let mut sign = 1i32;
+    let mut r = 0i32;
+    for ch in s.encode_utf16() {
+        if jaxb_is_white_space(ch) {
+            continue;
+        }
+        if (0x30..=0x39).contains(&ch) {
+            r = r.wrapping_mul(10).wrapping_add(i32::from(ch - 0x30));
+        } else if ch == 0x2d {
+            sign = -1;
+        } else if ch != 0x2b {
+            return None;
+        }
+    }
+    Some(r.wrapping_mul(sign))
+}
+
+/// com.sun.xml.bind.DatatypeConverterImpl._parseFloat as JAXB fills a `float` field: trimmed; "NaN", "INF", "-INF"; else
 /// the text must start and end with a digit, '.', '+' or '-' and is `Float.parseFloat`. `None` (the field keeps its
 /// value) where the original's conversion throws. Java's hexadecimal float literals are not accepted here.
 pub fn jaxb_parse_float(s: &str) -> Option<f32> {
@@ -159,6 +238,15 @@ mod tests {
         assert_eq!(jaxb_parse_boolean(" true\n"), Some(true));
         assert_eq!(jaxb_parse_boolean("0"), Some(false));
         assert_eq!(jaxb_parse_boolean("yes"), None);
+        // the original's quirks: one stray character after the value is read past, "trux" matches "tru"
+        assert_eq!(jaxb_parse_boolean("1x"), Some(true));
+        assert_eq!(jaxb_parse_boolean("1xy"), None);
+        assert_eq!(jaxb_parse_boolean("trux"), Some(true));
+        assert_eq!(jaxb_parse_boolean("tx"), Some(false));
+        assert_eq!(jaxb_parse_boolean("t"), None);
+        assert_eq!(jaxb_parse_int(" 1 2 "), Some(12));
+        assert_eq!(jaxb_parse_int("-+7"), Some(-7));
+        assert_eq!(jaxb_parse_int("7a"), None);
         assert_eq!(
             jaxb_parse_float(" 0.3 ").map(f32::to_bits),
             Some(0.3f32.to_bits())

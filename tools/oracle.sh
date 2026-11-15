@@ -82,6 +82,8 @@ sel gametime && server_case gametime GameTimeProbe "$HERE/profile/Saves/Sandbox/
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin
 sel outfits && server_case outfits OutfitsProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
+# media/fileGuidTable.xml and every clothing item file through OutfitManager.getClothingItem
+sel clothingitems && server_case clothingitems ClothingItemsProbe
 sel doortoggle && { cp tests/golden/engine/specialcollide.sha256 target/oracle/sc.keep 2>/dev/null; server_case specialcollide SpecialCollideProbe 129 182 toggle; mv tests/golden/engine/specialcollide.sha256 tests/golden/engine/doortoggle.sha256 2>/dev/null; cp target/oracle/sc.keep tests/golden/engine/specialcollide.sha256 2>/dev/null; }
 sel los && server_case los LosProbe 129 182
 sel losdoors && { server_case los LosProbe 129 182 toggle; cp tests/golden/engine/los.sha256 tests/golden/engine/losdoors.sha256 2>/dev/null; server_case los LosProbe 129 182; }

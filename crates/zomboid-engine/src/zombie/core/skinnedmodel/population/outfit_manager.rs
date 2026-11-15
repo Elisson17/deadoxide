@@ -1,8 +1,11 @@
 //! zombie.core.skinnedmodel.population.OutfitManager: the male and female outfits of `media/clothing/clothing.xml`.
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
+use super::clothing_item::ClothingItem;
 use super::outfit::Outfit;
 use crate::java::equals_ignore_case;
+use crate::zombie::file_guid_table::FileGuidTable;
 use crate::zombie::util::pz_xml_util::{parse_xml, XmlElement};
 
 /// A `TreeMap<String, Outfit>(String.CASE_INSENSITIVE_ORDER)` as name → index into the outfit list: a put whose
@@ -27,6 +30,9 @@ pub struct OutfitManager {
     pub female_outfits: Vec<Outfit>,
     female_outfit_map: Vec<(String, usize)>,
     male_outfit_map: Vec<(String, usize)>,
+    /// zombie.core.skinnedmodel.population.OutfitManager.cachedClothingItems (a `Hashtable` by exact guid).
+    pub cached_clothing_items: HashMap<String, ClothingItemEntry>,
+    pub clothing_items: ClothingItemAssets,
 }
 
 impl OutfitManager {
@@ -124,6 +130,90 @@ impl OutfitManager {
             self.find_male_outfit(outfit_name)
         }
     }
+}
+
+/// zombie.core.skinnedmodel.population.OutfitManager.ClothingItemEntry: the cache entry of one guid.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClothingItemEntry {
+    pub file_path: String,
+    /// Index into `ClothingItemAssets::items`.
+    pub item: Option<usize>,
+}
+
+/// zombie.core.skinnedmodel.population.ClothingItemAssetManager's asset table: one clothing item per file path
+/// (two guids naming the same file share the item, and each `getClothingItem` sets its `guid`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClothingItemAssets {
+    pub items: Vec<ClothingItem>,
+    by_path: HashMap<PathBuf, usize>,
+}
+
+impl ClothingItemAssets {
+    /// AssetManager.load(AssetPath) and ClothingItemAssetManager.startLoading/onFileTaskFinished, done at once
+    /// (the original parses on the file system's thread and fills the item when the main thread collects the
+    /// result). A file that does not parse as a clothing item leaves a FAILED item with default fields.
+    fn load(&mut self, absolute_path: &Path) -> usize {
+        if let Some(&i) = self.by_path.get(absolute_path) {
+            return i;
+        }
+        let item = parse_xml(absolute_path)
+            .and_then(|root| ClothingItem::from_xml(&root))
+            .unwrap_or_else(|_| ClothingItem {
+                failed: true,
+                ..ClothingItem::default()
+            });
+        self.items.push(item);
+        self.by_path
+            .insert(absolute_path.to_path_buf(), self.items.len() - 1);
+        self.items.len() - 1
+    }
+}
+
+impl OutfitManager {
+    /// zombie.core.skinnedmodel.population.OutfitManager.getClothingItem: `None` for a guid the file guid table does
+    /// not know; else the cached item (its `guid` set to this guid), or the item loaded from the file the guid names
+    /// (`ZomboidFileSystem.resolveFileOrGUID`: here the file under the game folder; the original's map of mods'
+    /// active files is not ported), named after the file (`mame`). The file watcher is not ported.
+    pub fn get_clothing_item(
+        &mut self,
+        item_guid: &str,
+        table: &FileGuidTable,
+        game_root: &Path,
+    ) -> Option<&ClothingItem> {
+        let file_path = table.get_file_path_from_guid(item_guid)?.to_string();
+        let entry = self
+            .cached_clothing_items
+            .entry(item_guid.to_string())
+            .or_insert_with(|| ClothingItemEntry {
+                file_path: file_path.clone(),
+                item: None,
+            });
+        let index = match entry.item {
+            Some(i) => i,
+            None => {
+                let resolved = table
+                    .get_file_path_from_guid(&file_path)
+                    .unwrap_or(&file_path)
+                    .to_string();
+                let i = self.clothing_items.load(&game_root.join(&resolved));
+                self.clothing_items.items[i].mame = Some(extract_clothing_item_name(&file_path));
+                entry.item = Some(i);
+                i
+            }
+        };
+        let item = &mut self.clothing_items.items[index];
+        item.guid = Some(item_guid.to_string());
+        Some(item)
+    }
+}
+
+/// zombie.core.skinnedmodel.population.OutfitManager.extractClothingItemName: `trimPrefix` of
+/// "media/clothing/clothingItems/" and `trimSuffix` of ".xml" (both case-sensitive).
+fn extract_clothing_item_name(file_path: &str) -> String {
+    let name = file_path
+        .strip_prefix("media/clothing/clothingItems/")
+        .unwrap_or(file_path);
+    name.strip_suffix(".xml").unwrap_or(name).to_string()
 }
 
 #[cfg(test)]

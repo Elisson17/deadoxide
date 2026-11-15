@@ -2,6 +2,7 @@ pub mod basements;
 pub mod characters;
 pub mod core;
 pub mod erosion;
+pub mod file_guid_table;
 pub mod game_states;
 pub mod game_time;
 pub mod inventory;

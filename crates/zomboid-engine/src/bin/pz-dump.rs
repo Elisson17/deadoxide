@@ -53,6 +53,7 @@ fn main() {
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
+        Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -3700,5 +3701,63 @@ pub fn outfits(root: &Path, save: &Path) -> Result<String, String> {
         }
     }
     let _ = writeln!(sb, "GO 0 {}", po.get_outfit(0, &mut no_draw));
+    Ok(sb)
+}
+
+/// The file guid table (`media/fileGuidTable.xml`) with its lookups in other letter case, then
+/// `OutfitManager.getClothingItem` for every guid in table order (pairs with ClothingItemsProbe.java).
+pub fn clothingitems(root: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_manager::OutfitManager;
+    use zomboid_engine::zombie::file_guid_table::FileGuidTable;
+    let t = FileGuidTable::load_game(root)?;
+    let mut om = OutfitManager::init(root)?.ok_or("no media/clothing/clothing.xml")?;
+    let b = |v: bool| u8::from(v);
+    let s = |v: &Option<String>| v.clone().unwrap_or_else(|| "null".to_string());
+    let l = |v: &[String]| format!("[{}]", v.join(","));
+    let mut sb = String::new();
+    let _ = writeln!(sb, "FGT {}", t.files.len());
+    for p in &t.files {
+        let (path, guid) = (s(&p.path), s(&p.guid));
+        let _ = writeln!(
+            sb,
+            "FG {path} {guid} {} {}",
+            b(t.get_file_path_from_guid(&guid.to_uppercase()) == Some(path.as_str())),
+            b(t.get_guid_from_file_path(&path.to_lowercase()) == Some(guid.as_str()))
+        );
+    }
+    for (i, p) in t.files.iter().enumerate() {
+        let Some(ci) = om.get_clothing_item(&s(&p.guid), &t, root) else {
+            let _ = writeln!(sb, "CI {i} null");
+            continue;
+        };
+        let masks: Vec<String> = ci.masks.iter().map(|m| m.to_string()).collect();
+        let _ = writeln!(
+            sb,
+            "CI {i} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            s(&ci.guid),
+            s(&ci.mame),
+            b(ci.failed),
+            s(&ci.male_model),
+            s(&ci.female_model),
+            s(&ci.alt_male_model),
+            s(&ci.alt_female_model),
+            b(ci.is_static),
+            l(&ci.base_textures),
+            s(&ci.attach_bone),
+            l(&masks),
+            s(&ci.masks_folder),
+            s(&ci.underlay_masks_folder),
+            l(&ci.texture_choices),
+            b(ci.allow_random_hue),
+            b(ci.allow_random_tint),
+            s(&ci.decal_group),
+            s(&ci.shader),
+            s(&ci.hat_category),
+            l(&ci.spawn_with),
+            b(ci.is_hat()),
+            b(ci.is_mask()),
+            b(ci.has_model())
+        );
+    }
     Ok(sb)
 }

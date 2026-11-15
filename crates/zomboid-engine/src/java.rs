@@ -33,6 +33,12 @@ pub fn string_compare_to(a: &str, b: &str) -> std::cmp::Ordering {
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
+/// The key under which `String.CASE_INSENSITIVE_ORDER` sees two strings as equal: each char upper-cased, then
+/// lower-cased (two strings compare as 0 exactly when these keys are equal).
+pub fn case_insensitive_key(s: &str) -> String {
+    s.chars().map(|c| lower(upper(c))).collect()
+}
+
 /// java.lang.String.equalsIgnoreCase: per-char comparison after toUpperCase, then toLowerCase.
 pub fn equals_ignore_case(a: &str, b: &str) -> bool {
     let (mut x, mut y) = (a.chars(), b.chars());

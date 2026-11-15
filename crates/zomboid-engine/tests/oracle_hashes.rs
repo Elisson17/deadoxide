@@ -226,6 +226,11 @@ fn outfits_match_original() {
 }
 
 #[test]
+fn clothing_items_match_original() {
+    check("clothingitems", &[]);
+}
+
+#[test]
 fn items_match_original() {
     // The field list tools/gen_item_params.py hands to both sides: the table's fields minus aimingMod.
     let names: Vec<&str> = zomboid_engine::zombie::scripting::item_params_table::FIELDS
