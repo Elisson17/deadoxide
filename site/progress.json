@@ -1,14 +1,14 @@
 {
-  "generated": "2026-11-14",
+  "generated": "2026-11-15",
   "game": "Project Zomboid 42.21.0 (Steam build 25485521)",
   "overall": 21.4,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 170,
+    "classesTouched": 172,
     "classes": 3424,
-    "methodsCited": 497,
+    "methodsCited": 510,
     "methods": 46121,
-    "methodPercent": 1.08,
+    "methodPercent": 1.11,
     "oracleCases": [
       "animalzones",
       "basements",
@@ -26,6 +26,7 @@
       "mapmeta",
       "mapzone",
       "metagrid",
+      "moddata",
       "sandbox",
       "specialcollide",
       "stairs",
@@ -44,7 +45,7 @@
       "score": 0.5625,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 497 of 46121 method names (1.08%) in 170 of 3424 classes; byte-identical to the original in 23 oracle cases (animalzones, basements, chunkobjects, chunksave, collide, doortoggle, entitysprites, gametime, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
+        "direct port from decompiled Java: 510 of 46121 method names (1.11%) in 172 of 3424 classes; byte-identical to the original in 24 oracle cases (animalzones, basements, chunkobjects, chunksave, collide, doortoggle, entitysprites, gametime, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, moddata, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
         "format families read: 9 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",

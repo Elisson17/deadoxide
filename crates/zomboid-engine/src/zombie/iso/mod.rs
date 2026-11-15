@@ -3,6 +3,7 @@ pub mod building_def;
 pub mod building_id;
 pub mod cell_loader;
 pub mod chunk_save;
+pub mod instance_tracker;
 pub mod iso_cell;
 pub mod iso_chunk;
 pub mod iso_directions;

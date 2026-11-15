@@ -4,12 +4,12 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 170 of 3424 classes touched, 497 of 46121 method names cited (1.1%), 962280 decompiled lines.**
+**Total: 172 of 3424 classes touched, 510 of 46121 method names cited (1.1%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 59 | 7277 | 284 (3.9%) | 144530 |
+| zombie.iso | 346 | 60 | 7277 | 292 (4.0%) | 144530 |
 | zombie.core | 450 | 17 | 5920 | 62 (1.0%) | 93574 |
 | zombie.characters | 200 | 19 | 5028 | 43 (0.9%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
@@ -36,7 +36,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.popman | 22 | 0 | 214 | 0 (0.0%) | 4137 |
 | zombie.tileDepth | 19 | 0 | 269 | 0 (0.0%) | 4029 |
 | zombie.chat | 22 | 0 | 287 | 0 (0.0%) | 3622 |
-| zombie.world | 18 | 7 | 232 | 10 (4.3%) | 3415 |
+| zombie.world | 18 | 8 | 232 | 15 (6.5%) | 3415 |
 | zombie.input | 19 | 0 | 245 | 0 (0.0%) | 2598 |
 | zombie.savefile | 7 | 1 | 102 | 0 (0.0%) | 2538 |
 | zombie.creative | 1 | 0 | 5 | 0 (0.0%) | 2258 |
@@ -147,6 +147,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.BuildingID | 5 / 5 | crates/zomboid-engine/src/zombie/iso/building_id.rs |
 | zombie.iso.CellLoader | 4 / 7 | crates/zomboid-engine/src/zombie/iso/cell_loader.rs, crates/zomboid-engine/src/zombie/iso/iso_world.rs |
 | zombie.iso.FishSchoolManager | 8 / 33 | crates/zomboid-lua/src/fishing.rs |
+| zombie.iso.InstanceTracker | 8 / 10 | crates/zomboid-engine/src/zombie/iso/instance_tracker.rs |
 | zombie.iso.IsoCell | 2 / 229 | crates/zomboid-engine/src/zombie/iso/iso_cell.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.IsoChunk | 8 / 185 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_chunk.rs |
 | zombie.iso.IsoDirections | 16 / 19 | crates/zomboid-engine/src/zombie/iso/iso_directions.rs |
@@ -239,6 +240,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.world.ScriptsDictionary | 1 / 33 | crates/zomboid-engine/src/zombie/world/dictionary_data.rs |
 | zombie.world.StringDictionary | 2 / 24 | crates/zomboid-engine/src/zombie/world/dictionary_data.rs |
 | zombie.world.WorldDictionary | 2 / 35 | crates/zomboid-engine/src/zombie/world/dictionary_data.rs |
+| zombie.world.moddata.GlobalModData | 5 / 17 | crates/zomboid-engine/src/zombie/world/moddata/global_mod_data.rs |
 | zombie.worldMap.symbols.SymbolSaveData | 1 / 4 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
 | zombie.worldMap.symbols.WorldMapBaseSymbol | 1 / 45 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
 | zombie.worldMap.symbols.WorldMapSymbols | 1 / 23 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |

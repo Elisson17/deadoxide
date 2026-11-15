@@ -51,6 +51,7 @@ fn main() {
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
         Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
+        Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -3545,5 +3546,40 @@ pub fn gametime(save: &Path) -> Result<String, String> {
         "CMT {}",
         cm.mod_data_table.as_ref().map_or("null".to_string(), table)
     );
+    Ok(sb)
+}
+
+/// The save's `global_mod_data.bin` through `GlobalModData.load` and `iTrack.bin` through `InstanceTracker.load`;
+/// the tables in `collectTableNames` order, the groups in their HashMap order, each exported as text and CSV with keys
+/// sorted (pairs with ModDataProbe.java).
+pub fn moddata(save: &Path) -> Result<String, String> {
+    use zomboid_engine::java::hash_map_order;
+    use zomboid_engine::zombie::iso::instance_tracker::{Format, InstanceTracker, Sort};
+    use zomboid_engine::zombie::world::moddata::global_mod_data::GlobalModData;
+    let read = |name: &str| {
+        let p = save.join(name);
+        std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))
+    };
+    let gmd_data = read("global_mod_data.bin")?;
+    let it_data = read("iTrack.bin")?;
+    let mut sb = String::new();
+    let mut gmd = GlobalModData::default();
+    gmd.load(Some(&gmd_data))?;
+    let tags = gmd.collect_table_names();
+    let _ = writeln!(sb, "GMD {}", tags.len());
+    for t in &tags {
+        let table = gmd.get(t).map_or("null".to_string(), save_dump::table);
+        let _ = writeln!(sb, "GMT {t} {table}");
+    }
+    let mut it = InstanceTracker::default();
+    it.load(Some(&it_data))?;
+    let _ = writeln!(sb, "IG {}", it.instance_groups.len());
+    let names: Vec<&str> = it.instance_groups.iter().map(|(g, _)| g.as_str()).collect();
+    for i in hash_map_order(&names) {
+        let g = names[i];
+        let _ = writeln!(sb, "IGN {g}");
+        sb.push_str(&it.export_group(g, Format::Text, Sort::Key, "\n"));
+        sb.push_str(&it.export_group(g, Format::Csv, Sort::Key, "\n"));
+    }
     Ok(sb)
 }
