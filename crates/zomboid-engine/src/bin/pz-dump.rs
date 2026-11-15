@@ -61,7 +61,7 @@ fn main() {
         Some("luaos") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("javachars") if a.len() == 3 => javachars(),
         Some("fdlibm") if a.len() == 3 => fdlibm(),
-        Some("luaload") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[4..]),
+        Some("luaload" | "luaserver") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[4..]),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4520,6 +4520,25 @@ pub fn luaload(root: &Path, dirs: &[String]) -> Result<String, String> {
         init_globals.push((k, v));
     }
     d.init_tables.insert(addr(&env), "_G".into());
+    let init_collections: HashMap<String, String> = luaload_static_collections(&env)
+        .into_values()
+        .map(|(name, v)| {
+            let l = match &v {
+                Object::Userdata(u) => u
+                    .as_any()
+                    .downcast_ref::<zomboid_engine::zombie::lua::exposed_methods::ArrayListObject>()
+                    .map(|l| {
+                        format!(
+                            "[{}]",
+                            l.0.borrow().iter().map(value).collect::<Vec<_>>().join(",")
+                        )
+                    })
+                    .unwrap_or_default(),
+                _ => String::new(),
+            };
+            (name, l)
+        })
+        .collect();
     for dir in dirs {
         lm.load_dir_base(dir)
             .map_err(|e| format!("LoadDirBase {dir}: {e:?}"))?;
@@ -4583,5 +4602,263 @@ pub fn luaload(root: &Path, dirs: &[String]) -> Result<String, String> {
             let _ = writeln!(d.sb, "  {}", value(&Object::Closure(c.clone())));
         }
     }
+    luaload_java_state(&lm, &init_collections, &mut d.sb, &value);
     Ok(d.sb)
+}
+
+/// The ArrayLists public static fields hold, by "<class>.<field>", from the statics tables globals hold
+/// (LuaLoadEnvProbe.staticCollections; the port's maps are opaque and never change).
+fn luaload_static_collections(
+    env: &zomboid_engine::se::krka::kahlua::vm::object::TableRef,
+) -> std::collections::BTreeMap<
+    Vec<u16>,
+    (String, zomboid_engine::se::krka::kahlua::vm::object::Object),
+> {
+    use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
+    use zomboid_engine::se::krka::kahlua::vm::object::{ClassObject, Object};
+    use zomboid_engine::zombie::lua::exposed_methods::ArrayListObject;
+    let mut r = std::collections::BTreeMap::new();
+    for (_, v) in KahluaTableImpl::iterate_snapshot(env) {
+        let Object::Table(t) = v else { continue };
+        let Ok(Object::Userdata(c)) = KahluaTableImpl::rawget(&t, &Object::str("class")) else {
+            continue;
+        };
+        let Some(c) = c.as_any().downcast_ref::<ClassObject>() else {
+            continue;
+        };
+        for (k, v) in KahluaTableImpl::iterate_snapshot(&t) {
+            if let Object::Userdata(u) = &v {
+                if u.as_any().is::<ArrayListObject>() {
+                    let name = format!("{}.{}", c.0.name, k.java_to_string());
+                    r.insert(name.encode_utf16().collect(), (name, v.clone()));
+                }
+            }
+        }
+    }
+    r
+}
+
+/// LuaLoadEnvProbe.javaState on the port: the Java state the scripts filled while loading.
+fn luaload_java_state(
+    lm: &zomboid_engine::zombie::lua::lua_manager::LuaManager,
+    init_collections: &std::collections::HashMap<String, String>,
+    sb: &mut String,
+    value: &dyn Fn(&zomboid_engine::se::krka::kahlua::vm::object::Object) -> String,
+) {
+    use std::collections::BTreeMap;
+    use std::rc::Rc;
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::lua::exposed_methods::{singleton, ArrayListObject};
+    use zomboid_engine::zombie::lua::exposed_table::RANDOMIZED_WORLD_BASE_LISTS;
+    use zomboid_engine::zombie::lua::exposed_world::{
+        BentFencesObject, BrokenFencesObject, ContainerOverlaysObject, TileOverlaysObject,
+        WorldGenUtilsObject,
+    };
+    use zomboid_engine::zombie::lua::exposer::class_named;
+    let s = |t: &str| value(&Object::str(t));
+    let opt = |t: &Option<String>| t.as_deref().map_or("nil".to_string(), s);
+    let list = |l: &[String]| format!("[{}]", l.iter().map(|x| s(x)).collect::<Vec<_>>().join(","));
+    let opt_list = |l: &Option<Vec<String>>| l.as_deref().map_or("nil".to_string(), list);
+    let objects = |l: &ArrayListObject| {
+        format!(
+            "[{}]",
+            l.0.borrow().iter().map(value).collect::<Vec<_>>().join(",")
+        )
+    };
+    // TreeMap<String, V>: String.compareTo is UTF-16 order
+    fn sorted<'a, V>(
+        m: impl IntoIterator<Item = (&'a String, V)>,
+    ) -> BTreeMap<Vec<u16>, (&'a String, V)> {
+        m.into_iter()
+            .map(|(k, v)| (k.encode_utf16().collect(), (k, v)))
+            .collect()
+    }
+    let events = lm.events.event_list.borrow();
+    let _ = write!(sb, "EVENTS {}", events.len());
+    for e in events.iter() {
+        let _ = write!(sb, " {}", e.name);
+    }
+    sb.push('\n');
+    for (_, (name, v)) in luaload_static_collections(&lm.env) {
+        if name.ends_with("Texture.nullTextures") {
+            continue;
+        }
+        let Object::Userdata(u) = &v else { continue };
+        let Some(l) = u.as_any().downcast_ref::<ArrayListObject>() else {
+            continue;
+        };
+        let is = objects(l);
+        if init_collections.get(&name) != Some(&is) {
+            let _ = writeln!(sb, "STATIC {name} {is}");
+        }
+    }
+    let state = &lm.statics.state;
+    let map_objects = state.map_objects.borrow();
+    for (which, m) in [
+        ("onNew", &map_objects.on_new),
+        ("onLoad", &map_objects.on_load),
+    ] {
+        for (_, (sprite, cb)) in sorted(m) {
+            let _ = write!(sb, "MAPOBJECTS {which} {}", s(sprite));
+            for (p, f) in cb.priority.iter().zip(&cb.functions) {
+                let _ = write!(sb, " {p}={}", value(f));
+            }
+            sb.push('\n');
+        }
+    }
+    let the = |class: &str| singleton(&lm.statics, class_named(class));
+    let o = the("zombie.iso.TileOverlays");
+    if let Object::Userdata(u) = &o {
+        if let Some(to) = u.as_any().downcast_ref::<TileOverlaysObject>() {
+            let to = to.0.borrow();
+            for (_, (k, o)) in sorted(&to.overlay_map) {
+                let _ = writeln!(sb, "TILEOVERLAY {} {}", s(k), s(&o.tile));
+                for e in &o.entries {
+                    let u = &e.usage;
+                    let _ = writeln!(
+                        sb,
+                        "  {} {} {} {} {} {:x} {} {}",
+                        opt(&e.room),
+                        e.chance,
+                        opt(&u.usage),
+                        u.z_only,
+                        u.z_greater_than,
+                        u.alpha.to_bits(),
+                        u.table_top,
+                        list(&e.tiles)
+                    );
+                }
+            }
+            for (_, (k, v)) in sorted(&to.overlay_name_to_underlying_name) {
+                let _ = writeln!(sb, "TILEUNDER {} {}", s(k), list(v));
+            }
+        }
+    }
+    let o = the("zombie.iso.ContainerOverlays");
+    if let Object::Userdata(u) = &o {
+        if let Some(co) = u.as_any().downcast_ref::<ContainerOverlaysObject>() {
+            let co = co.0.borrow();
+            for (_, (k, o)) in sorted(&co.overlay_map) {
+                let _ = writeln!(sb, "CONTAINEROVERLAY {} {}", s(k), s(&o.name));
+                for e in &o.entries {
+                    let _ = writeln!(
+                        sb,
+                        "  {} {} {}",
+                        opt(&e.room),
+                        opt(&e.many_items),
+                        opt(&e.few_items)
+                    );
+                }
+            }
+            for (_, (k, v)) in sorted(&co.overlay_name_to_underlying_name) {
+                let _ = writeln!(sb, "CONTAINERUNDER {} {}", s(k), list(v));
+            }
+        }
+    }
+    let o = the("zombie.iso.BentFences");
+    if let Object::Userdata(u) = &o {
+        if let Some(bf) = u.as_any().downcast_ref::<BentFencesObject>() {
+            let bf = bf.0.borrow();
+            for (i, e) in bf.entries.iter().enumerate() {
+                let _ = writeln!(
+                    sb,
+                    "BENTFENCE {i} {} {} {} {} {} {} {}",
+                    e.dir.name(),
+                    e.health,
+                    e.length,
+                    e.collapsed_offset,
+                    e.collapsed_size_x,
+                    e.collapsed_size_y,
+                    e.do_smash
+                );
+                let stages: BTreeMap<i32, &Vec<String>> =
+                    e.stages.iter().map(|(k, v)| (*k, v)).collect();
+                for (k, v) in stages {
+                    let _ = writeln!(sb, "  stage {k} {}", list(v));
+                }
+                let _ = writeln!(sb, "  collapsed {}", list(&e.collapsed));
+                let _ = writeln!(sb, "  debris {}", list(&e.debris));
+            }
+            let set = |h: &std::collections::HashSet<String>| {
+                let v: Vec<String> = sorted(h.iter().map(|x| (x, ())))
+                    .into_values()
+                    .map(|(x, _)| x.clone())
+                    .collect();
+                list(&v)
+            };
+            let _ = writeln!(sb, "BENTCOLLAPSED {}", set(&bf.collapsed_tiles));
+            let _ = writeln!(sb, "BENTDEBRIS {}", set(&bf.debris_tiles));
+            for (_, (k, v)) in sorted(&bf.fence_map) {
+                let _ = write!(sb, "BENTMAP {}", s(k));
+                for e in v {
+                    let n = bf
+                        .entries
+                        .iter()
+                        .rposition(|x| Rc::ptr_eq(x, e))
+                        .map_or(-1, |i| i as i64);
+                    let _ = write!(sb, " {n}");
+                }
+                sb.push('\n');
+            }
+        }
+    }
+    let o = the("zombie.iso.BrokenFences");
+    if let Object::Userdata(u) = &o {
+        if let Some(brf) = u.as_any().downcast_ref::<BrokenFencesObject>() {
+            let brf = brf.0.borrow();
+            let unbroken = sorted(&brf.unbroken_map);
+            for (k, t) in unbroken.values() {
+                let t = t.borrow();
+                let _ = write!(sb, "BROKENTILE {}", s(k));
+                for l in [
+                    &t.self_,
+                    &t.left,
+                    &t.right,
+                    &t.debris_n,
+                    &t.debris_s,
+                    &t.debris_w,
+                    &t.debris_e,
+                ] {
+                    let _ = write!(sb, " {}", opt_list(l));
+                }
+                sb.push('\n');
+            }
+            for (which, m) in [
+                ("brokenLeftMap", &brf.broken_left_map),
+                ("brokenRightMap", &brf.broken_right_map),
+                ("allMap", &brf.all_map),
+            ] {
+                for (_, (k, t)) in sorted(m) {
+                    let label = unbroken
+                        .values()
+                        .find(|(_, u)| Rc::ptr_eq(u, t))
+                        .map_or("orphan".to_string(), |(uk, _)| s(uk));
+                    let _ = writeln!(sb, "BROKENMAP {which} {} {label}", s(k));
+                }
+            }
+        }
+    }
+    let mut lists: Vec<&str> = RANDOMIZED_WORLD_BASE_LISTS.to_vec();
+    lists.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+    let clutter = state.clutter.borrow();
+    for f in lists {
+        let l = match clutter.get(f) {
+            Some(Object::Userdata(u)) => u
+                .as_any()
+                .downcast_ref::<ArrayListObject>()
+                .map_or("[]".to_string(), &objects),
+            _ => "[]".to_string(),
+        };
+        let _ = writeln!(sb, "CLUTTER {f} {l}");
+    }
+    let o = the("zombie.iso.worldgen.WorldGenUtils");
+    let files = match &o {
+        Object::Userdata(u) => u
+            .as_any()
+            .downcast_ref::<WorldGenUtilsObject>()
+            .map_or_else(Vec::new, |w| w.0.borrow().files.clone()),
+        _ => Vec::new(),
+    };
+    let _ = writeln!(sb, "WORLDGENFILES {}", list(&files));
+    let _ = writeln!(sb, "SGLOBALSYSTEMS 0");
 }

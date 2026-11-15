@@ -8,15 +8,16 @@ tests/original_probe/LuaExposeProbe.java (standalone LuaManager.init) into targe
 inside a statics or method table is what HotSpot's getMethods()/getFields() gave in one run on the pinned build: the
 original's own order is not stable between runs for some classes (SandboxOptions, IsoZombie, ...), nor is the order
 of the globals. Registry constants
-(`public static final X NAME = registerBase("Id")`) take their id from the decompiled class.
+(`public static final X NAME = registerBase("Id")`, `... = new PerkFactory.Perk("Id")`) take their id from the
+decompiled class.
   python3 tools/gen_lua_expose.py [target/oracle/luaexpose.txt]"""
 import pathlib, re, sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
 meas = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else root / "target/oracle/luaexpose.txt"
 
-# The classes the game's media/lua/shared reads while loading (measured, docs/COMPATIBILITY.md), the classes of the
-# objects it calls methods on, and SandboxOptions/Core. Nested classes come along with their outer class.
+# The classes the game's media/lua/shared and media/lua/server read while loading (measured, docs/COMPATIBILITY.md),
+# the classes of the objects they call methods on, and SandboxOptions/Core. Nested classes come along with their outer class.
 CLASSES = """
 zombie.characters.animals.AnimalDefinitions zombie.characters.animals.AnimalGenomeDefinitions
 zombie.characters.animals.AnimalPartsDefinitions java.util.ArrayList
@@ -29,6 +30,12 @@ zombie.iso.SpriteDetails.IsoFlagType zombie.iso.IsoGridSquare zombie.scripting.o
 zombie.scripting.objects.ItemKey zombie.scripting.objects.ItemTag zombie.input.KeybindId org.lwjglx.input.Keyboard
 zombie.worldMap.symbols.MapSymbolDefinitions zombie.characters.BodyDamage.Metabolics zombie.input.Mouse
 zombie.scripting.ScriptManager zombie.iso.Vector2 zombie.SandboxOptions zombie.core.Core zombie.core.textures.ColorInfo
+zombie.iso.BentFences zombie.iso.BrokenFences zombie.iso.TileOverlays zombie.iso.ContainerOverlays
+zombie.ai.states.ClimbDownSheetRopeState zombie.ai.states.ClimbOverFenceState zombie.ai.states.ClimbOverWallState
+zombie.ai.states.ClimbSheetRopeState zombie.ai.states.ClimbThroughWindowState zombie.inventory.ItemPickerJava
+zombie.Lua.LuaEventManager zombie.Lua.MapObjects zombie.characters.skills.PerkFactory zombie.globalObjects.SGlobalObjects
+zombie.globalObjects.SGlobalObjectSystem zombie.ui.UIFont zombie.ui.TextManager zombie.iso.worldgen.WorldGenUtils
+zombie.iso.IsoWorld zombie.randomizedWorld.RandomizedWorldBase
 """.split()
 
 
@@ -145,7 +152,7 @@ for c in want:
         elif v.startswith("object "):
             # a lambda's class name carries an address that changes between runs
             cls = re.sub(r"\$\$Lambda/0x[0-9a-f]+$", "$$Lambda", v[7:])
-            m = src and re.search(r"public static final \S+ %s = \w+\(\s*\"((?:[^\"\\]|\\.)*)\"" % re.escape(k), src)
+            m = src and re.search(r"public static final \S+ %s = (?:new )?[\w.]+\(\s*\"((?:[^\"\\]|\\.)*)\"" % re.escape(k), src)
             s = "S::Object(%d, %s)" % (cid(cls), rs(m.group(1)) if m else '""')
         elif v.startswith("d"):
             s = "S::Number(0x%s)" % v[1:]
@@ -193,6 +200,20 @@ lines.append("/// The exposed classes, outer before nested; statics and methods 
 lines.append("pub static CLASSES: [Exposed; %d] = [" % len(out_classes))
 lines += out_classes
 lines.append("];")
+lines.append("")
+rwb = (root / "decompiled/zombie/randomizedWorld/RandomizedWorldBase.java").read_text(encoding="utf-8")
+getters = re.findall(r"public ArrayList<String> (get\w+)\(\) \{\s*return (\w+);", rwb)
+lines.append("/// RandomizedWorldBase's `ArrayList<String> getX()` getters of its static lists, from the decompiled class.")
+lines.append("pub fn randomized_world_base_list(getter: &str) -> Option<super::exposer::Imp> {")
+lines.append("    Some(match getter {")
+for g, f in getters:
+    lines.append("        %s => |s, _, cf, _| super::exposed_world::clutter(s, cf, %s)," % (rs(g), rs(f)))
+lines.append("        _ => return None,")
+lines.append("    })")
+lines.append("}")
+lines.append("")
+lines.append("/// The static lists those getters return, by field name.")
+lines.append("pub static RANDOMIZED_WORLD_BASE_LISTS: [&str; %d] = [%s];" % (len(getters), ", ".join(rs(f) for _, f in getters)))
 lines.append("")
 lines.append("/// LuaManager.GlobalObject's `@LuaMethod(global = true)` functions in environment order, with their overload counts.")
 lines.append("pub static GLOBALS: [(&str, u8); %d] = [" % len(glob))

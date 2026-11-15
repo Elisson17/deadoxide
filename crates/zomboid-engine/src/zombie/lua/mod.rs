@@ -3,7 +3,9 @@ pub mod event;
 pub mod exposed_methods;
 #[rustfmt::skip] // generated, one entry per line
 pub mod exposed_table;
+pub mod exposed_world;
 pub mod exposer;
 pub mod lua_event_manager;
 pub mod lua_events_table;
 pub mod lua_manager;
+pub mod map_objects;

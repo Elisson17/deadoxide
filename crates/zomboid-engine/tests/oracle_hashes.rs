@@ -288,3 +288,9 @@ fn luaload_matches_original() {
     // the second argument is the probe's scratch cache dir, unused by pz-dump
     check("luaload", &["-", "shared"]);
 }
+
+#[test]
+fn luaserver_matches_original() {
+    // media/lua/shared then media/lua/server, as the game's server loads them
+    check("luaserver", &["-", "shared", "server"]);
+}

@@ -453,6 +453,33 @@ pub fn parse_double(s: &str) -> Option<f64> {
     Some(if neg { -v } else { v })
 }
 
+/// java.lang.Float.parseFloat: the grammar of `parse_double`, rounded once from the decimal to float (not through
+/// double). `None` is the NumberFormatException.
+pub fn parse_float(s: &str) -> Option<f32> {
+    parse_double(s)?;
+    let t = trim(s);
+    let t = t.strip_suffix(['f', 'F', 'd', 'D']).unwrap_or(t);
+    t.parse::<f32>().ok()
+}
+
+/// The message of NumberFormatException.forInputString for radix 10 (Integer.parseInt, Float.parseFloat).
+pub fn number_format_message(s: &str) -> String {
+    format!("For input string: \"{s}\"")
+}
+
+/// java.lang.String.split with a one-character pattern that is not a regex metacharacter: the pieces between
+/// separators, trailing empty pieces dropped (a string without the separator is one piece).
+pub fn split_char(s: &str, c: char) -> Vec<&str> {
+    let mut parts: Vec<&str> = s.split(c).collect();
+    if parts.len() == 1 {
+        return parts;
+    }
+    while parts.last() == Some(&"") {
+        parts.pop();
+    }
+    parts
+}
+
 /// java.lang.Double.toString (JDK 19 and later, the game's JRE 25): the shortest decimal that reads back as `d`;
 /// when a single digit would do, the closest of the one- and two-digit decimals (so 2^-1074 is "4.9E-324").
 /// Plain notation for 10^-3 <= |d| < 10^7, else "d.dddE<n>".

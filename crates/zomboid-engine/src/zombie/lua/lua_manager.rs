@@ -61,6 +61,11 @@ impl Loader {
         }
     }
 
+    /// ZomboidFileSystem.base.canonicalFile: the game directory.
+    pub fn game_root(&self) -> &Path {
+        &self.game_root
+    }
+
     /// zombie.ZomboidFileSystem.getAbsolutePath
     pub fn get_absolute_path(&self, rel: &str) -> Option<String> {
         self.file_map.get(&rel.to_lowercase()).cloned()
@@ -160,7 +165,7 @@ impl LuaManager {
             Object::str("require"),
             Object::Function(Rc::new(Require(loader.clone(), Rc::downgrade(&env)))),
         );
-        let statics = JavaStatics::new(platform.clone(), loader.clone(), &env);
+        let statics = JavaStatics::new(platform.clone(), loader.clone(), &env, events.clone());
         exposer::expose_all(&statics, &mut thread)?;
         Ok(LuaManager {
             platform,

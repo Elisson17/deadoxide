@@ -12,6 +12,7 @@ use std::rc::{Rc, Weak};
 
 use super::exposed_methods;
 use super::exposed_table::{CLASSES, GLOBALS, JAVA_CLASSES};
+use super::lua_event_manager::EventRegistry;
 use super::lua_manager::{run_lua, Loader};
 use crate::se::krka::kahlua::j2se::j2se_platform::J2SEPlatform;
 use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
@@ -19,7 +20,7 @@ use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
 use crate::se::krka::kahlua::vm::kahlua_util::{get_class_metatables, get_or_create_table};
 use crate::se::krka::kahlua::vm::object::{
-    classes, JavaClass, JavaFunction, Object, TableRef, Throwable, Userdata, R,
+    classes, JavaClass, JavaFunction, Object, TableRef, Throwable, ThrowableObject, Userdata, R,
 };
 
 /// One entry of a statics table, as measured.
@@ -88,8 +89,10 @@ pub struct JavaStatics {
     pub env: Weak<RefCell<KahluaTableImpl>>,
     /// The values of public static fields, by class and field name, so that Java code returns the same objects.
     fields: RefCell<HashMap<(&'static str, &'static str), Object>>,
-    /// Object identity of the Java singletons (SandboxOptions.instance, Core.getInstance(), ...).
-    pub singletons: RefCell<HashMap<&'static str, Object>>,
+    /// Object identity of the Java singletons (`X.instance`, `X.getInstance()`, ...), by class name.
+    singletons: RefCell<HashMap<&'static str, Object>>,
+    /// LuaEventManager's event list (`Events`).
+    pub events: Rc<EventRegistry>,
     /// Java state behind the exposed classes, owned by their ports.
     pub state: super::exposed_methods::State,
     /// Core.debug
@@ -101,6 +104,7 @@ impl JavaStatics {
         platform: Rc<J2SEPlatform>,
         loader: Rc<RefCell<Loader>>,
         env: &TableRef,
+        events: Rc<EventRegistry>,
     ) -> Rc<JavaStatics> {
         Rc::new(JavaStatics {
             platform,
@@ -108,6 +112,7 @@ impl JavaStatics {
             env: Rc::downgrade(env),
             fields: RefCell::new(HashMap::new()),
             singletons: RefCell::new(HashMap::new()),
+            events,
             state: Default::default(),
             debug: false,
         })
@@ -134,6 +139,25 @@ impl JavaStatics {
     pub fn run_lua(&self, thread: &mut KahluaThread, filename: &str) -> R<Object> {
         let env = self.env()?;
         run_lua(&self.loader, &self.platform, &env, thread, filename)
+    }
+
+    /// The one object of a Java singleton class, made by `make` on first use.
+    pub fn singleton(&self, class: &'static str, make: impl FnOnce() -> Object) -> Object {
+        if let Some(o) = self.singletons.borrow().get(class) {
+            return o.clone();
+        }
+        let o = make();
+        self.singletons.borrow_mut().insert(class, o.clone());
+        o
+    }
+
+    /// zombie.core.logger.ExceptionLogger.logException(Throwable): the game's log (kept with the loader's).
+    pub fn log_exception(&self, t: &Throwable) {
+        let text = ThrowableObject(t.clone()).java_to_string();
+        self.loader
+            .borrow_mut()
+            .log
+            .push(format!("ExceptionLogger: {text}"));
     }
 }
 
@@ -182,8 +206,29 @@ fn identity_hash_code_of<T>(t: &T) -> i32 {
     ((t as *const T as usize >> 4) & 0x7fff_ffff) as i32
 }
 
+/// How an exposed call fails, which decides what Lua sees.
+#[derive(Debug)]
+pub enum Fail {
+    /// Thrown into Lua: the argument check of LuaJavaInvoker.prepareCall (MethodArguments.assertValid throws a
+    /// RuntimeException with the failure), or a call the port has not written.
+    Lua(Throwable),
+    /// An exception of the Java method itself: se.krka.kahlua.integration.expose.caller.MethodCaller.call catches
+    /// every Throwable of `method.invoke`, logs it (ExceptionLogger) and pushes no result, so Lua gets nothing back
+    /// and goes on.
+    Java(Throwable),
+}
+
+impl From<Throwable> for Fail {
+    fn from(t: Throwable) -> Fail {
+        Fail::Java(t)
+    }
+}
+
+/// What an exposed method returns: the number of results it pushed, or how it failed.
+pub type Ret = Result<i32, Fail>;
+
 /// The implementation of an exposed method: (statics, thread, frame, number of arguments) -> number of results.
-pub type Imp = fn(&Rc<JavaStatics>, &mut KahluaThread, &FrameRef, i32) -> R<i32>;
+pub type Imp = fn(&Rc<JavaStatics>, &mut KahluaThread, &FrameRef, i32) -> Ret;
 
 /// se.krka.kahlua.integration.expose.LuaJavaInvoker (one method) or MultiLuaJavaInvoker (overloads, which the
 /// implementation tells apart by its arguments).
@@ -242,7 +287,14 @@ impl JavaFunction for Invoker {
             }
         }
         match self.imp {
-            Some(f) => f(&self.statics, thread, cf, n),
+            Some(f) => match f(&self.statics, thread, cf, n) {
+                Ok(results) => Ok(results),
+                Err(Fail::Lua(t)) => Err(t),
+                Err(Fail::Java(t)) => {
+                    self.statics.log_exception(&t);
+                    Ok(0)
+                }
+            },
             None => Err(Throwable::runtime(format!(
                 "not ported: {}.{}",
                 self.class.name, self.name

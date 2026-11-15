@@ -7,9 +7,10 @@
 //! (Translator.loadFiles is the game's startup, not LuaManager's), no renderer (Texture.getSharedTexture gives
 //! null), no item scripts (ScriptManager.instance is empty), not a client or a server, Core.debug off.
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::exposer::{is_instance, Imp, JavaEnum, JavaObject, JavaStatics};
+use super::exposer::{is_instance, Fail, Imp, JavaEnum, JavaObject, JavaStatics, Ret};
 use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
@@ -25,6 +26,7 @@ use crate::zombie::characters::worn_items::body_locations::{
 use crate::zombie::core::textures::color_info::ColorInfo;
 use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::lua::exposer::class_named;
+use crate::zombie::lua::map_objects::MapObjects;
 use crate::zombie::sandbox_options::SandboxOptions;
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 use crate::zombie::world_map::symbols::map_symbol_definitions::{
@@ -42,6 +44,10 @@ pub struct State {
     pub attached_locations: RefCell<AttachedLocations>,
     /// MapSymbolDefinitions.instance (made by the first getInstance()).
     pub map_symbol_definitions: RefCell<Option<Rc<MapSymbolDefinitions>>>,
+    /// zombie.Lua.MapObjects' statics.
+    pub map_objects: RefCell<MapObjects>,
+    /// RandomizedWorldBase's static clutter lists, by field name (made when first returned).
+    pub clutter: RefCell<HashMap<&'static str, Object>>,
 }
 
 /// zombie.SandboxOptions as a Lua value.
@@ -160,7 +166,7 @@ fn fmt_f(f: f32) -> String {
     format!("{:.6}", f64::from(f))
 }
 
-fn hash<T>(t: &T) -> usize {
+pub(super) fn hash<T>(t: &T) -> usize {
     (t as *const T as usize >> 4) & 0x7fff_ffff
 }
 
@@ -173,14 +179,16 @@ const LOCATION_REGISTRIES: [&str; 4] = [
 ];
 
 /// The `toString()` of a registry constant: its ResourceLocation (traits, professions, body locations, tags),
-/// its id (KeybindId) or "Base." + id (ItemKey); `None` for an opaque object.
+/// its id (KeybindId, PerkFactory.Perk) or "Base." + id (ItemKey); `None` for an opaque object.
 pub fn object_to_string(o: &JavaObject) -> Option<String> {
     let name = o.class.name;
     if LOCATION_REGISTRIES.contains(&name) {
         return ResourceLocation::of(o.id).ok().map(|l| l.to_string());
     }
     match name {
-        "zombie.input.KeybindId" => Some(o.id.to_string()),
+        "zombie.input.KeybindId" | "zombie.characters.skills.PerkFactory$Perk" => {
+            Some(o.id.to_string())
+        }
         "zombie.scripting.objects.ItemKey" => Some(format!("Base.{}", o.id)),
         _ => None,
     }
@@ -200,11 +208,19 @@ pub fn static_object(
         ("zombie.SandboxOptions", "instance", _) => {
             Object::Userdata(sandbox_options_instance(statics, thread)?)
         }
-        ("zombie.scripting.ScriptManager", "instance", _) => {
-            Object::Userdata(Rc::new(ScriptManagerObject))
-        }
+        (_, "instance" | "INSTANCE", c) if c == owner => singleton(statics, class),
         (_, _, "java.util.ArrayList") => Object::Userdata(Rc::new(ArrayListObject::default())),
         _ => Object::Userdata(Rc::new(JavaObject { class, id })),
+    })
+}
+
+/// The one object of a singleton class (its `instance` field, `getInstance()`, the global getter): the port's
+/// state for the classes it has written, an opaque object for the others.
+pub fn singleton(statics: &Rc<JavaStatics>, class: &'static JavaClass) -> Object {
+    statics.singleton(class.name, || match class.name {
+        "zombie.scripting.ScriptManager" => ud(Rc::new(ScriptManagerObject)),
+        name => super::exposed_world::make_singleton(name)
+            .unwrap_or_else(|| Object::Userdata(Rc::new(JavaObject { class, id: "" }))),
     })
 }
 
@@ -276,7 +292,8 @@ pub fn sandbox_load_game_file(
 
 // ---- arguments and results (LuaJavaInvoker + KahluaConverterManager) ----
 
-fn type_error(expected: &str, got: &Object) -> Throwable {
+/// The argument type failure of LuaJavaInvoker.prepareCall.
+pub(super) fn type_error(expected: &str, got: &Object) -> Fail {
     let got = match got {
         Object::Number(_) => "Double".to_string(),
         Object::String(_) => "String".to_string(),
@@ -294,18 +311,21 @@ fn type_error(expected: &str, got: &Object) -> Throwable {
             })
             .unwrap_or_default(),
     };
-    Throwable::runtime(format!("expected argument of type {expected}, got {got}"))
+    Fail::Lua(Throwable::runtime(format!(
+        "expected argument of type {expected}, got {got}"
+    )))
 }
 
-fn arg_count_error(expected: i32, got: i32) -> Throwable {
-    Throwable::runtime(format!(
+/// The argument count failure of LuaJavaInvoker.prepareCall.
+pub(super) fn arg_count_error(expected: i32, got: i32) -> Fail {
+    Fail::Lua(Throwable::runtime(format!(
         "expected {expected} argument{}, got {got}",
         if expected == 1 { "" } else { "s" }
-    ))
+    )))
 }
 
 /// The argument count check of LuaJavaInvoker.prepareCall: exactly `params` arguments after `self`.
-fn want_args(n: i32, has_self: bool, params: i32) -> R<()> {
+pub(super) fn want_args(n: i32, has_self: bool, params: i32) -> Result<(), Fail> {
     let got = n - i32::from(has_self);
     if got != params {
         return Err(arg_count_error(params, got));
@@ -314,7 +334,7 @@ fn want_args(n: i32, has_self: bool, params: i32) -> R<()> {
 }
 
 /// A String parameter: a Lua string, or null for nil.
-fn string_arg(cf: &FrameRef, i: i32) -> R<Option<String>> {
+pub(super) fn string_arg(cf: &FrameRef, i: i32) -> Result<Option<String>, Fail> {
     match cf.get(i) {
         Object::Nil => Ok(None),
         Object::String(s) => Ok(Some(rstr(&s))),
@@ -323,19 +343,20 @@ fn string_arg(cf: &FrameRef, i: i32) -> R<Option<String>> {
 }
 
 /// A String parameter the method dereferences: null is a NullPointerException.
-fn string_arg_nn(cf: &FrameRef, i: i32) -> R<String> {
+pub(super) fn string_arg_nn(cf: &FrameRef, i: i32) -> Result<String, Fail> {
     string_arg(cf, i)?.ok_or_else(npe)
 }
 
-fn npe() -> Throwable {
-    Throwable::Java {
+/// A NullPointerException in the method (logged by MethodCaller, nothing returned).
+pub(super) fn npe() -> Fail {
+    Fail::Java(Throwable::Java {
         class: "java.lang.NullPointerException",
         message: None,
-    }
+    })
 }
 
 /// An int parameter: a Lua number through Double.intValue (KahluaNumberConverter).
-fn int_arg(cf: &FrameRef, i: i32) -> R<i32> {
+pub(super) fn int_arg(cf: &FrameRef, i: i32) -> Result<i32, Fail> {
     match cf.get(i) {
         Object::Number(d) => Ok(d as i32),
         o => Err(type_error("int", &o)),
@@ -343,14 +364,14 @@ fn int_arg(cf: &FrameRef, i: i32) -> R<i32> {
 }
 
 /// A float parameter: a Lua number through Double.floatValue.
-fn float_arg(cf: &FrameRef, i: i32) -> R<f32> {
+pub(super) fn float_arg(cf: &FrameRef, i: i32) -> Result<f32, Fail> {
     match cf.get(i) {
         Object::Number(d) => Ok(d as f32),
         o => Err(type_error("float", &o)),
     }
 }
 
-fn bool_arg(cf: &FrameRef, i: i32) -> R<bool> {
+pub(super) fn bool_arg(cf: &FrameRef, i: i32) -> Result<bool, Fail> {
     match cf.get(i) {
         Object::Boolean(b) => Ok(b),
         o => Err(type_error("boolean", &o)),
@@ -358,7 +379,7 @@ fn bool_arg(cf: &FrameRef, i: i32) -> R<bool> {
 }
 
 /// A KahluaTable parameter: a Lua table, or null for nil.
-fn table_arg(cf: &FrameRef, i: i32) -> R<Option<TableRef>> {
+pub(super) fn table_arg(cf: &FrameRef, i: i32) -> Result<Option<TableRef>, Fail> {
     match cf.get(i) {
         Object::Nil => Ok(None),
         Object::Table(t) => Ok(Some(t)),
@@ -367,56 +388,64 @@ fn table_arg(cf: &FrameRef, i: i32) -> R<Option<TableRef>> {
 }
 
 /// The receiver of an instance method (the invoker has checked its class).
-fn this<T: 'static>(cf: &FrameRef) -> R<Rc<dyn Userdata>> {
+pub(super) fn this<T: 'static>(cf: &FrameRef) -> Result<Rc<dyn Userdata>, Fail> {
     match cf.get(0) {
         Object::Userdata(u) if u.as_any().is::<T>() => Ok(u),
-        _ => Err(npe()),
+        o => Err(type_error(std::any::type_name::<T>(), &o)),
     }
 }
 
-fn ud<T: Userdata + 'static>(x: Rc<T>) -> Object {
+pub(super) fn ud<T: Userdata + 'static>(x: Rc<T>) -> Object {
     Object::Userdata(x)
 }
 
-fn ret(cf: &FrameRef, o: Object) -> R<i32> {
-    cf.push(o)?;
+pub(super) fn ret(cf: &FrameRef, o: Object) -> Ret {
+    cf.push(o).map_err(Fail::Lua)?;
     Ok(1)
 }
 
-fn ret_opt<T: Userdata + 'static>(cf: &FrameRef, o: Option<Rc<T>>) -> R<i32> {
+pub(super) fn ret_opt<T: Userdata + 'static>(cf: &FrameRef, o: Option<Rc<T>>) -> Ret {
     ret(cf, o.map_or(Object::Nil, ud))
 }
 
-fn ret_str(cf: &FrameRef, s: Option<&str>) -> R<i32> {
+pub(super) fn ret_str(cf: &FrameRef, s: Option<&str>) -> Ret {
     ret(cf, s.map_or(Object::Nil, Object::str))
 }
 
-fn ret_int(cf: &FrameRef, v: i32) -> R<i32> {
+pub(super) fn ret_int(cf: &FrameRef, v: i32) -> Ret {
     ret(cf, Object::Number(f64::from(v)))
 }
 
-fn ret_float(cf: &FrameRef, v: f32) -> R<i32> {
+pub(super) fn ret_float(cf: &FrameRef, v: f32) -> Ret {
     ret(cf, Object::Number(f64::from(v)))
 }
 
-fn ret_bool(cf: &FrameRef, v: bool) -> R<i32> {
+pub(super) fn ret_bool(cf: &FrameRef, v: bool) -> Ret {
     ret(cf, Object::Boolean(v))
 }
 
+/// Runs `$body` with `$x` bound to the receiver of type `$t`.
 macro_rules! with_this {
     ($cf:expr, $t:ty, $x:ident, $body:expr) => {{
-        let u = this::<$t>($cf)?;
-        let $x = u.as_any().downcast_ref::<$t>().ok_or_else(npe)?;
+        let u = $crate::zombie::lua::exposed_methods::this::<$t>($cf)?;
+        let $x = u
+            .as_any()
+            .downcast_ref::<$t>()
+            .ok_or_else($crate::zombie::lua::exposed_methods::npe)?;
         #[allow(clippy::let_and_return)]
         let r = $body;
         r
     }};
 }
+pub(super) use with_this;
 
 // ---- global functions (LuaManager.GlobalObject) ----
 
 /// The written ones of LuaManager.GlobalObject's `@LuaMethod(global = true)` functions.
 pub fn global(name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_world::global(name) {
+        return Some(f);
+    }
     Some(match name {
         "getSandboxOptions" => |s, t, cf, _| {
             let o = sandbox_options_instance(s, t)?;
@@ -466,11 +495,11 @@ pub fn global(name: &str) -> Option<Imp> {
 /// zombie.core.Translator.getText in a state where no translation file is loaded: every key is missing, so the
 /// key itself is the text, formatted with the arguments (`String.formatted`, which a key without `%` leaves as
 /// it is) and with `<br>` turned into newlines.
-fn translator_get_text(desc: &str, _has_args: bool) -> R<String> {
+fn translator_get_text(desc: &str, _has_args: bool) -> Result<String, Fail> {
     if desc.contains('%') {
-        return Err(Throwable::runtime(format!(
+        return Err(Fail::Lua(Throwable::runtime(format!(
             "not ported: Translator.getText formatting of \"{desc}\""
-        )));
+        ))));
     }
     Ok(if desc.contains("<br>") || desc.contains("<BR>") {
         desc.replace("<br>", "\n").replace("<BR>", "\n")
@@ -562,7 +591,7 @@ fn is_enum_class(class: &str) -> bool {
 }
 
 /// The registry id of a JavaObject receiver.
-fn registry_id(cf: &FrameRef) -> R<&'static str> {
+fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
     match cf.get(0) {
         Object::Userdata(u) => u
             .as_any()
@@ -574,6 +603,9 @@ fn registry_id(cf: &FrameRef) -> R<&'static str> {
 }
 
 fn static_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_world::static_method(class, name) {
+        return Some(f);
+    }
     Some(match (class, name) {
         ("zombie.characters.WornItems.BodyLocations", "getGroup") => |s, _, cf, n| {
             want_args(n, false, 1)?;
@@ -606,7 +638,8 @@ fn static_method(class: &str, name: &str) -> Option<Imp> {
                         return Err(Throwable::Java {
                             class: "java.lang.IllegalArgumentException",
                             message: Some(format!("Illegal Capacity: {}", d as i32)),
-                        })
+                        }
+                        .into())
                     }
                     Object::Number(_) => {}
                     Object::Userdata(u) => match u.as_any().downcast_ref::<ArrayListObject>() {
@@ -657,13 +690,16 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 }
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_world::instance_method(class, name) {
+        return Some(f);
+    }
     Some(match (class, name) {
         ("zombie.SandboxOptions", "initSandboxVars") => |s, _, cf, _| {
             let env = s.env()?;
             let vars = match KahluaTableImpl::rawget(&env, &Object::str("SandboxVars"))? {
                 Object::Table(t) => t,
                 Object::Nil => return Err(npe()),
-                o => return Err(type_error("KahluaTable", &o)),
+                o => return Err(Throwable::class_cast(&o, "se.krka.kahlua.vm.KahluaTable").into()),
             };
             with_this!(
                 cf,
@@ -964,7 +1000,8 @@ fn instance_method(class: &str, name: &str) -> Option<Imp> {
                             "Index {i} out of bounds for length {}",
                             m.symbol_list.borrow().len()
                         )),
-                    }),
+                    }
+                    .into()),
                 }
             })
         },
@@ -1060,7 +1097,8 @@ fn instance_method(class: &str, name: &str) -> Option<Imp> {
                             return Err(Throwable::Java {
                                 class: "java.lang.IndexOutOfBoundsException",
                                 message: Some(format!("Index: {i}, Size: {len}")),
-                            })
+                            }
+                            .into())
                         }
                     }
                     Ok(0)
@@ -1103,7 +1141,8 @@ fn instance_method(class: &str, name: &str) -> Option<Imp> {
                     _ => Err(Throwable::Java {
                         class: "java.lang.IndexOutOfBoundsException",
                         message: Some(format!("Index {i} out of bounds for length {len}")),
-                    }),
+                    }
+                    .into()),
                 }
             })
         },

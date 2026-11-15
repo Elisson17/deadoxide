@@ -8,7 +8,8 @@ use crate::java_nio::{read_string, read_string_stream, ByteBuffer};
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
 use crate::se::krka::kahlua::vm::object::{
-    classes, identity_hash_code, rstr, JavaClass, JavaFunction, Key, Object, TableRef, Throwable, R,
+    cast_string, classes, identity_hash_code, rstr, JavaClass, JavaFunction, Key, Object, TableRef,
+    Throwable, R,
 };
 
 /// A Lua value as a saved table can hold it.
@@ -253,6 +254,40 @@ impl KahluaTableImpl {
     /// se.krka.kahlua.j2se.KahluaTableImpl.rawget(int)
     pub fn rawget_int(t: &TableRef, key: i32) -> R<Object> {
         Self::rawget(t, &Object::Number(f64::from(key)))
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawgetStr(Object): `(String) rawget(key)` (nil is null, any other
+    /// non-string a ClassCastException).
+    pub fn rawget_str(t: &TableRef, key: &str) -> R<Option<String>> {
+        Ok(cast_string(&Self::rawget(t, &Object::str(key))?)?.map(|s| rstr(&s)))
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawgetInt(Object): a number's `intValue()`, else -1.
+    pub fn rawget_int_of(t: &TableRef, key: &str) -> R<i32> {
+        Ok(match Self::rawget(t, &Object::str(key))? {
+            Object::Number(d) => d as i32,
+            _ => -1,
+        })
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawgetBool(Object): a boolean, else false.
+    pub fn rawget_bool(t: &TableRef, key: &str) -> R<bool> {
+        Ok(matches!(
+            Self::rawget(t, &Object::str(key))?,
+            Object::Boolean(true)
+        ))
+    }
+
+    /// `(KahluaTableImpl) table.rawget(key)`: nil is null, any other non-table a ClassCastException.
+    pub fn rawget_table(t: &TableRef, key: &str) -> R<Option<TableRef>> {
+        match Self::rawget(t, &Object::str(key))? {
+            Object::Nil => Ok(None),
+            Object::Table(t) => Ok(Some(t)),
+            o => Err(Throwable::class_cast(
+                &o,
+                "se.krka.kahlua.j2se.KahluaTableImpl",
+            )),
+        }
     }
 
     /// se.krka.kahlua.j2se.KahluaTableImpl.rawset(int, Object)

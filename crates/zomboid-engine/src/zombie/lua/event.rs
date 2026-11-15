@@ -28,6 +28,28 @@ pub struct Event {
     pub callbacks: RefCell<Vec<Rc<LuaClosure>>>,
 }
 
+static EVENT_CLASS: JavaClass = JavaClass {
+    name: "zombie.Lua.Event",
+    superclass: Some(&classes::OBJECT),
+    interfaces: &[],
+};
+
+/// An Event handed to Lua (LuaEventManager.AddEvent returns it); Event has no toString of its own.
+impl crate::se::krka::kahlua::vm::object::Userdata for Event {
+    fn class(&self) -> &'static JavaClass {
+        &EVENT_CLASS
+    }
+    fn java_to_string(&self) -> String {
+        format!(
+            "zombie.Lua.Event@{:x}",
+            (self as *const Self as usize >> 4) & 0x7fff_ffff
+        )
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 impl Event {
     /// zombie.Lua.Event.<init>
     pub fn new(name: &str, index: usize) -> Rc<Event> {

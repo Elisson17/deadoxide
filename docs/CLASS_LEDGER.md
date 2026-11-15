@@ -4,28 +4,28 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 229 of 3432 classes touched, 981 of 46318 method names cited (2.1%), 965313 decompiled lines.**
+**Total: 237 of 3432 classes touched, 1003 of 46318 method names cited (2.2%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 60 | 7277 | 293 (4.0%) | 144530 |
-| zombie.core | 450 | 28 | 5920 | 93 (1.6%) | 93574 |
+| zombie.iso | 346 | 65 | 7277 | 308 (4.2%) | 144530 |
+| zombie.core | 450 | 29 | 5920 | 94 (1.6%) | 93574 |
 | zombie.characters | 200 | 26 | 5028 | 75 (1.5%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
-| zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
+| zombie.inventory | 40 | 15 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 11 | 1411 | 10 (0.7%) | 28275 |
 | zombie | 60 | 8 | 1192 | 35 (2.9%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 6 | 1328 | 5 (0.4%) | 18604 |
 | zombie.ui | 52 | 0 | 1026 | 0 (0.0%) | 16932 |
-| zombie.Lua | 8 | 3 | 875 | 11 (1.3%) | 14841 |
+| zombie.Lua | 8 | 4 | 875 | 14 (1.6%) | 14841 |
 | zombie.ai | 99 | 0 | 875 | 0 (0.0%) | 14312 |
 | zombie.erosion | 23 | 3 | 216 | 1 (0.5%) | 13296 |
-| se | 70 | 21 | 692 | 203 (29.3%) | 11221 |
+| se | 70 | 21 | 692 | 206 (29.8%) | 11221 |
 | zombie.gameStates | 19 | 1 | 429 | 1 (0.2%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
 | zombie.util | 70 | 5 | 520 | 10 (1.9%) | 8496 |
@@ -83,7 +83,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | org.luaj.kahluafork.compiler.Token | 0 / 1 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/lex_state.rs |
 | se.krka.kahlua.integration.expose.LuaJavaInvoker | 1 / 17 | crates/zomboid-engine/src/zombie/lua/exposer.rs |
 | se.krka.kahlua.j2se.J2SEPlatform | 4 / 6 | crates/zomboid-engine/src/se/krka/kahlua/j2se/j2se_platform.rs, crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
-| se.krka.kahlua.j2se.KahluaTableImpl | 9 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
+| se.krka.kahlua.j2se.KahluaTableImpl | 12 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
 | se.krka.kahlua.j2se.MathLib | 3 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/math_lib.rs |
 | se.krka.kahlua.luaj.compiler.LuaCompiler | 4 / 6 | crates/zomboid-engine/src/se/krka/kahlua/luaj/compiler/lua_compiler.rs |
 | se.krka.kahlua.stdlib.BaseLib | 22 / 25 | crates/zomboid-engine/src/se/krka/kahlua/stdlib/base_lib.rs, crates/zomboid-engine/src/se/krka/kahlua/vm/kahlua_thread.rs |
@@ -109,6 +109,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.Lua.Event | 3 / 6 | crates/zomboid-engine/src/zombie/lua/event.rs |
 | zombie.Lua.LuaEventManager | 2 / 21 | crates/zomboid-engine/src/zombie/lua/lua_event_manager.rs |
 | zombie.Lua.LuaManager | 6 / 798 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs |
+| zombie.Lua.MapObjects | 3 / 12 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/lua/exposed_world.rs, crates/zomboid-engine/src/zombie/lua/map_objects.rs |
 | zombie.PersistentOutfits | 10 / 20 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.SandboxOptions | 7 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.SharedDescriptors | 1 / 16 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
@@ -155,6 +156,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.ImmutableColor | 0 / 26 | crates/zomboid-engine/src/zombie/core/immutable_color.rs |
 | zombie.core.TilePropertyAliasMap | 5 / 6 | crates/zomboid-engine/src/zombie/core/tile_property_alias_map.rs |
 | zombie.core.Translator | 6 / 41 | crates/zomboid-engine/src/zombie/core/translator.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-lua/src/text.rs |
+| zombie.core.logger.ExceptionLogger | 1 / 3 | crates/zomboid-engine/src/zombie/lua/exposer.rs |
 | zombie.core.math.PZMath | 13 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
 | zombie.core.properties.FasciaEdge | 0 / 0 | crates/zomboid-engine/src/zombie/core/properties/fascia_edge.rs |
 | zombie.core.properties.IsoPropertyType | 0 / 7 | crates/zomboid-engine/src/zombie/core/properties/iso_property_type.rs |
@@ -188,6 +190,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.inventory.InventoryItem | 3 / 613 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
 | zombie.inventory.InventoryItemFactory | 1 / 3 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs, crates/zomboid-engine/src/zombie/inventory/inventory_item_factory.rs |
 | zombie.inventory.ItemContainer | 1 / 304 | crates/zomboid-engine/src/zombie/inventory/item_container.rs |
+| zombie.inventory.ItemPickerJava | 0 / 53 | crates/zomboid-engine/src/zombie/lua/exposed_world.rs |
 | zombie.inventory.types.AlarmClock | 1 / 32 | crates/zomboid-engine/src/zombie/inventory/types/alarm_clock.rs |
 | zombie.inventory.types.Clothing | 2 / 115 | crates/zomboid-engine/src/zombie/inventory/types/clothing.rs |
 | zombie.inventory.types.Food | 1 / 182 | crates/zomboid-engine/src/zombie/inventory/types/food.rs |
@@ -198,9 +201,12 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.inventory.types.MapItem | 1 / 15 | crates/zomboid-engine/src/zombie/inventory/types/mod.rs |
 | zombie.inventory.types.Moveable | 1 / 32 | crates/zomboid-engine/src/zombie/inventory/types/moveable.rs |
 | zombie.inventory.types.Radio | 1 / 28 | crates/zomboid-engine/src/zombie/inventory/types/mod.rs |
+| zombie.iso.BentFences | 2 / 35 | crates/zomboid-engine/src/zombie/iso/bent_fences.rs |
+| zombie.iso.BrokenFences | 4 / 21 | crates/zomboid-engine/src/zombie/iso/broken_fences.rs |
 | zombie.iso.BuildingDef | 8 / 67 | crates/zomboid-engine/src/zombie/iso/building_def.rs |
 | zombie.iso.BuildingID | 5 / 5 | crates/zomboid-engine/src/zombie/iso/building_id.rs |
 | zombie.iso.CellLoader | 4 / 7 | crates/zomboid-engine/src/zombie/iso/cell_loader.rs, crates/zomboid-engine/src/zombie/iso/iso_world.rs |
+| zombie.iso.ContainerOverlays | 4 / 9 | crates/zomboid-engine/src/zombie/iso/container_overlays.rs |
 | zombie.iso.FishSchoolManager | 8 / 33 | crates/zomboid-lua/src/fishing.rs |
 | zombie.iso.InstanceTracker | 8 / 10 | crates/zomboid-engine/src/zombie/iso/instance_tracker.rs |
 | zombie.iso.IsoCell | 2 / 229 | crates/zomboid-engine/src/zombie/iso/iso_cell.rs, crates/zomboid-scene/src/scene.rs |
@@ -225,6 +231,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.RoomID | 5 / 5 | crates/zomboid-engine/src/zombie/iso/room_id.rs |
 | zombie.iso.SpriteDetails.IsoFlagType | 3 / 4 | crates/zomboid-engine/src/zombie/iso/sprite_details/iso_flag_type.rs |
 | zombie.iso.SpriteDetails.IsoObjectType | 3 / 4 | crates/zomboid-engine/src/zombie/iso/sprite_details/iso_object_type.rs |
+| zombie.iso.TileOverlays | 2 / 14 | crates/zomboid-engine/src/zombie/iso/tile_overlays.rs |
 | zombie.iso.Vector2 | 4 / 33 | crates/zomboid-engine/src/zombie/iso/vector2.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
 | zombie.iso.areas.DesignationZone | 1 / 31 | crates/zomboid-engine/src/zombie/iso/areas/designation_zone.rs |
 | zombie.iso.areas.IsoBuilding | 1 / 34 | crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
@@ -256,6 +263,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.weather.ThunderStorm | 1 / 30 | crates/zomboid-engine/src/zombie/iso/weather/thunder_storm.rs |
 | zombie.iso.weather.WeatherPeriod | 5 / 87 | crates/zomboid-engine/src/zombie/iso/weather/weather_period.rs |
 | zombie.iso.worldgen.WorldGenParams | 3 / 15 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_params.rs, crates/zomboid-scene/src/scene.rs |
+| zombie.iso.worldgen.WorldGenUtils | 3 / 16 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_utils.rs |
 | zombie.iso.zones.Zone | 25 / 68 | crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
 | zombie.iso.zones.ZoneGeometryType | 0 / 0 | crates/zomboid-engine/src/zombie/iso/zones/zone_geometry_type.rs |
 | zombie.network.id.ObjectID | 1 / 17 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs |
