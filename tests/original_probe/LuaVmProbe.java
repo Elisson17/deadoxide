@@ -51,6 +51,8 @@ public class LuaVmProbe {
     }
 
     public static void main(String[] a) throws Exception {
+        // os.date("%c") is Date.toString in the default zone: pinned to UTC.
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
         out = new PrintStream(new FileOutputStream(FileDescriptor.out), false, StandardCharsets.UTF_8);
         PrintStream nul = new PrintStream(OutputStream.nullOutputStream());
         System.setOut(nul);

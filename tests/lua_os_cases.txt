@@ -1,0 +1,168 @@
+Cases for Kahlua's OsLib, RandomLib and UserdataArray (tools/oracle.sh luaos), run like tests/lua_vm_cases.txt: each
+block after a "--@@case" line runs in a fresh environment. The probe sets the JVM's default zone to UTC (only `%c`
+reads it). Not covered on purpose: os.time() and os.date with one argument (the wall clock), newrandom's seed, the
+seed of a table, function or userdata (identity hashes, which `P` also masks in error messages), and a second
+ClassCastException or NullPointerException from KahluaUtil.fromDouble in one JVM (after the first, HotSpot may
+throw a preallocated one with a null message: depends on the JIT, UNKNOWN).
+--@@case
+local fmts = {"%Y-%m-%d %H:%M:%S", "%A %B %C %D %e %j", "%I %p %r %R %y %w %a %b %h", "%U %V %W", "%Z %n%%",
+  "%c", "%x %q %E %T %F", "%", "abc%", "!%Y-%m-%d", "%Y-%m-%d %H:%m:%S", "*t is not first", "!*t"}
+local times = {0, 1, -1, 0.0005, 86399.999, 86400, 951782400, 951868799, 1e9, 1234567890.5, -12219292800,
+  -12219292800.001, -12219379200, -12220156800, -62135596800, -62135596801, -62198755200, -1e11, 253402300799,
+  4102444800, 978307200, 1609459200, 1704067200, 1735689600, 1767225600, 1767225599, -2208988800, -5e9, 43200,
+  46800, 1e10, -1e10}
+for _, t in ipairs(times) do
+  for _, f in ipairs(fmts) do
+    local s = os.date(f, t)
+    print(type(s) == "string" and s or "table")
+  end
+end
+--@@case
+local t = -16e9
+for i = 0, 3000 do
+  t = t + 12345678.9 + i * 7
+  print(os.date("%Y %m %d %H %M %S %j %U %V %W %w %a %e|%c", t))
+end
+--@@case
+local function show(d)
+  return table.concat({tostring(d.year), tostring(d.month), tostring(d.day), tostring(d.hour), tostring(d.min),
+    tostring(d.sec), tostring(d.wday), tostring(d.yday), tostring(d.milli), tostring(d.isdst)}, " ")
+end
+for _, t in ipairs({0, 0.25, -0.25, 31535999.999, 31536000, 951782400.5, -12219292800, -12219292800.5, -1e11,
+  1e11, 5e8, 1700000000.123}) do
+  print(show(os.date("*t", t)), show(os.date("!*t", t)))
+end
+--@@case
+local function P(...)
+  local n = select("#", ...)
+  local t = {...}
+  for i = 1, n do t[i] = (string.gsub(tostring(t[i]), "@%x+", "@H")) end
+  print(unpack(t, 1, n))
+end
+local function T(tab) P(pcall(os.time, tab)) end
+T({year = 2000, month = 1, day = 1})
+T({year = 2000, month = 1, day = 1, hour = 12, min = 30, sec = 15, milli = 250})
+T({year = 2000, month = 13, day = 1})
+T({year = 2000, month = 0, day = 0})
+T({year = 2000, month = -25, day = 400, hour = -5, min = 90, sec = -1, milli = 1500})
+T({year = 1970, month = 1, day = 1, hour = 1e10})
+T({year = 0, month = 1, day = 1})
+T({year = -5, month = 3, day = 1})
+T({year = 1582, month = 10, day = 4})
+T({year = 1582, month = 10, day = 5})
+T({year = 1582, month = 10, day = 10})
+T({year = 1582, month = 10, day = 14})
+T({year = 1582, month = 10, day = 15})
+T({year = 1582, month = 10, day = 25})
+T({year = 1581, month = 22, day = 20})
+T({year = 1583, month = -2, day = 20})
+T({year = 1583, month = 1, day = -80})
+T({year = 1581, month = 12, day = 320})
+T({year = 1e10, month = 1, day = 1})
+T({year = 2024.9, month = 2.7, day = 29.99})
+T({year = 2024, month = 2, day = 30, hour = 0/0})
+T({year = "2024", month = 1, day = 1})
+T({month = 1, day = 1})
+T("x")
+T(nil)
+T()
+for _, t in ipairs({0, 1e9, -1e11, -12219292800, 1234567890.123, 951782400}) do
+  print(os.time(os.date("*t", t)) == t, os.time(os.date("!*t", t)))
+end
+--@@case
+local function P(...)
+  local n = select("#", ...)
+  local t = {...}
+  for i = 1, n do t[i] = (string.gsub(tostring(t[i]), "@%x+", "@H")) end
+  print(unpack(t, 1, n))
+end
+print(os.difftime(5, 3), os.difftime("7", 2.5), os.difftime(-1, 1e300))
+P(pcall(os.difftime, 1))
+P(pcall(os.difftime))
+P(pcall(os.difftime, "x", 1))
+P(pcall(os.date, ""))
+P(pcall(os.date, "!"))
+print(os.date(5, 0), os.date("%Y", "100"), os.date("%Y", 1e300), os.date("%Y", -1e300), os.date("%Y", 0/0))
+P(pcall(os.date, "%Y", "x"))
+P(pcall(os.date, nil, 0))
+P(pcall(os.date, {}, 0))
+print(type(os.date), type(os.time), type(os.difftime), os.clock, os.getenv)
+--@@case
+local function P(...)
+  local n = select("#", ...)
+  local t = {...}
+  for i = 1, n do t[i] = (string.gsub(tostring(t[i]), "@%x+", "@H")) end
+  print(unpack(t, 1, n))
+end
+local r = newrandom()
+print(type(r), type(newrandom), type(r.random), r.random == r.seed)
+r:seed(42)
+local t = {}
+for i = 1, 20 do t[#t + 1] = r:random() end
+print(table.concat(t, " "))
+r:seed(42)
+print(r:random(10), r:random(5, 7), r:random(-3, 3), r:random(1.9), r:random(2.5, 4.9), r:random(1e10))
+r:seed("hello") print(r:random(1000000))
+r:seed(true) print(r:random(100))
+r:seed(false) print(r:random(100))
+r:seed(1.5) print(r:random(100))
+r:seed(-0.0) print(r:random(100))
+r:seed(0) print(r:random(100))
+r:seed(0/0) print(r:random(100))
+r:seed(nil) print(r:random(100))
+r:seed(2^40 + 3) print(r:random(100), r:random(0/0, 5), r:random(16), r:random(2^30))
+P(pcall(r.random, r, 0))
+P(pcall(r.random, r, 5, 4))
+P(pcall(r.random, r, -2^31, 2^31 - 1))
+P(pcall(r.random, r, 0, 2^31 - 1))
+P(pcall(r.random, r, 1, 2^31 - 1))
+P(pcall(r.random, r, -2^31, 0))
+P(pcall(r.random, 5))
+P(pcall(r.random))
+P(pcall(r.seed, {}))
+P(pcall(r.seed, "x", 1))
+local s = newrandom()
+s:seed(7)
+r:seed(7)
+print(s:random(1000) == r:random(1000), rawequal(s, r))
+--@@case
+local function P(...)
+  local n = select("#", ...)
+  local t = {...}
+  for i = 1, n do t[i] = (string.gsub(tostring(t[i]), "@%x+", "@H")) end
+  print(unpack(t, 1, n))
+end
+local v = array.new()
+print(type(v), #v, type(array), getmetatable(v))
+v:push(10) v:push("a") v:push(nil) v:push(true)
+print(#v, v[0], v[1], v[2], v[3])
+v[1] = "b"
+print(v[1], tostring(v))
+P(pcall(function() return v[4] end))
+P(pcall(function() return v[-1] end))
+for i = 1, 20 do v:push(i) end
+print(#v, tostring(v))
+P(pcall(function() return v[-1] end))
+P(pcall(function() v[30] = 1 end))
+P(pcall(function() v[-3] = 1 end))
+print(v.push == array.push, v.new == array.new, v.foo, v[1.9], v[0 / 0])
+P(pcall(array.__len, 5))
+P(pcall(array.__len))
+P(pcall(array.__len, nil))
+P(pcall(array.__index, 5, 1))
+P(pcall(array.__index, v))
+P(pcall(array.push, nil, 1))
+P(pcall(array.push, {}, 1))
+P(pcall(array.push, "s", 1))
+P(pcall(array.push, v))
+P(pcall(array.__newindex, nil, 1, 2))
+P(pcall(array.__newindex, v, 1))
+P(pcall(array.__newindex, math.abs, 1, 2))
+local w = array.new()
+w:push(w)
+print(tostring(w), tostring(array.new()), #array)
+v[0] = 1.5
+print(v[0], v:push(5) == v, #v, rawequal(v, w))
+local x = array.new()
+for i = 1, 41 do x:push(i * 0.5) end
+P(pcall(function() return x[-7] end))

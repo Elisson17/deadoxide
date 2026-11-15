@@ -375,7 +375,10 @@ impl Throwable {
     /// The `ClassCastException` of casting `o` to `target` (the JDK's message for two classes of the
     /// game's class path).
     pub fn class_cast(o: &Object, target: &str) -> Throwable {
-        let from = o.class().map_or("null", |c| c.name);
+        let from = match o {
+            Object::Table(_) => "se.krka.kahlua.j2se.KahluaTableImpl",
+            _ => o.class().map_or("null", |c| c.name),
+        };
         let from_where = if from.starts_with("java.") {
             "in module java.base of loader 'bootstrap'"
         } else {

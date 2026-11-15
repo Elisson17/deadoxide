@@ -4,7 +4,9 @@
 //! Singletons of the original (`IsoSpriteManager.instance`, `TilePropertyAliasMap.instance`) are explicit values here.
 #![forbid(unsafe_code)]
 pub mod java;
+pub mod java_calendar;
 pub mod java_chars;
+pub mod java_fdlibm;
 pub mod java_nio;
 pub mod native;
 pub mod org;

@@ -561,19 +561,9 @@ pub fn to_upper_case(s: &str) -> String {
     s.to_uppercase()
 }
 
-/// java.lang.Math.pow: C's pow except where Java's specification differs (a NaN exponent and 1 or -1 to an
-/// infinite power are NaN).
+/// java.lang.Math.pow: StrictMath.pow (FdLibm.Pow) on the game's JRE, bit for bit (oracle `fdlibm`).
 pub fn math_pow(x: f64, y: f64) -> f64 {
-    if y == 0.0 {
-        return 1.0;
-    }
-    if y.is_nan() || x.is_nan() {
-        return f64::NAN;
-    }
-    if y.is_infinite() && x.abs() == 1.0 {
-        return f64::NAN;
-    }
-    x.powf(y)
+    crate::java_fdlibm::pow(x, y)
 }
 
 #[cfg(test)]

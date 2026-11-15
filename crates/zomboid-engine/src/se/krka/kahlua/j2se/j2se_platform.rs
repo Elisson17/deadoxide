@@ -1,5 +1,5 @@
 //! se.krka.kahlua.j2se.J2SEPlatform: makes tables and the standard Lua environment (`newEnvironment`).
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -7,12 +7,13 @@ use std::rc::Rc;
 use super::kahlua_table_impl::KahluaTableImpl;
 use super::math_lib;
 use crate::se::krka::kahlua::luaj::compiler::lua_compiler::{self, CompileFiles};
-use crate::se::krka::kahlua::stdlib::{base_lib, coroutine_lib, string_lib, table_lib};
-use crate::se::krka::kahlua::vm::coroutine::FrameRef;
+use crate::se::krka::kahlua::stdlib::{
+    base_lib, coroutine_lib, os_lib, random_lib, string_lib, table_lib,
+};
+use crate::se::krka::kahlua::test::userdata_array;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
-use crate::se::krka::kahlua::vm::kahlua_util::get_class_metatables;
 use crate::se::krka::kahlua::vm::object::{
-    classes, ClassObject, JavaClass, JavaFunction, Object, TableRef, Throwable, Userdata, R,
+    classes, ClassObject, JavaClass, Object, TableRef, Throwable, Userdata, R,
 };
 
 /// se.krka.kahlua.j2se.J2SEPlatform, with what the original keeps in statics the environment depends on: one
@@ -21,6 +22,9 @@ use crate::se::krka::kahlua::vm::object::{
 pub struct J2SEPlatform {
     classes: RefCell<HashMap<&'static str, Object>>,
     pub compile_files: RefCell<CompileFiles>,
+    /// `System.currentTimeMillis()` for `os.time`/`os.date`, set by the host (the original reads the wall
+    /// clock); 0 until set (PLACEHOLDER).
+    pub current_time_millis: Cell<i64>,
 }
 
 impl J2SEPlatform {
@@ -66,11 +70,11 @@ impl J2SEPlatform {
         );
         math_lib::register(env);
         base_lib::register(env);
-        register_random_lib(self, env)?;
-        register_userdata_array(self, env)?;
+        random_lib::register(self, env)?;
+        userdata_array::register(self, env)?;
         string_lib::register(self, env)?;
         coroutine_lib::register(self, env)?;
-        register_os_lib(env);
+        os_lib::register(env);
         table_lib::register(env);
         lua_compiler::register(env);
         // setupWorkerThread: the worker thread is stored under a private key object.
@@ -125,111 +129,4 @@ impl Userdata for PlainObject {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-}
-
-/// A library function the port does not have yet: registered under its name so the environment has the original's
-/// shape; calling it throws (PLACEHOLDER).
-struct NotPorted {
-    name: &'static str,
-    class: &'static JavaClass,
-}
-
-impl JavaFunction for NotPorted {
-    fn call(&self, _thread: &mut KahluaThread, _cf: &FrameRef, _n: i32) -> R<i32> {
-        Err(Throwable::runtime(format!("{} is not ported", self.name)))
-    }
-    fn java_to_string(&self) -> String {
-        format!("{}@0", self.class.name)
-    }
-    fn class(&self) -> &'static JavaClass {
-        self.class
-    }
-}
-
-fn not_ported(name: &'static str, class: &'static JavaClass) -> Object {
-    Object::Function(Rc::new(NotPorted { name, class }))
-}
-
-static RANDOM_LIB_CLASS: JavaClass = JavaClass {
-    name: "se.krka.kahlua.stdlib.RandomLib",
-    superclass: Some(&classes::OBJECT),
-    interfaces: &[&classes::JAVA_FUNCTION],
-};
-static RANDOM_CLASS: JavaClass = JavaClass {
-    name: "java.util.Random",
-    superclass: Some(&classes::OBJECT),
-    interfaces: &[&classes::SERIALIZABLE],
-};
-static USERDATA_ARRAY_CLASS: JavaClass = JavaClass {
-    name: "se.krka.kahlua.test.UserdataArray",
-    superclass: Some(&classes::OBJECT),
-    interfaces: &[&classes::JAVA_FUNCTION],
-};
-static VECTOR_CLASS: JavaClass = JavaClass {
-    name: "java.util.Vector",
-    superclass: Some(&classes::OBJECT),
-    interfaces: &[],
-};
-static OS_LIB_CLASS: JavaClass = JavaClass {
-    name: "se.krka.kahlua.stdlib.OsLib",
-    superclass: Some(&classes::OBJECT),
-    interfaces: &[&classes::JAVA_FUNCTION],
-};
-
-/// se.krka.kahlua.stdlib.RandomLib.register (its functions are PLACEHOLDER).
-fn register_random_lib(platform: &J2SEPlatform, env: &TableRef) -> R<()> {
-    let t = KahluaTableImpl::new_ref();
-    KahluaTableImpl::rawset(
-        &t,
-        Object::str("random"),
-        not_ported("random", &RANDOM_LIB_CLASS),
-    );
-    KahluaTableImpl::rawset(
-        &t,
-        Object::str("seed"),
-        not_ported("seed", &RANDOM_LIB_CLASS),
-    );
-    KahluaTableImpl::rawset(&t, Object::str("__index"), Object::Table(t.clone()));
-    let metatables = get_class_metatables(env)?;
-    KahluaTableImpl::rawset(
-        &metatables,
-        platform.class_object(&RANDOM_CLASS),
-        Object::Table(t),
-    );
-    KahluaTableImpl::rawset(
-        env,
-        Object::str("newrandom"),
-        not_ported("newrandom", &RANDOM_LIB_CLASS),
-    );
-    Ok(())
-}
-
-/// se.krka.kahlua.test.UserdataArray.register (its functions are PLACEHOLDER).
-fn register_userdata_array(platform: &J2SEPlatform, env: &TableRef) -> R<()> {
-    let m = KahluaTableImpl::new_ref();
-    KahluaTableImpl::rawset(&m, Object::str("__metatable"), Object::str("restricted"));
-    for name in ["__len", "__index", "__newindex", "new", "push"] {
-        KahluaTableImpl::rawset(
-            &m,
-            Object::str(name),
-            not_ported(name, &USERDATA_ARRAY_CLASS),
-        );
-    }
-    let metatables = get_class_metatables(env)?;
-    KahluaTableImpl::rawset(
-        &metatables,
-        platform.class_object(&VECTOR_CLASS),
-        Object::Table(m.clone()),
-    );
-    KahluaTableImpl::rawset(env, Object::str("array"), Object::Table(m));
-    Ok(())
-}
-
-/// se.krka.kahlua.stdlib.OsLib.register (its functions are PLACEHOLDER).
-fn register_os_lib(env: &TableRef) {
-    let os = KahluaTableImpl::new_ref();
-    for name in ["date", "difftime", "time"] {
-        KahluaTableImpl::rawset(&os, Object::str(name), not_ported(name, &OS_LIB_CLASS));
-    }
-    KahluaTableImpl::rawset(env, Object::str("os"), Object::Table(os));
 }

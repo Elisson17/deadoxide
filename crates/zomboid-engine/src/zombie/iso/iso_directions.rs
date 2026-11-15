@@ -59,7 +59,7 @@ impl IsoDirections {
     }
     /// zombie.iso.IsoDirections.fromAngle (float dx, float dy)
     pub fn from_angle_xy(dx: f32, dy: f32) -> Self {
-        Self::safe_from_angle((dy as f64).atan2(dx as f64) as f32)
+        Self::safe_from_angle(crate::java_fdlibm::atan2(f64::from(dy), f64::from(dx)) as f32)
     }
     /// zombie.iso.IsoDirections.fromAngle (float angleRadians)
     pub fn from_angle(angle_radians: f32) -> Self {
@@ -75,7 +75,9 @@ impl IsoDirections {
     }
     /// zombie.iso.IsoDirections.cardinalFromAngle (float dx, float dy)
     pub fn cardinal_from_angle_xy(dx: f32, dy: f32) -> Self {
-        Self::safe_cardinal_from_angle((dy as f64).atan2(dx as f64) as f32)
+        Self::safe_cardinal_from_angle(
+            crate::java_fdlibm::atan2(f64::from(dy), f64::from(dx)) as f32
+        )
     }
     /// zombie.iso.IsoDirections.cardinalFromAngle (float angleRadians)
     pub fn cardinal_from_angle(angle_radians: f32) -> Self {

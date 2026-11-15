@@ -271,3 +271,14 @@ fn luastring_matches_original() {
 fn javachars_match_original() {
     check("javachars", &[]);
 }
+
+#[test]
+fn fdlibm_matches_original() {
+    check("fdlibm", &[]);
+}
+
+#[test]
+fn luaos_matches_original() {
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_os_cases.txt");
+    check("luaos", &[cases.to_str().expect("utf-8 path")]);
+}

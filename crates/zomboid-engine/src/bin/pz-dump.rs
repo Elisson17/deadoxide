@@ -58,7 +58,9 @@ fn main() {
         Some("luacompile") if a.len() == 4 => luacompile(Path::new(&a[2]), Path::new(&a[3])),
         Some("luavm") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("luastring") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
+        Some("luaos") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("javachars") if a.len() == 3 => javachars(),
+        Some("fdlibm") if a.len() == 3 => fdlibm(),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4270,6 +4272,142 @@ pub fn javachars() -> Result<String, String> {
         if f != 0 {
             let _ = writeln!(out, "{c:x} {f}");
         }
+    }
+    Ok(out)
+}
+
+/// `tests/original_probe/FdLibmProbe.java` on the port: java.lang.Math / StrictMath results as raw bits.
+pub fn fdlibm() -> Result<String, String> {
+    use std::fmt::Write as _;
+    use zomboid_engine::java::Random;
+    use zomboid_engine::java_fdlibm as m;
+    const SPECIAL: [f64; 40] = [
+        0.0,
+        -0.0,
+        1.0,
+        -1.0,
+        0.5,
+        -0.5,
+        2.0,
+        -2.0,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        5e-324,
+        -5e-324,
+        f64::MAX,
+        -f64::MAX,
+        f64::MIN_POSITIVE,
+        std::f64::consts::PI,
+        std::f64::consts::PI / 2.0,
+        std::f64::consts::PI / 4.0,
+        -std::f64::consts::PI / 2.0,
+        3.0,
+        10.0,
+        0.1,
+        709.782712893384,
+        -745.1332191019411,
+        710.4758600739439,
+        22.0,
+        1e-300,
+        1e300,
+        1e22,
+        1e-8,
+        0.9999995,
+        1.0000009536743162,
+        2.1474856959999995E9,
+        1e-320,
+        100.0,
+        -100.0,
+        1e6,
+        7.0,
+        -3.5,
+    ];
+    /// `Double.doubleToLongBits`: every NaN is 0x7ff8000000000000.
+    fn bits(d: f64) -> u64 {
+        if d.is_nan() {
+            0x7ff8_0000_0000_0000
+        } else {
+            d.to_bits()
+        }
+    }
+    fn input(r: &mut Random, i: usize) -> f64 {
+        if i < SPECIAL.len() {
+            return SPECIAL[i];
+        }
+        match i % 6 {
+            0 => f64::from_bits(r.next_long() as u64),
+            1 => r.next_double() * 2.0 - 1.0,
+            2 => (r.next_double() * 2.0 - 1.0) * 10.0,
+            3 => (r.next_double() * 2.0 - 1.0) * 1000.0,
+            4 => (r.next_double() * 2.0 - 1.0) * 1e6,
+            _ => {
+                let d = r.next_double() * 2.0 - 1.0;
+                d * m::scalb(1.0, r.next_int_bound(2100) - 1075)
+            }
+        }
+    }
+    fn one(f: &str, x: f64, n: i32) -> f64 {
+        match f {
+            "tan" => m::tan(x),
+            "asin" => m::asin(x),
+            "acos" => m::acos(x),
+            "atan" => m::atan(x),
+            "exp" => m::exp(x),
+            "log" => m::log(x),
+            "log10" => m::log10(x),
+            "sinh" => m::sinh(x),
+            "cosh" => m::cosh(x),
+            "tanh" => m::tanh(x),
+            "sin" => m::sin(x),
+            "cos" => m::cos(x),
+            "expm1" => m::expm1(x),
+            _ => m::scalb(x, n),
+        }
+    }
+    let mut out = String::new();
+    let mut r = Random::new(42);
+    for f in [
+        "tan", "asin", "acos", "atan", "exp", "log", "log10", "sinh", "cosh", "tanh", "sin", "cos",
+        "expm1", "scalb",
+    ] {
+        let mut h: i64 = 0;
+        for i in 0..204_000 {
+            let x = input(&mut r, i);
+            let n = r.next_int_bound(4300) - 2150;
+            let b = bits(one(f, x, n));
+            if i < 4000 {
+                let _ = write!(out, "{f} {:x}", bits(x));
+                if f == "scalb" {
+                    let _ = write!(out, " {n}");
+                }
+                let _ = writeln!(out, " {b:x}");
+            } else {
+                h = h.wrapping_mul(31).wrapping_add(b as i64);
+            }
+        }
+        let _ = writeln!(out, "{f} hash {:x}", h as u64);
+    }
+    for f in ["pow", "atan2"] {
+        let mut h: i64 = 0;
+        for i in 0..204_000 {
+            let x = input(&mut r, i % 1600);
+            let mut y = input(&mut r, i / 40 % 40 + if i >= 1600 { 40 } else { 0 });
+            if f == "pow" && i % 3 == 0 {
+                y = (y * 4.0).round_ties_even() / 4.0;
+            }
+            let b = bits(if f == "pow" {
+                m::pow(x, y)
+            } else {
+                m::atan2(x, y)
+            });
+            if i < 4000 {
+                let _ = writeln!(out, "{f} {:x} {:x} {b:x}", bits(x), bits(y));
+            } else {
+                h = h.wrapping_mul(31).wrapping_add(b as i64);
+            }
+        }
+        let _ = writeln!(out, "{f} hash {:x}", h as u64);
     }
     Ok(out)
 }

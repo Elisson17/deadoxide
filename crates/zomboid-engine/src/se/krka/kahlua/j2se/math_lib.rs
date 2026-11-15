@@ -1,5 +1,9 @@
 //! se.krka.kahlua.j2se.MathLib: the `math` table (`max`, `min` come from stdlib.lua; `random` is not here).
+//! java.lang.Math is the ported FdLibm (`crate::java_fdlibm`), identical to the game's JRE, except `sin` and
+//! `cos`: HotSpot intrinsics on that JRE that differ from StrictMath; Rust's are used, UNKNOWN.
 use std::rc::Rc;
+
+use crate::java_fdlibm as fd;
 
 use super::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
@@ -45,7 +49,7 @@ pub fn register(env: &TableRef) {
 
 /// `1.0 / Math.log(2.0)`
 fn ln2_inv() -> f64 {
-    1.0 / 2.0f64.ln()
+    1.0 / fd::log(2.0)
 }
 
 impl JavaFunction for MathLib {
@@ -61,19 +65,19 @@ impl JavaFunction for MathLib {
         };
         match self.index {
             0 => one(x.abs()),
-            1 => one(x.acos()),
-            2 => one(x.asin()),
-            3 => one(x.atan()),
+            1 => one(fd::acos(x)),
+            2 => one(fd::asin(x)),
+            3 => one(fd::atan(x)),
             4 => {
                 let x2 = get_double_arg(cf, 2, name)?;
-                one(x.atan2(x2))
+                one(fd::atan2(x, x2))
             }
             5 => one(x.ceil()),
             6 => one(x.cos()),
-            7 => one(x.cosh()),
+            7 => one(fd::cosh(x)),
             // Math.toDegrees / toRadians: one multiplication by the JDK's constant.
             8 => one(x * 57.29577951308232),
-            9 => one(x.exp()),
+            9 => one(fd::exp(x)),
             10 => one(x.floor()),
             11 => {
                 let mut v1 = x;
@@ -99,7 +103,7 @@ impl JavaFunction for MathLib {
             }
             12 => {
                 let (m, e) = if !x.is_infinite() && !x.is_nan() {
-                    let e = (x.ln() * ln2_inv()).ceil();
+                    let e = (fd::log(x) * ln2_inv()).ceil();
                     let div = 1i32.wrapping_shl(e as i32 as u32);
                     (x / f64::from(div), e)
                 } else {
@@ -119,8 +123,8 @@ impl JavaFunction for MathLib {
                 };
                 one(ret)
             }
-            14 => one(x.ln()),
-            15 => one(x.log10()),
+            14 => one(fd::log(x)),
+            15 => one(fd::log10(x)),
             16 => {
                 let mut x = x;
                 let negate = is_negative(x);
@@ -148,10 +152,10 @@ impl JavaFunction for MathLib {
             }
             18 => one(x * 0.017453292519943295),
             19 => one(x.sin()),
-            20 => one(x.sinh()),
+            20 => one(fd::sinh(x)),
             21 => one(x.sqrt()),
-            22 => one(x.tan()),
-            23 => one(x.tanh()),
+            22 => one(fd::tan(x)),
+            23 => one(fd::tanh(x)),
             _ => Ok(0),
         }
     }
