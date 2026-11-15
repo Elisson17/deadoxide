@@ -1,3 +1,5 @@
+pub mod color;
+pub mod immutable_color;
 pub mod math;
 pub mod properties;
 pub mod random;

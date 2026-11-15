@@ -230,6 +230,12 @@ fn clothing_items_match_original() {
     check("clothingitems", &[]);
 }
 
+/// LocationRNG, Color.HSBtoRGB, OutfitRNG colours, decal groups and ClothingItemReference.randomize of every outfit.
+#[test]
+fn outfit_random_matches_original() {
+    check("outfitrandom", &[]);
+}
+
 #[test]
 fn items_match_original() {
     // The field list tools/gen_item_params.py hands to both sides: the table's fields minus aimingMod.

@@ -54,6 +54,7 @@ fn main() {
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
+        Some("outfitrandom") if a.len() == 3 => outfitrandom(Path::new(&a[2])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -3758,6 +3759,187 @@ pub fn clothingitems(root: &Path) -> Result<String, String> {
             b(ci.is_mask()),
             b(ci.has_model())
         );
+    }
+    Ok(sb)
+}
+
+/// Seeded draws that dress a character, in the format of `tests/original_probe/OutfitRandomProbe.java`.
+pub fn outfitrandom(root: &Path) -> Result<String, String> {
+    use save_dump::fh;
+    use zomboid_engine::java::string_compare_to;
+    use zomboid_engine::zombie::core::color::Color;
+    use zomboid_engine::zombie::core::immutable_color::ImmutableColor;
+    use zomboid_engine::zombie::core::skinnedmodel::population::clothing_decals::ClothingDecals;
+    use zomboid_engine::zombie::core::skinnedmodel::population::clothing_item_reference::{
+        ClothingItemReference, RandomizeContext,
+    };
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit::Outfit;
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_manager::OutfitManager;
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
+    use zomboid_engine::zombie::file_guid_table::FileGuidTable;
+    use zomboid_engine::zombie::util::location_rng::LocationRng;
+    let b = |v: bool| u8::from(v);
+    let c = |c: &ImmutableColor| format!("{},{},{},{}", fh(c.r), fh(c.g), fh(c.b), fh(c.a));
+    let s = |v: &Option<String>| v.clone().unwrap_or_else(|| "null".to_string());
+    fn item(sb: &mut String, r: &ClothingItemReference, depth: usize) {
+        let d = &r.random_data;
+        let picked = match &d.picked_item_ref {
+            Some(path) => r
+                .picked(path)
+                .and_then(|p| p.item_guid.as_deref())
+                .unwrap_or("null"),
+            None => "null",
+        };
+        let t = &d.tint;
+        let _ = writeln!(
+            sb,
+            "R {depth} {} {} {} {} {},{},{},{} {} {picked} {} {}",
+            r.item_guid.as_deref().unwrap_or("null"),
+            u8::from(r.randomized),
+            u8::from(d.active),
+            fh(d.hue),
+            fh(t.r),
+            fh(t.g),
+            fh(t.b),
+            fh(t.a),
+            d.base_texture.as_deref().unwrap_or("null"),
+            d.texture_choice.as_deref().unwrap_or("null"),
+            d.decal.as_deref().unwrap_or("null"),
+        );
+        for sub in &r.sub_items {
+            item(sb, sub, depth + 1);
+        }
+    }
+    let mut sb = String::new();
+    let seeds: [i64; 7] = [
+        0,
+        1,
+        -1,
+        12345,
+        i64::MIN,
+        i64::MAX,
+        0x9E37_79B9_7F4A_7C15_u64 as i64,
+    ];
+    let bounds: [i32; 9] = [1, 2, 7, 100, 1000, 65536, i32::MAX, 0, -5];
+    let mut rng = LocationRng::default();
+    for seed in seeds {
+        rng.set_seed(seed);
+        let _ = write!(sb, "LR {seed} {}", rng.get_seed());
+        for _ in 0..4 {
+            let _ = write!(sb, " {}", fh(rng.next_float()));
+        }
+        for n in bounds {
+            let _ = write!(sb, " {}", rng.next_int(n));
+        }
+        sb.push('\n');
+    }
+    for [x, y, z] in [[0, 0, 0], [10500, 9800, 0], [-3, 7, 1], [300000, 200000, 7]] {
+        let v = rng.next_int_at(1000, x, y, z);
+        let _ = writeln!(sb, "LRS {x} {y} {z} {v} {}", rng.get_seed());
+    }
+    let hs: [f32; 12] = [
+        -1.25,
+        -0.5,
+        -1.0e-9,
+        0.0,
+        0.1,
+        0.166_666_67,
+        0.25,
+        0.5,
+        0.75,
+        0.9999,
+        1.0,
+        2.3,
+    ];
+    let ss: [f32; 4] = [0.0, 0.3, 1.0, 1.5];
+    let vs: [f32; 4] = [0.0, 0.5, 1.0, -0.2];
+    for h in hs {
+        for sat in ss {
+            for v in vs {
+                let col = Color::hsb_to_rgb(h, sat, v);
+                let _ = writeln!(
+                    sb,
+                    "HSB {} {} {} {},{},{},{}",
+                    fh(h),
+                    fh(sat),
+                    fh(v),
+                    fh(col.r),
+                    fh(col.g),
+                    fh(col.b),
+                    fh(col.a)
+                );
+            }
+        }
+    }
+    let mut orng = OutfitRng::default();
+    for nbc in [false, true] {
+        for seed in 0..20i64 {
+            orng.set_seed(seed);
+            let first = orng.random_immutable_color(nbc, false);
+            let second = orng.random_immutable_color(nbc, true);
+            let _ = writeln!(sb, "COL {} {seed} {} {}", b(nbc), c(&first), c(&second));
+        }
+    }
+    let decals = ClothingDecals::init(root).ok_or("no media/clothing/clothingDecals.xml")?;
+    let _ = writeln!(sb, "DECALS {}", decals.groups.len());
+    for (gi, g) in decals.groups.iter().enumerate() {
+        let name = s(&g.name);
+        let same = decals
+            .find_group(&name.to_uppercase())?
+            .is_some_and(|f| std::ptr::eq(f, &decals.groups[gi]));
+        let _ = write!(sb, "DG {name} {}", b(same));
+        for seed in 0..6i64 {
+            orng.set_seed(seed * 31 + 7);
+            let _ = write!(sb, " {}", s(&decals.get_random_decal(&name, &mut orng)?));
+        }
+        sb.push('\n');
+    }
+    let _ = writeln!(
+        sb,
+        "DGX {} {}",
+        s(&decals.get_random_decal("NoSuchGroup", &mut orng)?),
+        s(&decals.get_random_decal(" ", &mut orng)?)
+    );
+    let table = FileGuidTable::load_game(root)?;
+    let mut om = OutfitManager::init(root)?.ok_or("no media/clothing/clothing.xml")?;
+    for nbc in [true, false] {
+        for female in [true, false] {
+            let mut l: Vec<Outfit> = if female {
+                om.female_outfits.clone()
+            } else {
+                om.male_outfits.clone()
+            };
+            l.sort_by(|a, b| string_compare_to(&a.name, &b.name));
+            for (i, base) in l.iter().enumerate() {
+                let mut o = base.clone_outfit();
+                orng.set_seed(
+                    i as i64 * 7919 + if female { 1 } else { 2 } + if nbc { 0 } else { 1_000_003 },
+                );
+                let mut cx = RandomizeContext {
+                    rng: &mut orng,
+                    outfits: &mut om,
+                    table: &table,
+                    game_root: root,
+                    decals: Some(&decals),
+                    no_black_clothes: nbc,
+                };
+                for r in &mut o.items {
+                    r.randomize(&mut cx)?;
+                }
+                let after = orng.next(1_000_000);
+                let _ = writeln!(
+                    sb,
+                    "O {} {} {i} {} {} {after}",
+                    b(nbc),
+                    if female { "F" } else { "M" },
+                    o.name,
+                    o.items.len()
+                );
+                for r in &o.items {
+                    item(&mut sb, r, 0);
+                }
+            }
+        }
     }
     Ok(sb)
 }

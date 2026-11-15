@@ -4,13 +4,13 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 184 of 3424 classes touched, 542 of 46121 method names cited (1.2%), 962280 decompiled lines.**
+**Total: 189 of 3424 classes touched, 561 of 46121 method names cited (1.2%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 60 | 7277 | 292 (4.0%) | 144530 |
-| zombie.core | 450 | 22 | 5920 | 74 (1.3%) | 93574 |
+| zombie.core | 450 | 26 | 5920 | 89 (1.5%) | 93574 |
 | zombie.characters | 200 | 20 | 5028 | 44 (0.9%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
@@ -28,7 +28,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | se | 70 | 1 | 692 | 2 (0.3%) | 11221 |
 | zombie.gameStates | 19 | 1 | 429 | 1 (0.2%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
-| zombie.util | 70 | 4 | 520 | 6 (1.2%) | 8496 |
+| zombie.util | 70 | 5 | 520 | 10 (1.9%) | 8496 |
 | fmod | 102 | 0 | 652 | 0 (0.0%) | 7709 |
 | zombie.audio | 106 | 0 | 486 | 0 (0.0%) | 7002 |
 | zombie.radio | 27 | 3 | 445 | 4 (0.9%) | 6029 |
@@ -112,7 +112,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.traits.CharacterTraits | 1 / 15 | crates/zomboid-engine/src/zombie/characters/traits/character_traits.rs |
 | zombie.config.DoubleConfigOption | 1 / 17 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
 | zombie.config.IntegerConfigOption | 1 / 16 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
-| zombie.core.Color | 0 / 58 | crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
+| zombie.core.Color | 1 / 58 | crates/zomboid-engine/src/zombie/core/color.rs, crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
+| zombie.core.ImmutableColor | 0 / 26 | crates/zomboid-engine/src/zombie/core/immutable_color.rs |
 | zombie.core.TilePropertyAliasMap | 5 / 6 | crates/zomboid-engine/src/zombie/core/tile_property_alias_map.rs |
 | zombie.core.Translator | 5 / 41 | crates/zomboid-engine/src/zombie/core/translator.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-lua/src/text.rs |
 | zombie.core.math.PZMath | 13 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
@@ -122,11 +123,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.random.Rand | 1 / 5 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandAbstract | 1 / 2 | crates/zomboid-content/src/rng.rs, crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandInterface | 1 / 2 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
+| zombie.core.skinnedmodel.population.ClothingDecalGroup | 1 / 2 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_decals.rs |
+| zombie.core.skinnedmodel.population.ClothingDecals | 3 / 7 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_decals.rs |
 | zombie.core.skinnedmodel.population.ClothingItem | 3 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item.rs |
 | zombie.core.skinnedmodel.population.ClothingItemAssetManager | 0 / 7 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_manager.rs |
-| zombie.core.skinnedmodel.population.ClothingItemReference | 1 / 6 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item_reference.rs |
-| zombie.core.skinnedmodel.population.Outfit | 1 / 12 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit.rs |
+| zombie.core.skinnedmodel.population.ClothingItemReference | 4 / 6 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item_reference.rs |
+| zombie.core.skinnedmodel.population.Outfit | 2 / 12 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit.rs |
 | zombie.core.skinnedmodel.population.OutfitManager | 7 / 29 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_manager.rs |
+| zombie.core.skinnedmodel.population.OutfitRNG | 6 / 6 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_rng.rs |
 | zombie.core.skinnedmodel.visual.HumanVisual | 2 / 66 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/human_visual.rs |
 | zombie.core.skinnedmodel.visual.ItemVisual | 1 / 57 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/item_visual.rs |
 | zombie.core.stash.StashBuilding | 0 / 2 | crates/zomboid-engine/src/zombie/core/stash/stash_system.rs |
@@ -230,6 +234,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.scripting.objects.ModelScript | 4 / 28 | crates/zomboid-engine/src/zombie/scripting/model_script.rs |
 | zombie.scripting.objects.ResourceLocation | 1 / 7 | crates/zomboid-engine/src/zombie/scripting/objects/resource_location.rs |
 | zombie.scripting.objects.ScriptModule | 2 / 50 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
+| zombie.util.LocationRNG | 4 / 5 | crates/zomboid-engine/src/zombie/util/location_rng.rs |
 | zombie.util.PZXmlUtil | 2 / 24 | crates/zomboid-engine/src/zombie/util/pz_xml_util.rs |
 | zombie.util.StringUtils | 3 / 36 | crates/zomboid-engine/src/zombie/util/string_utils.rs |
 | zombie.util.io.BitHeader | 1 / 27 | crates/zomboid-engine/src/java_nio.rs |

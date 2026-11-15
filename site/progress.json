@@ -4,11 +4,11 @@
   "overall": 22.3,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 184,
+    "classesTouched": 189,
     "classes": 3424,
-    "methodsCited": 542,
+    "methodsCited": 561,
     "methods": 46121,
-    "methodPercent": 1.18,
+    "methodPercent": 1.22,
     "oracleCases": [
       "animalzones",
       "basements",
@@ -28,6 +28,7 @@
       "mapzone",
       "metagrid",
       "moddata",
+      "outfitrandom",
       "outfits",
       "sandbox",
       "specialcollide",
@@ -47,7 +48,7 @@
       "score": 0.625,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 542 of 46121 method names (1.18%) in 184 of 3424 classes; byte-identical to the original in 26 oracle cases (animalzones, basements, chunkobjects, chunksave, clothingitems, collide, doortoggle, entitysprites, gametime, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, moddata, outfits, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
+        "direct port from decompiled Java: 561 of 46121 method names (1.22%) in 189 of 3424 classes; byte-identical to the original in 27 oracle cases (animalzones, basements, chunkobjects, chunksave, clothingitems, collide, doortoggle, entitysprites, gametime, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, moddata, outfitrandom, outfits, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
         "format families read: 10 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",

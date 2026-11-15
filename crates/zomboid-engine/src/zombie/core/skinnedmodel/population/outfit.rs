@@ -78,3 +78,27 @@ impl Outfit {
         }
     }
 }
+
+impl Outfit {
+    /// zombie.core.skinnedmodel.population.Outfit.clone: name, flags, both texture lists and cloned items; the
+    /// mod id, `immutable` and the random data start fresh.
+    pub fn clone_outfit(&self) -> Outfit {
+        Outfit {
+            name: self.name.clone(),
+            top: self.top,
+            pants: self.pants,
+            pants_textures: self.pants_textures.clone(),
+            top_textures: self.top_textures.clone(),
+            items: self
+                .items
+                .iter()
+                .map(ClothingItemReference::clone_reference)
+                .collect(),
+            allow_pants_hue: self.allow_pants_hue,
+            allow_pants_tint: self.allow_pants_tint,
+            allow_top_tint: self.allow_top_tint,
+            allow_tshirt_decal: self.allow_tshirt_decal,
+            ..Outfit::default()
+        }
+    }
+}
