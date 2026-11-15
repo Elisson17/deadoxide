@@ -254,3 +254,9 @@ fn luacompile_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_compile_cases.txt");
     check("luacompile", &[cases.to_str().expect("utf-8 path")]);
 }
+
+#[test]
+fn luavm_matches_original() {
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_vm_cases.txt");
+    check("luavm", &[cases.to_str().expect("utf-8 path")]);
+}

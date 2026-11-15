@@ -1,0 +1,485 @@
+Cases for the Kahlua VM oracle (tools/oracle.sh luavm): each block after a "--@@case" line runs in a fresh
+environment; what it prints and what it returns are compared with the original. Do not print tables or functions
+(their text has the JVM's identity hash).
+--@@case
+print(1, 1.5, -0.0, 1/3, 2^53, 1e15, 1e100, 1e-5, 0.1 + 0.2, 100, 1e14, 123456789012345, -1e14)
+print(5e-324, 1/0, -1/0, 0/0, 3 % 2, -3 % 2, 5.5 % 2, 3 % -2, 2^0.5, 10/4, 7 % 0, -7.5 % 2)
+print(0.001, 0.0001, 1234567.0, 12345678.5, 9999999.0, 10000000.5, 1e7, 1e21, 1e22, 1.5e300, 2^-1074, 2^63)
+print(4.35, 0.3, 2/3, 100.25, -123.456, 1e-3, 9.999999e-4, 3.0e-10, 6.02e23, 1.7976931348623157e308)
+return 1, -0.0, 0/0, 2^53 + 1
+--@@case
+local a, b = 7, 2
+print(a + b, a - b, a * b, a / b, a % b, a ^ b, -a, a % -b, -a % b, 2^-1, (-8)^(1/3))
+print("10" + 5, "3" * "4", "0x10" + 0, 10 .. 20, 1.5 .. "", -0.0 .. "")
+return a / 0, -a / 0
+--@@case
+local s = "hello world"
+print(#s, s:sub(1, 5), s:sub(-5), s:sub(0), s:sub(3, 2), s:sub(-100, 3), s:sub(5, 100), string.sub(s, 2, -2))
+print(s:upper(), ("ABC"):lower(), s:reverse(), ("  pad  "):trim(), s:byte(1), s:byte(-1), s:byte(1, 3))
+print(string.char(72, 105), string.char(), string.len("abc"), string.rep("ab", 3), string.rep("x", 0))
+print(string.contains("hello", "ell"), string.contains("hello", "xyz"), string.sort("b", "a"), string.sort("a", "b"))
+print(#"\0\1\2", ("a\0b"):byte(2), ("é"):len(), ("日本"):len(), ("日本"):byte(1), ("ÀÉÎ"):lower(), ("straße"):upper())
+--@@case
+local t = {}
+t.z = 1; t.a = 2; t[3] = 3; t[1] = 4; t.m = 5; t[2.5] = 6; t[true] = 7
+for k, v in pairs(t) do print(k, v) end
+t.a = nil
+t.a = 8
+t.z = 9
+for k, v in pairs(t) do print(k, v) end
+print(#t, t[1], t[1.0], t["1"])
+--@@case
+local t = {1, 2, nil, 4}
+print(#t)
+local u = {}
+u[1] = 1; u[2] = 2; u[4] = 4
+print(#u)
+local v = {n = 1}
+print(#v)
+local w = {nil, nil, 3}
+print(#w)
+local x = {}
+for i = 1, 10 do x[i] = i end
+x[5] = nil
+print(#x)
+x[11] = 11
+print(#x)
+local y = {10, 20, 30, nil, 50, 60}
+print(#y)
+--@@case
+local t = {a = 1, b = 2, c = 3, d = 4}
+local seen = {}
+for k, v in pairs(t) do
+  seen[#seen + 1] = k .. "=" .. tostring(v)
+  if k == "a" then t.c = nil; t.e = 5 end
+end
+print(table.concat(seen, ","))
+local n = 0
+for k, v in pairs({}) do n = n + 1 end
+print(n)
+for i, v in ipairs({1, 2, nil, 4}) do print(i, v) end
+for i, v in ipairs({}) do print("never") end
+--@@case
+local mt = {}
+mt.__index = function(t, k) return k .. "!" end
+local t = setmetatable({}, mt)
+print(t.foo, t[1], rawget(t, "foo"))
+local base = {greet = function(self) return "hi " .. self.name end}
+base.__index = base
+local obj = setmetatable({name = "bob"}, base)
+print(obj:greet(), rawget(obj, "greet") ~= nil, rawget(obj, "name"))
+local mt2 = {foo = 42}
+local t2 = setmetatable({}, mt2)
+print(rawget(t2, "foo"), t2.foo)
+--@@case
+local log = {}
+local mt = {__newindex = function(t, k, v) log[#log + 1] = k; rawset(t, k, v * 2) end}
+local t = setmetatable({}, mt)
+t.a = 1
+t.a = 5
+t.b = 2
+print(t.a, t.b, table.concat(log, ","))
+local proxy = setmetatable({}, {__newindex = log})
+proxy.x = 10
+print(rawget(proxy, "x"), log.x)
+--@@case
+local V = {}
+V.__index = V
+V.__add = function(a, b) return setmetatable({x = a.x + b.x}, V) end
+V.__sub = function(a, b) return setmetatable({x = a.x - b.x}, V) end
+V.__mul = function(a, b) return type(b) == "number" and setmetatable({x = a.x * b}, V) or a.x * b.x end
+V.__unm = function(a) return setmetatable({x = -a.x}, V) end
+V.__eq = function(a, b) return a.x == b.x end
+V.__lt = function(a, b) return a.x < b.x end
+V.__le = function(a, b) return a.x <= b.x end
+V.__concat = function(a, b) return "V" .. tostring(type(a) == "table" and a.x or a) .. "|" .. tostring(type(b) == "table" and b.x or b) end
+V.__call = function(self, y) return self.x + y end
+V.__tostring = function(self) return "V(" .. self.x .. ")" end
+local function new(x) return setmetatable({x = x}, V) end
+local a, b = new(3), new(4)
+print((a + b).x, (a - b).x, (a * 2).x, a * b, (-a).x, a == b, a == new(3), a < b, b <= a, a(10), tostring(a))
+print("s" .. a, a .. "s", a ~= new(3))
+--@@case
+local A = {__lt = function(a, b) return a.v < b.v end}
+local x = setmetatable({v = 1}, A)
+local y = setmetatable({v = 2}, A)
+print(x < y, x <= y, y <= x, x > y)
+local B = {__len = function() return 99 end}
+local p = setmetatable({1, 2}, B)
+print(#p)
+local P = setmetatable({}, {__metatable = "locked"})
+print(getmetatable(P), pcall(setmetatable, P, {}))
+print(getmetatable("abc") == string, getmetatable(1), getmetatable(nil))
+--@@case
+local function counter()
+  local n = 0
+  return function() n = n + 1; return n end, function() return n end
+end
+local inc, get = counter()
+inc(); inc()
+local inc2 = counter()
+inc2()
+print(get(), inc(), inc2())
+local fs = {}
+for i = 1, 3 do fs[i] = function() return i end end
+print(fs[1](), fs[2](), fs[3]())
+local gs = {}
+local j = 0
+while j < 3 do j = j + 1; local k = j; gs[j] = function() k = k + 10; return k end end
+print(gs[1](), gs[1](), gs[2](), gs[3]())
+--@@case
+local function f(...)
+  local a, b = ...
+  return select("#", ...), a, b, select(2, ...)
+end
+print(f())
+print(f(1))
+print(f(1, nil, 3))
+print(f(nil, nil))
+print(select(-1, 1, 2, 3))
+print(select(5, 1, 2))
+local t = {f(1, 2, 3)}
+print(#t, unpack(t))
+print(unpack({1, 2, 3}, 2), unpack({1, 2, 3}, 2, 3), unpack({}, 1, 2))
+local function g(...) return ... end
+print(g(1, nil, nil))
+print((g(1, 2)))
+--@@case
+print(pcall(error, "boom"))
+print(pcall(function() error("inner") end))
+do
+    local r = {pcall(function() error({code = 7}) end)}
+    print(r[1], type(r[2]), r[2].code, type(r[3]), type(r[4]), r[4] == nil)
+end
+print(pcall(function() error() end))
+print(pcall(function() error(42) end))
+print(pcall(function() error("msg", "custom trace") end))
+print(pcall(function() local x = nil; x() end))
+print(pcall(function() local t = nil; return t.x end))
+print(pcall(function() return {} + 1 end))
+print(pcall(function() return 1 < "2" end))
+print(pcall(function() return nil .. "x" end))
+--@@case
+local function lvl3() error("deep") end
+local function lvl2() lvl3() end
+local function lvl1() lvl2() end
+local ok, msg, trace = pcall(lvl1)
+print(ok, msg, trace)
+local ok2, msg2 = pcall(pcall)
+print(ok2, msg2)
+local r = {pcall(function() return 1, 2, 3 end)}
+print(#r, r[1], r[2], r[4])
+print(pcall(pcall, error, "x"))
+--@@case
+local co = coroutine.create(function(a, b)
+  print("start", a, b)
+  local c = coroutine.yield(a + b)
+  print("got", c)
+  local d, e = coroutine.yield(c * 2)
+  print("got2", d, e)
+  return "done", 99
+end)
+print(coroutine.status(co))
+print(coroutine.resume(co, 1, 2))
+print(coroutine.status(co))
+print(coroutine.resume(co, 10))
+print(coroutine.resume(co, "x", "y"))
+print(coroutine.status(co))
+print(pcall(coroutine.resume, co))
+--@@case
+local gen = coroutine.wrap(function() for i = 1, 3 do coroutine.yield(i) end end)
+print(gen(), gen(), gen())
+local co = coroutine.create(function() error("in co") end)
+print(coroutine.resume(co))
+print(coroutine.status(co))
+local co2 = coroutine.create(function()
+  local inner = coroutine.create(function() coroutine.yield("a"); return "b" end)
+  print(coroutine.resume(inner))
+  coroutine.yield("outer")
+  print(coroutine.resume(inner))
+  print(coroutine.resume(inner))
+end)
+print(coroutine.resume(co2))
+print(coroutine.resume(co2))
+print(coroutine.running())
+--@@case
+print(tonumber("10"), tonumber("  12  "), tonumber("1e2"), tonumber("0x10"), tonumber("banana"), tonumber("inf"))
+print(tonumber("-inf"), tonumber("10", 2), tonumber("ff", 16), tonumber("zz", 36), tonumber("8", 8), tonumber("1.5f"))
+print(tonumber(""), tonumber("abc", 10), tonumber(5), tonumber("5", 10.5), tonumber("1d"), tonumber(".5"), tonumber("5."))
+print(tonumber("NaN"), tonumber("Infinity"), tonumber("-0"), tonumber("+3"), tonumber("1e400"), tonumber("7fffffff", 16))
+print(tonumber("80000000", 16), tonumber("-80000000", 16), tonumber(" 1 "), tonumber("1 2"))
+print(tostring(nil), tostring(true), tostring(12), tostring(-1.25), tostring("s"), type(nil), type(print), type({}))
+--@@case
+local t = {}
+table.insert(t, "a")
+table.insert(t, "c")
+table.insert(t, 2, "b")
+table.insert(t, 1, "z")
+print(table.concat(t, ","), #t)
+print(table.remove(t), table.remove(t, 1), table.concat(t, "-"), #t)
+print(table.concat({1, 2, 3}), table.concat({1, 2, 3}, ", ", 2), table.concat({1, 2, 3}, "", 2, 3), table.concat({}, "x"))
+print(table.concat({1, "a", 2.5}, " "), table.isempty({}), table.isempty({1}))
+local w = {1, 2, 3}
+table.wipe(w)
+print(#w, w[1])
+print(table.remove({}), #t)
+--@@case
+local t = {5, 2, 8, 1, 9, 3, 7, 3}
+table.sort(t)
+print(table.concat(t, " "))
+table.sort(t, function(a, b) return a > b end)
+print(table.concat(t, " "))
+local s = {"pear", "Apple", "banana", "apple", "Banana"}
+table.sort(s)
+print(table.concat(s, " "))
+local recs = {{k = 2, n = "b"}, {k = 1, n = "a"}, {k = 2, n = "c"}, {k = 1, n = "d"}}
+table.sort(recs, function(a, b) return a.k < b.k end)
+local out = {}
+for i, r in ipairs(recs) do out[i] = r.n end
+print(table.concat(out, ""))
+--@@case
+print(math.abs(-3), math.floor(2.7), math.ceil(2.1), math.floor(-2.5), math.ceil(-2.5), math.sqrt(16), math.sqrt(2))
+print(math.max(1, 5, 3), math.min(4, 2, 8), math.max(2), math.huge, -math.huge, math.pi)
+print(math.fmod(7, 3), math.fmod(-7, 3), math.fmod(7, -3), math.modf(3.7), math.modf(-3.7), math.pow(2, 10))
+print(math.frexp(8), math.frexp(0.75), math.ldexp(0.5, 3), math.deg(math.pi), math.rad(180))
+-- tan, asin, acos, exp and cosh are left out: Java gives the fdlibm (StrictMath) value there, not ported yet.
+print(math.sin(1), math.cos(1), math.atan(1), math.atan2(1, 2))
+print(math.log(10), math.log10(1000), math.sinh(1), math.tanh(0.5))
+print(2^0.1, 10^-2, 3^3.5, 1.0001^10000)
+--@@case
+local s = 0
+for i = 1, 10 do s = s + i end
+print(s)
+for i = 10, 1, -3 do io = i end
+print(io)
+for i = 0, 1, 0.25 do s = s + i end
+print(s)
+local n = 0
+for i = 1, 0 do n = n + 1 end
+print(n)
+local r = {}
+for i = 0.1, 0.5, 0.1 do r[#r + 1] = i end
+print(#r, r[#r])
+local w = 0
+while true do w = w + 1; if w > 5 then break end end
+repeat w = w - 1 until w < 2
+print(w)
+--@@case
+print(pcall(function() for i = 1, nil do end end))
+print(pcall(function() for i = "1", 2 do end end))
+print(pcall(function() for i = 1, 2, nil do end end))
+do
+    local ok, m = pcall(function() local a = {} .. "x" end)
+    print(ok, m:sub(1, 40), m:sub(-28))
+end
+--@@case
+print("a" < "b", "a" < "B", "abc" < "abd", "" < "a", "Z" < "a", "é" > "z", "a" == "a", "10" < "9")
+print(1 == 1.0, "1" == 1, nil == false, 0 == -0)
+print(rawequal("a", "a"), rawequal(1, 1.0), rawequal({}, {}), rawequal(nil, nil))
+local x = "a" .. "b"
+print(rawequal(x, "ab"), x == "ab")
+--@@case
+print(1 and 2, nil and 1, false or "x", nil or false, 1 or error("no"), not nil, not 0)
+local a, b, c = (function() return 1, 2, 3 end)()
+print(a, b, c)
+local x, y = 1
+print(x, y)
+local p, q = 1, 2, 3
+print(p, q)
+local t = {}
+local i = 1
+i, t[i] = i + 1, 20
+print(i, t[1], t[2])
+--@@case
+function globalFn(x) return x * 2 end
+print(globalFn(21))
+local env = getfenv(1)
+print(env == _G, getfenv(print) == _G)
+local function sandboxed() return value end
+setfenv(sandboxed, {value = "inside"})
+print(sandboxed(), value)
+--@@case
+local function fib(n) if n < 2 then return n end return fib(n - 1) + fib(n - 2) end
+print(fib(20))
+local function deep(n) return n == 0 and 0 or 1 + deep(n - 1) end
+print(pcall(deep, 100))
+print(pcall(deep, 5000))
+local function tail(n) if n == 0 then return "done" end return tail(n - 1) end
+print(tail(100000))
+--@@case
+local t = {}
+t[1] = "num"; t["1"] = "str"; t[1.5] = "float"; t[-0.0] = "negzero"
+print(t[1], t["1"], t[1.5], t[0], t[-0.0])
+t[0] = "zero"
+print(t[0], t[-0.0])
+local cnt = 0
+for k, v in pairs(t) do cnt = cnt + 1 end
+print(cnt)
+--@@case
+local s = [[
+long
+string]]
+print(s, #s)
+print("tab\tsep", "quote\"s", 'single\'s', "back\\slash", "\65\066\0671", "nl\nline")
+print([==[with ]] inside]==])
+--@@case
+function test_debug_name()
+  local x = nil
+  x()
+end
+print(pcall(test_debug_name))
+local t = {}
+function t.method() local y; y.z = 1 end
+print(pcall(t.method))
+print(pcall(function() local q = undefined_global + 1 end))
+--@@case
+local obj = {}
+function obj:new(o) o = o or {}; setmetatable(o, self); self.__index = self; return o end
+function obj:get() return self.v end
+local Derived = obj:new()
+function Derived:get() return "derived " .. obj.get(self) end
+local d = Derived:new({v = 5})
+print(d:get(), obj.get(d), getmetatable(d) == Derived, rawget(Derived, "get") ~= nil)
+--@@case
+local loaded = loadstring("return 1 + 2")
+print(loaded())
+local bad, err = loadstring("return +")
+print(bad, err)
+local named, err2 = loadstring("x = ", "chunk")
+print(named, err2)
+local f = loadstring("local a, b = ... return b, a")
+print(f(1, 2))
+--@@case
+local t = setmetatable({}, {__index = function(t, k) return k * 2 end})
+print(t[21], t[0.5])
+local chain = setmetatable({}, {__index = setmetatable({a = 1}, {__index = {b = 2}})})
+print(chain.a, chain.b, chain.c)
+local s = "str"
+print(type(s.len), s:len(), ("x"):rep(3))
+--@@case
+print(_VERSION)
+print(type(_G), _G._G == _G, type(table.newarray), type(newrandom), type(os.time), type(array))
+print(type(string.format), type(loadstring), type(coroutine.wrap), type(math.max))
+--@@case
+local results = {}
+for _, v in ipairs({0.1, 0.5, 1.5, 2.5, -0.5, -1.5, 1e15 + 0.5}) do
+  results[#results + 1] = math.floor(v + 0.5)
+end
+print(table.concat(results, " "))
+print(7 // 1)
+--@@case
+print(8 % 3.5, -8 % 3.5, 2^31, 2^31 % 7, 1e300 * 1e10, -1e300 * 1e10, 0/0 == 0/0)
+local nan = 0/0
+local t = {}
+print(pcall(function() t[nan] = 1 end), t[nan])
+--@@case
+local t = {}
+for i = 1, 100 do t[i] = i * i end
+print(#t, t[50], t[100])
+local big = {}
+for i = 1, 60 do big[#big + 1] = i end
+print(#big, big[51], big[60])
+local lit = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53}
+print(#lit, lit[53])
+--@@case
+local acc = {}
+local function visit(...)
+  for i = 1, select("#", ...) do acc[#acc + 1] = tostring((select(i, ...))) end
+end
+visit(1, nil, "a", false)
+print(table.concat(acc, ","))
+local function count(...) return select("#", ...) end
+print(count(nil, nil, nil), count())
+--@@case
+local t = {10, 20, 30}
+local k, v = nil, nil
+local it = pairs(t)
+print(it(), it(), it(), it())
+--@@case
+local t = {}
+t[nil] = 1
+print(pcall(function() t[nil] = 2 end))
+for k, v in pairs(t) do print("pair", k, v) end
+print("after")
+--@@case
+print(string.byte("A"), string.byte("ABC", 2, 3), string.byte("ABC", -2), string.byte("", 1), string.byte("ABC", 10))
+print(("x"):byte(0), ("hello"):sub(2, -2), ("hello"):sub(-3, -2), ("hi"):sub(3))
+print(string.char(0x263A), #string.char(0x263A), string.char(65 + 0x10000))
+--@@case
+print(math.floor(-0.0), 1/math.floor(-0.0), math.ceil(-0.5), 1/math.ceil(-0.5), math.abs(-0.0), -0.0 == 0.0)
+print(math.max(-0.0, 0.0), math.min(0.0, -0.0), math.fmod(5.5, 0), math.fmod(0, 2), math.modf(math.huge))
+--@@case
+local str = ""
+for i = 1, 5 do str = str .. i .. "," end
+print(str)
+local parts = {}
+for w = 1, 3 do parts[#parts + 1] = "w" .. w end
+print(table.concat(parts, " | "))
+print(1 .. "", 1.0 .. "", 1e100 .. "", (2^63) .. "", 0.1 .. "", (1/3) .. "")
+--@@case
+local function multi() return 1, 2, 3 end
+local t = {multi(), multi()}
+print(#t)
+local t2 = {multi(), (multi())}
+print(#t2)
+print(multi(), "end")
+print((multi()))
+--@@case
+local ok, e = pcall(function()
+  local t = setmetatable({}, {__index = function(t, k) error("idx " .. k) end})
+  return t.missing
+end)
+print(ok, e)
+local ok2, e2 = pcall(function()
+  local t = setmetatable({}, {__call = 5})
+  return t()
+end)
+print(ok2, e2)
+--@@case
+local co = coroutine.create(function(...)
+  local args = {...}
+  while true do
+    local x = coroutine.yield(#args)
+    if x == nil then break end
+    args[#args + 1] = x
+  end
+  return "end", #args
+end)
+print(coroutine.resume(co, "a", "b"))
+print(coroutine.resume(co, "c"))
+print(coroutine.resume(co, "d"))
+print(coroutine.resume(co))
+print(coroutine.resume(co))
+print(coroutine.status(co))
+--@@case
+print(pcall(coroutine.yield, 1))
+print(pcall(coroutine.create, print))
+print(pcall(coroutine.resume, 5))
+local co = coroutine.create(function() return coroutine.status(coroutine.running()) end)
+print(coroutine.resume(co))
+--@@case
+local x = 0
+local function side() x = x + 1; return x end
+local t = {side(), side(), k = side()}
+print(t[1], t[2], t.k)
+local a = {}
+a[side()] = side()
+for k, v in pairs(a) do print(k, v) end
+--@@case
+print(debugstacktrace ~= nil, type(collectgarbage), collectgarbage("step"), collectgarbage())
+print(pcall(collectgarbage, "bogus"))
+--@@case
+local mt = {__index = function(t, k) return "dyn_" .. k end}
+local cls = setmetatable({}, mt)
+local inst = setmetatable({}, {__index = cls})
+print(inst.anything, rawget(inst, "anything"))
+local m2 = {x = 1}
+m2.__index = m2
+local i2 = setmetatable({}, m2)
+i2.x = 2
+print(i2.x, m2.x, rawget(i2, "x"))
+local m3 = {}
+m3.__index = m3
+m3.y = 1
+local i3 = setmetatable({}, m3)
+print(rawget(i3, "y"), rawget(i3, "__index") == m3)

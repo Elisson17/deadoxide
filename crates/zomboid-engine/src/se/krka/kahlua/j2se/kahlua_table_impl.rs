@@ -1,5 +1,15 @@
-//! se.krka.kahlua.j2se.KahluaTableImpl: the save form of a Lua table (object and square `modData`).
+//! se.krka.kahlua.j2se.KahluaTableImpl: the live table of the VM and the save form of a Lua table (object and
+//! square `modData`).
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use crate::java_nio::{read_string, read_string_stream, ByteBuffer};
+use crate::se::krka::kahlua::vm::coroutine::FrameRef;
+use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
+use crate::se::krka::kahlua::vm::object::{
+    classes, identity_hash_code, rstr, JavaClass, JavaFunction, Key, Object, TableRef, Throwable, R,
+};
 
 /// A Lua value as a saved table can hold it.
 #[derive(Clone, Debug, PartialEq)]
@@ -118,5 +128,208 @@ impl KahluaTable {
                 ))
             }
         })
+    }
+}
+
+/// se.krka.kahlua.j2se.KahluaTableImpl as the VM uses it: a `LinkedHashMap` delegate (insertion order; putting an
+/// existing key keeps its place, removing and putting again moves it to the end) and a metatable. `rawget` falls
+/// through to the metatable's `rawget` for a missing key, as the original does. `reloadReplace` (a reload feature)
+/// and the `Core.debug` data breakpoints are not ported.
+#[derive(Default)]
+pub struct KahluaTableImpl {
+    entries: Vec<Option<(Object, Object)>>,
+    index: HashMap<Key, usize>,
+    pub metatable: Option<TableRef>,
+}
+
+/// Metatable hops before `rawget` gives up with the StackOverflowError a cycle of metatables throws in the original.
+const RAWGET_CHAIN_LIMIT: usize = 10_000;
+
+impl KahluaTableImpl {
+    /// se.krka.kahlua.j2se.J2SEPlatform.newTable
+    pub fn new_ref() -> TableRef {
+        Rc::new(RefCell::new(KahluaTableImpl::default()))
+    }
+
+    fn delegate_get(&self, key: &Object) -> Option<&Object> {
+        self.index
+            .get(&Key(key.clone()))
+            .and_then(|&i| self.entries[i].as_ref())
+            .map(|(_, v)| v)
+    }
+
+    fn delegate_put(&mut self, key: Object, value: Object) {
+        match self.index.get(&Key(key.clone())) {
+            Some(&i) => {
+                if let Some(e) = self.entries[i].as_mut() {
+                    e.1 = value;
+                }
+            }
+            None => {
+                self.index.insert(Key(key.clone()), self.entries.len());
+                self.entries.push(Some((key, value)));
+            }
+        }
+    }
+
+    fn delegate_remove(&mut self, key: &Object) {
+        if let Some(i) = self.index.remove(&Key(key.clone())) {
+            self.entries[i] = None;
+            if self.entries.len() > 32 && self.index.len() * 2 < self.entries.len() {
+                self.entries.retain(Option::is_some);
+                self.index.clear();
+                for (i, e) in self.entries.iter().enumerate() {
+                    if let Some((k, _)) = e {
+                        self.index.insert(Key(k.clone()), i);
+                    }
+                }
+            }
+        }
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.size
+    pub fn size(&self) -> i32 {
+        self.index.len() as i32
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.isEmpty
+    pub fn is_empty(&self) -> bool {
+        self.index.is_empty()
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.wipe
+    pub fn wipe(&mut self) {
+        self.entries.clear();
+        self.index.clear();
+    }
+
+    /// `delegate.keySet().toArray()`: the keys in iteration order.
+    pub fn keys(&self) -> Vec<Object> {
+        self.entries
+            .iter()
+            .flatten()
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+
+    /// `delegate.get(key)` without the metatable (what the iterator reads).
+    pub fn get_direct(&self, key: &Object) -> Object {
+        self.delegate_get(key).cloned().unwrap_or_default()
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawget(Object)
+    pub fn rawget(t: &TableRef, key: &Object) -> R<Object> {
+        if key.is_nil() {
+            return Ok(Object::Nil);
+        }
+        let mut cur = t.clone();
+        for _ in 0..RAWGET_CHAIN_LIMIT {
+            let next = {
+                let b = cur.borrow();
+                if let Some(v) = b.delegate_get(key) {
+                    return Ok(v.clone());
+                }
+                match &b.metatable {
+                    None => return Ok(Object::Nil),
+                    Some(m) => m.clone(),
+                }
+            };
+            cur = next;
+        }
+        Err(Throwable::stack_overflow())
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawset(Object, Object): nil removes the key; a nil key is stored like
+    /// any other (`LinkedHashMap` takes a null key).
+    pub fn rawset(t: &TableRef, key: Object, value: Object) {
+        let mut b = t.borrow_mut();
+        if value.is_nil() {
+            b.delegate_remove(&key);
+        } else {
+            b.delegate_put(key, value);
+        }
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawget(int)
+    pub fn rawget_int(t: &TableRef, key: i32) -> R<Object> {
+        Self::rawget(t, &Object::Number(f64::from(key)))
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawset(int, Object)
+    pub fn rawset_int(t: &TableRef, key: i32, value: Object) {
+        Self::rawset(t, Object::Number(f64::from(key)), value)
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.len
+    pub fn len(t: &TableRef) -> R<i32> {
+        let size = t.borrow().size();
+        crate::se::krka::kahlua::vm::kahlua_util::len(t, 0, 2 * size)
+    }
+
+    /// The pairs of `iterator()` run to the end: the keys taken when it starts, each value read when reached.
+    pub fn iterate_snapshot(t: &TableRef) -> Vec<(Object, Object)> {
+        let keys = t.borrow().keys();
+        keys.into_iter()
+            .map(|k| {
+                let v = t.borrow().get_direct(&k);
+                (k, v)
+            })
+            .collect()
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.iterator: a function object over the keys present now.
+    pub fn iterator(t: &TableRef) -> Object {
+        let keys = t.borrow().keys();
+        Object::Function(Rc::new(TableIterator {
+            table: t.clone(),
+            keys,
+            key_index: Cell::new(0),
+        }))
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.toString
+    pub fn java_to_string(t: &TableRef) -> String {
+        let hash = identity_hash_code(t);
+        match Self::rawget(t, &Object::str("Type")) {
+            Ok(Object::String(ty)) => format!("{} 0x{hash}", rstr(&ty)),
+            _ => format!("table 0x{hash}"),
+        }
+    }
+}
+
+/// The anonymous `KahluaTableIterator` of `KahluaTableImpl.iterator()`.
+pub struct TableIterator {
+    table: TableRef,
+    keys: Vec<Object>,
+    key_index: Cell<usize>,
+}
+
+impl TableIterator {
+    /// advance + getKey/getValue: the next pair, or none at the end.
+    pub fn advance(&self) -> Option<(Object, Object)> {
+        let i = self.key_index.get();
+        let k = self.keys.get(i)?.clone();
+        let v = self.table.borrow().get_direct(&k);
+        self.key_index.set(i + 1);
+        Some((k, v))
+    }
+}
+
+impl JavaFunction for TableIterator {
+    /// KahluaTableImpl$1.call
+    fn call(&self, _thread: &mut KahluaThread, frame: &FrameRef, _n_arguments: i32) -> R<i32> {
+        match self.advance() {
+            Some((k, v)) => frame.push2(k, v),
+            None => Ok(0),
+        }
+    }
+    fn java_to_string(&self) -> String {
+        format!(
+            "se.krka.kahlua.j2se.KahluaTableImpl$1@{:x}",
+            identity_hash_code(&self.table)
+        )
+    }
+    fn class(&self) -> &'static JavaClass {
+        &classes::TABLE_ITERATOR
     }
 }

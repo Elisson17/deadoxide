@@ -453,6 +453,129 @@ pub fn parse_double(s: &str) -> Option<f64> {
     Some(if neg { -v } else { v })
 }
 
+/// java.lang.Double.toString (JDK 19 and later, the game's JRE 25): the shortest decimal that reads back as `d`;
+/// when a single digit would do, the closest of the one- and two-digit decimals (so 2^-1074 is "4.9E-324").
+/// Plain notation for 10^-3 <= |d| < 10^7, else "d.dddE<n>".
+pub fn double_to_string(d: f64) -> String {
+    if d.is_nan() {
+        return "NaN".into();
+    }
+    if d.is_infinite() {
+        return if d > 0.0 {
+            "Infinity".into()
+        } else {
+            "-Infinity".into()
+        };
+    }
+    if d == 0.0 {
+        return if d.is_sign_negative() {
+            "-0.0".into()
+        } else {
+            "0.0".into()
+        };
+    }
+    let a = d.abs();
+    let (mut digits, mut exp) = split_sci(&format!("{a:e}"));
+    if digits.len() == 1 {
+        let two = format!("{a:.1e}");
+        if two.parse::<f64>().ok() == Some(a) {
+            let (d2, e2) = split_sci(&two);
+            digits = d2;
+            exp = e2;
+        }
+    }
+    let digits = digits.trim_end_matches('0').to_string();
+    let digits = if digits.is_empty() {
+        "0".to_string()
+    } else {
+        digits
+    };
+    let mut out = String::new();
+    if d < 0.0 {
+        out.push('-');
+    }
+    if (-3..7).contains(&exp) {
+        if exp >= 0 {
+            let e = exp as usize;
+            if digits.len() > e + 1 {
+                out.push_str(&digits[..=e]);
+                out.push('.');
+                out.push_str(&digits[e + 1..]);
+            } else {
+                out.push_str(&digits);
+                out.push_str(&"0".repeat(e + 1 - digits.len()));
+                out.push_str(".0");
+            }
+        } else {
+            out.push_str("0.");
+            out.push_str(&"0".repeat((-exp - 1) as usize));
+            out.push_str(&digits);
+        }
+    } else {
+        out.push_str(&digits[..1]);
+        out.push('.');
+        if digits.len() > 1 {
+            out.push_str(&digits[1..]);
+        } else {
+            out.push('0');
+        }
+        out.push('E');
+        out.push_str(&exp.to_string());
+    }
+    out
+}
+
+/// The significant digits and decimal exponent of Rust's `{:e}` text ("1.25e-3" -> ("125", -3)).
+fn split_sci(s: &str) -> (String, i32) {
+    let (m, e) = s.split_once('e').unwrap_or((s, "0"));
+    let digits: String = m.chars().filter(char::is_ascii_digit).collect();
+    (digits, e.parse().unwrap_or(0))
+}
+
+/// java.lang.Integer.toString(int, int): lowercase digits, a leading '-' for negatives.
+pub fn integer_to_string_radix(i: i32, radix: u32) -> String {
+    let radix = if (2..=36).contains(&radix) { radix } else { 10 };
+    let mut n = i64::from(i).unsigned_abs();
+    if n == 0 {
+        return "0".into();
+    }
+    let mut buf = Vec::new();
+    while n > 0 {
+        let d = (n % u64::from(radix)) as u32;
+        buf.push(std::char::from_digit(d, radix).unwrap_or('0'));
+        n /= u64::from(radix);
+    }
+    if i < 0 {
+        buf.push('-');
+    }
+    buf.iter().rev().collect()
+}
+
+/// java.lang.String.toLowerCase() (a non-Turkish default locale).
+pub fn to_lower_case(s: &str) -> String {
+    s.to_lowercase()
+}
+
+/// java.lang.String.toUpperCase() (a non-Turkish default locale).
+pub fn to_upper_case(s: &str) -> String {
+    s.to_uppercase()
+}
+
+/// java.lang.Math.pow: C's pow except where Java's specification differs (a NaN exponent and 1 or -1 to an
+/// infinite power are NaN).
+pub fn math_pow(x: f64, y: f64) -> f64 {
+    if y == 0.0 {
+        return 1.0;
+    }
+    if y.is_nan() || x.is_nan() {
+        return f64::NAN;
+    }
+    if y.is_infinite() && x.abs() == 1.0 {
+        return f64::NAN;
+    }
+    x.powf(y)
+}
+
 #[cfg(test)]
 mod crc32_tests {
     /// The CRC-32 check value of "123456789" (what `java.util.zip.CRC32` returns for it).

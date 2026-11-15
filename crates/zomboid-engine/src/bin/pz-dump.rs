@@ -56,6 +56,7 @@ fn main() {
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
         Some("outfitrandom") if a.len() == 3 => outfitrandom(Path::new(&a[2])),
         Some("luacompile") if a.len() == 4 => luacompile(Path::new(&a[2]), Path::new(&a[3])),
+        Some("luavm") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4132,6 +4133,124 @@ pub fn luacompile(root: &Path, cases: &Path) -> Result<String, String> {
             "cases",
             "tests/lua_compile_cases.txt",
         );
+    }
+    Ok(sb)
+}
+
+/// The Kahlua VM over each case of the cases file, in the format of `tests/original_probe/LuaVmProbe.java`.
+pub fn luavm(root: &Path, cases: &Path) -> Result<String, String> {
+    use zomboid_engine::se::krka::kahlua::j2se::j2se_platform::J2SEPlatform;
+    use zomboid_engine::se::krka::kahlua::luaj::compiler::lua_compiler::{
+        loadstring, CompileFiles,
+    };
+    use zomboid_engine::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
+    use zomboid_engine::se::krka::kahlua::vm::object::{Object, Throwable};
+    fn esc(sb: &mut String, s: &str) {
+        sb.push('"');
+        for c in s.encode_utf16() {
+            if (0x20..0x7f).contains(&c) && c != u16::from(b'"') && c != u16::from(b'\\') {
+                sb.push(char::from(c as u8));
+            } else {
+                let _ = write!(sb, "\\u{c:04x}");
+            }
+        }
+        sb.push('"');
+    }
+    fn esc_units(sb: &mut String, s: &[u16]) {
+        sb.push('"');
+        for &c in s {
+            if (0x20..0x7f).contains(&c) && c != u16::from(b'"') && c != u16::from(b'\\') {
+                sb.push(char::from(c as u8));
+            } else {
+                let _ = write!(sb, "\\u{c:04x}");
+            }
+        }
+        sb.push('"');
+    }
+    fn render(sb: &mut String, o: &Object) {
+        match o {
+            Object::Nil => sb.push_str("nil"),
+            Object::Boolean(b) => sb.push_str(if *b { "true" } else { "false" }),
+            Object::Number(d) => {
+                let _ = write!(sb, "d{:x}", d.to_bits());
+            }
+            Object::String(s) => {
+                sb.push('s');
+                esc_units(sb, s);
+            }
+            Object::Table(_) => sb.push_str("table"),
+            Object::Closure(_) => sb.push_str("closure"),
+            Object::Function(_) => sb.push_str("jfunction"),
+            Object::Coroutine(_) => sb.push_str("coroutine"),
+            Object::Userdata(u) => {
+                let any = u.as_any();
+                match any
+                    .downcast_ref::<zomboid_engine::se::krka::kahlua::vm::object::ThrowableObject>()
+                {
+                    Some(t) => {
+                        let _ = write!(sb, "exc:{}", t.0.class_name());
+                    }
+                    None => {
+                        let _ = write!(sb, "userdata:{}", u.class().name);
+                    }
+                }
+            }
+        }
+    }
+    fn exc_text(e: &Throwable) -> String {
+        format!(
+            "{}: {}",
+            e.class_name(),
+            e.get_message().unwrap_or_else(|| "null".into())
+        )
+    }
+    let all = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    let mut sb = String::new();
+    for (i, case) in all.split("\n--@@case\n").enumerate().skip(1) {
+        let _ = writeln!(sb, "F case{i}");
+        let platform = J2SEPlatform::new();
+        let env = platform
+            .new_environment(root)
+            .map_err(|e| format!("environment: {}", exc_text(&e)))?;
+        let mut thread = KahluaThread::new(platform.clone(), env.clone());
+        let units: Vec<u16> = case.encode_utf16().collect();
+        let closure = match loadstring(
+            &units,
+            Some(&format!("case{i}")),
+            env,
+            &CompileFiles::default(),
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                sb.push_str("ERR ");
+                esc(&mut sb, &exc_text(&e));
+                sb.push('\n');
+                continue;
+            }
+        };
+        let r = match thread.pcall_args(&Object::Closure(closure), &[]) {
+            Ok(r) => r,
+            Err(e) => {
+                sb.push_str("THROW ");
+                esc(&mut sb, &exc_text(&e));
+                sb.push('\n');
+                continue;
+            }
+        };
+        for line in thread.out.split('\n') {
+            if line.is_empty() {
+                continue;
+            }
+            sb.push_str("O ");
+            esc(&mut sb, line);
+            sb.push('\n');
+        }
+        let _ = write!(sb, "R {}", r.len());
+        for o in &r {
+            sb.push(' ');
+            render(&mut sb, o);
+        }
+        sb.push('\n');
     }
     Ok(sb)
 }
