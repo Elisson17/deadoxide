@@ -11,7 +11,8 @@ pub enum LuaValue {
 }
 
 /// se.krka.kahlua.j2se.KahluaTableImpl: entries in first-insertion order (`rawset` of an existing key replaces the
-/// value in place). The original iterates in its hash order, which this does not reproduce.
+/// value in place). That is the original's order too: `J2SEPlatform.newTable` backs every table with a
+/// `LinkedHashMap` (an earlier note here said "hash order", which was wrong).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct KahluaTable {
     pub entries: Vec<(LuaValue, LuaValue)>,

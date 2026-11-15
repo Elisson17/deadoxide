@@ -205,6 +205,254 @@ pub fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
+/// java.lang.String(byte[], "UTF-8") as the game's runtime decodes (`String.decodeUTF8_UTF16`, JDK 21+): each malformed
+/// sequence becomes U+FFFD with the JDK's own rules for how many bytes it swallows, a truncated sequence at the end
+/// becomes one U+FFFD (a 4-byte lead's second byte is consumed with it), and an encoded surrogate is malformed.
+/// The result is UTF-16 code units.
+pub fn utf8_decode_jdk(src: &[u8]) -> Vec<u16> {
+    const REPL: u16 = 0xFFFD;
+    let not_cont = |b: i32| (b & 0xc0) != 0x80;
+    let is_malformed3 = |b1: i32, b2: i32, b3: i32| {
+        (b1 == 0xe0_u8 as i8 as i32 && (b2 & 0xe0) == 0x80)
+            || (b2 & 0xc0) != 0x80
+            || (b3 & 0xc0) != 0x80
+    };
+    let is_malformed3_2 = |b1: i32, b2: i32| {
+        (b1 == 0xe0_u8 as i8 as i32 && (b2 & 0xe0) == 0x80) || (b2 & 0xc0) != 0x80
+    };
+    let is_malformed4 = |b2: i32, b3: i32, b4: i32| {
+        (b2 & 0xc0) != 0x80 || (b3 & 0xc0) != 0x80 || (b4 & 0xc0) != 0x80
+    };
+    let is_malformed4_2 = |b1: i32, b2: i32| {
+        (b1 == 0xf0 && !(0x90..=0xbf).contains(&b2))
+            || (b1 == 0xf4 && (b2 & 0xf0) != 0x80)
+            || (b2 & 0xc0) != 0x80
+    };
+    let byte = |i: usize| i32::from(src[i] as i8);
+    let sl = src.len();
+    let mut dst = Vec::with_capacity(sl);
+    let mut sp = 0usize;
+    while sp < sl {
+        let b1 = byte(sp);
+        sp += 1;
+        if b1 >= 0 {
+            dst.push(b1 as u16);
+        } else if (b1 >> 5) == -2 && (b1 & 0x1e) != 0 {
+            if sp < sl {
+                let b2 = byte(sp);
+                sp += 1;
+                if not_cont(b2) {
+                    dst.push(REPL);
+                    sp -= 1;
+                } else {
+                    dst.push(
+                        (((b1 << 6) ^ b2) ^ ((0xC0_u8 as i8 as i32) << 6 ^ (0x80_u8 as i8 as i32)))
+                            as u16,
+                    );
+                }
+                continue;
+            }
+            dst.push(REPL);
+            break;
+        } else if (b1 >> 4) == -2 {
+            if sp + 1 < sl {
+                let b2 = byte(sp);
+                let b3 = byte(sp + 1);
+                sp += 2;
+                if is_malformed3(b1, b2, b3) {
+                    dst.push(REPL);
+                    sp -= 3;
+                    // String.malformed3: one byte when the second cannot follow the first, else two.
+                    let m1 = byte(sp);
+                    let m2 = byte(sp + 1);
+                    sp += if (m1 == 0xe0_u8 as i8 as i32 && (m2 & 0xe0) == 0x80) || not_cont(m2) {
+                        1
+                    } else {
+                        2
+                    };
+                } else {
+                    let c = ((b1 << 12)
+                        ^ (b2 << 6)
+                        ^ (b3
+                            ^ ((0xE0_u8 as i8 as i32) << 12
+                                ^ (0x80_u8 as i8 as i32) << 6
+                                ^ (0x80_u8 as i8 as i32)))) as u16;
+                    dst.push(if (0xD800..=0xDFFF).contains(&c) {
+                        REPL
+                    } else {
+                        c
+                    });
+                }
+                continue;
+            }
+            if sp < sl && is_malformed3_2(b1, byte(sp)) {
+                dst.push(REPL);
+                continue;
+            }
+            dst.push(REPL);
+            break;
+        } else if (b1 >> 3) == -2 {
+            if sp + 2 < sl {
+                let b2 = byte(sp);
+                let b3 = byte(sp + 1);
+                let b4 = byte(sp + 2);
+                sp += 3;
+                let uc = (b1 << 18)
+                    ^ (b2 << 12)
+                    ^ (b3 << 6)
+                    ^ (b4
+                        ^ ((0xF0_u8 as i8 as i32) << 18
+                            ^ (0x80_u8 as i8 as i32) << 12
+                            ^ (0x80_u8 as i8 as i32) << 6
+                            ^ (0x80_u8 as i8 as i32)));
+                if is_malformed4(b2, b3, b4) || !(0x10000..=0x10FFFF).contains(&uc) {
+                    dst.push(REPL);
+                    sp -= 4;
+                    // String.malformed4
+                    let m1 = i32::from(src[sp]);
+                    let m2 = i32::from(src[sp + 1]);
+                    sp += if m1 > 0xf4
+                        || (m1 == 0xf0 && !(0x90..=0xbf).contains(&m2))
+                        || (m1 == 0xf4 && (m2 & 0xf0) != 0x80)
+                        || not_cont(m2)
+                    {
+                        1
+                    } else if not_cont(byte(sp + 2)) {
+                        2
+                    } else {
+                        3
+                    };
+                } else {
+                    let v = uc - 0x10000;
+                    dst.push((0xD800 + (v >> 10)) as u16);
+                    dst.push((0xDC00 + (v & 0x3FF)) as u16);
+                }
+                continue;
+            }
+            let b1u = b1 & 0xff;
+            if b1u > 0xf4 || (sp < sl && is_malformed4_2(b1u, i32::from(src[sp]))) {
+                dst.push(REPL);
+                continue;
+            }
+            sp += 1;
+            dst.push(REPL);
+            if sp < sl && not_cont(byte(sp)) {
+                continue;
+            }
+            break;
+        } else {
+            dst.push(REPL);
+        }
+    }
+    dst
+}
+
+/// java.lang.Long.parseLong(String, int) for radix 2..=36 over ASCII digits: an optional sign, at least one digit,
+/// no overflow; `None` is the original's NumberFormatException.
+pub fn parse_long(s: &str, radix: u32) -> Option<i64> {
+    let b = s.as_bytes();
+    let (neg, digits) = match b.first()? {
+        b'-' => (true, &b[1..]),
+        b'+' => (false, &b[1..]),
+        _ => (false, b),
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    // Accumulate negatively, as the JDK does, so Long.MIN_VALUE parses.
+    let mut result: i64 = 0;
+    for &c in digits {
+        let d = i64::from((c as char).to_digit(radix)?);
+        result = result.checked_mul(i64::from(radix))?.checked_sub(d)?;
+    }
+    if neg {
+        Some(result)
+    } else {
+        result.checked_neg()
+    }
+}
+
+/// java.lang.Double.parseDouble (`FloatingDecimal.readJavaFormatString`) for decimal input: leading and trailing
+/// characters up to U+0020 trimmed, an optional sign, "NaN", "Infinity", digits with at most one point and at least
+/// one digit, an optional exponent with at least one digit, and one optional trailing f/F/d/D; correctly rounded.
+/// Hexadecimal floating-point input ("0x1p4") is not ported (`None`, the NumberFormatException). `None` is also the
+/// original's NumberFormatException for anything else.
+pub fn parse_double(s: &str) -> Option<f64> {
+    let s = trim(s);
+    let b = s.as_bytes();
+    let mut i = 0usize;
+    let mut neg = false;
+    match b.first()? {
+        b'-' => {
+            neg = true;
+            i = 1;
+        }
+        b'+' => i = 1,
+        _ => {}
+    }
+    let rest = &s[i..];
+    if rest.starts_with('N') || rest.starts_with('I') {
+        let v = if rest == "NaN" {
+            f64::NAN
+        } else if rest == "Infinity" {
+            f64::INFINITY
+        } else {
+            return None;
+        };
+        return Some(if neg { -v } else { v });
+    }
+    if rest.starts_with("0x") || rest.starts_with("0X") {
+        return None;
+    }
+    let mut mantissa = String::new();
+    let mut digits = 0usize;
+    let mut point = false;
+    while i < b.len() {
+        match b[i] {
+            c @ b'0'..=b'9' => {
+                mantissa.push(c as char);
+                digits += 1;
+            }
+            b'.' if !point => {
+                point = true;
+                mantissa.push('.');
+            }
+            b'.' => return None,
+            _ => break,
+        }
+        i += 1;
+    }
+    if digits == 0 {
+        return None;
+    }
+    let mut exponent = String::new();
+    if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+        i += 1;
+        if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+            exponent.push(b[i] as char);
+            i += 1;
+        }
+        let start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            exponent.push(b[i] as char);
+            i += 1;
+        }
+        if i == start {
+            return None;
+        }
+    }
+    if i < b.len() && (i != b.len() - 1 || !matches!(b[i], b'f' | b'F' | b'd' | b'D')) {
+        return None;
+    }
+    let text = if exponent.is_empty() {
+        mantissa
+    } else {
+        format!("{mantissa}e{exponent}")
+    };
+    let v: f64 = text.parse().ok()?;
+    Some(if neg { -v } else { v })
+}
+
 #[cfg(test)]
 mod crc32_tests {
     /// The CRC-32 check value of "123456789" (what `java.util.zip.CRC32` returns for it).

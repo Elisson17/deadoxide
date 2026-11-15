@@ -31,7 +31,7 @@ for (const f of walk(dec, ".java")) {
   classes.set(fq, { lines: lines.length, methods, cited: new Set(), where: new Set(), text: lines.join("\n") });
 }
 
-const CITE = /\/\/[\/!]?\s*((?:zombie|se\.krka|fmod|generation|astar|N3D)\.[A-Za-z0-9_.$]+)/g;
+const CITE = /\/\/[\/!]?\s*((?:zombie|se\.krka|org\.luaj|fmod|generation|astar|N3D)\.[A-Za-z0-9_.$]+)/g;
 let unknown = new Set();
 for (const dir of ["crates", "launcher"]) {
   for (const f of walk(path.join(repo, dir), ".rs")) {

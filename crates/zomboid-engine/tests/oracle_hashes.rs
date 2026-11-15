@@ -248,3 +248,9 @@ fn items_match_original() {
     std::fs::write(&list, names.join("\n") + "\n").expect("write field list");
     check("items", &[list.to_str().expect("utf-8 path")]);
 }
+
+#[test]
+fn luacompile_matches_original() {
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_compile_cases.txt");
+    check("luacompile", &[cases.to_str().expect("utf-8 path")]);
+}

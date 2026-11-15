@@ -25,7 +25,8 @@ fi
 rm -rf target/pzclasses decompiled
 mkdir -p target/pzclasses decompiled
 JAR_ABS=$(cd "$(dirname "$JAR")" && pwd)/$(basename "$JAR")
-# Only packages written by the game's authors; third-party libraries stay as a classpath for type resolution.
-(cd target/pzclasses && unzip -q "$JAR_ABS" 'zombie/*' 'se/krka/*' 'fmod/*' 'generation/*' 'astar/*' 'N3D/*' 'de/*' && jar cf ../pz-own.jar .) || exit 1
+# Only packages written by the game's authors (and Kahlua with its luaj compiler fork, which the game ships inside its
+# own jar); third-party libraries stay as a classpath for type resolution.
+(cd target/pzclasses && unzip -q "$JAR_ABS" 'zombie/*' 'se/krka/*' 'org/luaj/kahluafork/*' 'fmod/*' 'generation/*' 'astar/*' 'N3D/*' 'de/*' && jar cf ../pz-own.jar .) || exit 1
 java -Xmx8g -jar "$VF" -thr=8 -log=WARN -e="$JAR_ABS" target/pz-own.jar decompiled > target/vineflower.log 2>&1 || { tail -20 target/vineflower.log; exit 1; }
 echo "$(find decompiled -name '*.java' | wc -l) files, $(find decompiled -name '*.java' -print0 | xargs -0 cat | wc -l) lines in ./decompiled"

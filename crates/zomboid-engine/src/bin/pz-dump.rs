@@ -55,6 +55,7 @@ fn main() {
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
         Some("outfitrandom") if a.len() == 3 => outfitrandom(Path::new(&a[2])),
+        Some("luacompile") if a.len() == 4 => luacompile(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -3940,6 +3941,197 @@ pub fn outfitrandom(root: &Path) -> Result<String, String> {
                 }
             }
         }
+    }
+    Ok(sb)
+}
+
+/// The Kahlua compiler over every `media/lua/**/*.lua` and the cases file, in the format of
+/// `tests/original_probe/LuaCompileProbe.java`.
+pub fn luacompile(root: &Path, cases: &Path) -> Result<String, String> {
+    use zomboid_engine::java::{string_compare_to, utf8_decode_jdk};
+    use zomboid_engine::org::luaj::kahluafork::compiler::lex_state::compile;
+    use zomboid_engine::se::krka::kahlua::vm::prototype::{Constant, Prototype};
+    fn esc(sb: &mut String, s: Option<&str>) {
+        let Some(s) = s else {
+            sb.push_str("null");
+            return;
+        };
+        sb.push('"');
+        for c in s.encode_utf16() {
+            if (0x20..0x7f).contains(&c) && c != u16::from(b'"') && c != u16::from(b'\\') {
+                sb.push(char::from(c as u8));
+            } else {
+                let _ = write!(sb, "\\u{c:04x}");
+            }
+        }
+        sb.push('"');
+    }
+    fn proto(sb: &mut String, p: &Prototype, depth: usize) {
+        let _ = write!(sb, "P {depth} ");
+        esc(sb, p.name.as_deref());
+        sb.push(' ');
+        esc(sb, p.file.as_deref());
+        sb.push(' ');
+        esc(sb, p.filename.as_deref());
+        let _ = writeln!(
+            sb,
+            " {} {} {} {} {} {} {} {}",
+            p.num_params,
+            u8::from(p.is_vararg),
+            p.max_stacksize,
+            p.num_upvalues,
+            p.code.len(),
+            p.constants.len(),
+            p.prototypes.len(),
+            p.locvars.len()
+        );
+        sb.push('C');
+        for c in &p.code {
+            let _ = write!(sb, " {c}");
+        }
+        sb.push_str("\nL");
+        for l in &p.lines {
+            let _ = write!(sb, " {l}");
+        }
+        sb.push_str("\nK");
+        for k in &p.constants {
+            sb.push(' ');
+            match k {
+                Constant::Nil => sb.push_str("nil"),
+                Constant::Boolean(b) => sb.push(if *b { 'T' } else { 'F' }),
+                Constant::Number(d) => {
+                    let _ = write!(sb, "d{:x}", d.to_bits());
+                }
+                Constant::String(s) => {
+                    sb.push('s');
+                    esc(sb, Some(s));
+                }
+            }
+        }
+        sb.push_str("\nV");
+        for v in &p.locvars {
+            sb.push(' ');
+            esc(sb, Some(v));
+        }
+        sb.push('\n');
+        for c in &p.prototypes {
+            proto(sb, c, depth + 1);
+        }
+    }
+    fn run(sb: &mut String, chars: Vec<u16>, name: &str, file: &str, full: &str) {
+        match compile(chars, Some(name), None, Some(file), Some(full)) {
+            Ok(p) => proto(sb, &p, 0),
+            Err(e) => {
+                sb.push_str("ERR ");
+                let msg = if e.starts_with("java.") {
+                    e
+                } else {
+                    format!("se.krka.kahlua.vm.KahluaException: {e}")
+                };
+                esc(sb, Some(&msg));
+                sb.push('\n');
+            }
+        }
+    }
+    /// The bytes as the original's UTF-8 InputStreamReader yields them (valid UTF-8 exactly; malformed input with
+    /// the String decoder's replacement rules, which is not measured).
+    fn chars(bytes: &[u8]) -> Vec<u16> {
+        match std::str::from_utf8(bytes) {
+            Ok(s) => s.encode_utf16().collect(),
+            Err(_) => utf8_decode_jdk(bytes),
+        }
+    }
+    fn gen(kind: &str, n: usize) -> String {
+        let mut sb = String::new();
+        match kind {
+            "bigtable" => {
+                sb.push_str("local t = {");
+                for i in 0..n {
+                    let _ = write!(sb, "{},", i % 7);
+                }
+                sb.push_str("}\n");
+            }
+            "locals" => {
+                for i in 0..n {
+                    let _ = writeln!(sb, "local a{i} = {i}");
+                }
+            }
+            "nest" => {
+                sb.push_str("x = ");
+                sb.push_str(&"(".repeat(n));
+                sb.push('1');
+                sb.push_str(&")".repeat(n));
+                sb.push('\n');
+            }
+            "upvals" => {
+                sb.push_str("local function f()\n");
+                for i in 0..n {
+                    let _ = writeln!(sb, "local u{i} = {i}");
+                }
+                sb.push_str("return function() return ");
+                for i in 0..n {
+                    let _ = write!(sb, "{}u{i}", if i == 0 { "" } else { " + " });
+                }
+                sb.push_str(" end\nend\n");
+            }
+            "jump" => {
+                sb.push_str("while x do\n");
+                for i in 0..n {
+                    let _ = writeln!(sb, "y = y + {i}");
+                }
+                sb.push_str("end\n");
+            }
+            _ => sb.push_str("error('unknown generator')\n"),
+        }
+        sb
+    }
+    fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
+        let rd = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        for entry in rd {
+            let p = entry.map_err(|e| e.to_string())?.path();
+            if p.is_dir() {
+                walk(&p, out)?;
+            } else if p.extension().is_some_and(|x| x == "lua") {
+                out.push(p);
+            }
+        }
+        Ok(())
+    }
+    let base = root.join("media/lua");
+    let mut paths = Vec::new();
+    walk(&base, &mut paths)?;
+    let mut files: Vec<String> = paths
+        .iter()
+        .filter_map(|p| p.strip_prefix(&base).ok())
+        .map(|r| format!("media/lua/{}", r.to_string_lossy().replace('\\', "/")))
+        .collect();
+    files.sort_by(|a, b| string_compare_to(a, b));
+    let mut sb = String::new();
+    for rel in &files {
+        let _ = writeln!(sb, "F {rel}");
+        let name = rel.rsplit('/').next().unwrap_or(rel);
+        let bytes = std::fs::read(root.join(rel)).map_err(|e| format!("{rel}: {e}"))?;
+        run(&mut sb, chars(&bytes), name, name, rel);
+    }
+    let all = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    for (i, case) in all.split("\n--@@case\n").enumerate().skip(1) {
+        let src = match case.strip_prefix("--@@gen ") {
+            Some(g) => {
+                let mut it = g.split_whitespace();
+                let kind = it.next().unwrap_or("");
+                let n = it.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+                gen(kind, n)
+            }
+            None => case.to_string(),
+        };
+        let _ = writeln!(sb, "F case{i}");
+        run(
+            &mut sb,
+            src.encode_utf16().collect(),
+            &format!("case{i}"),
+            "cases",
+            "tests/lua_compile_cases.txt",
+        );
     }
     Ok(sb)
 }

@@ -1,0 +1,151 @@
+Cases for the Kahlua compiler oracle (LuaCompileProbe / pz-dump luacompile). Each case follows a line "--@@case";
+"--@@gen <kind> <n>" stands for a generated source (see LuaCompileProbe.gen). This header is not compiled.
+--@@case
+local a, b, c = 1, 2.5, "x"
+a, b = b, a
+t = {1, 2, 3; x = 1, ["y"] = 2, [3] = 4, f = function() end}
+t.x.y[z], w = 1, 2
+local s = "esc \a\b\f\n\r\t\v \\ \" \' \65\066\0677 \
+next line"
+local l = [[long
+string]] .. [==[with ]] inside]==]
+--[[ long
+comment ]] x = 1
+--[==[ another ]==]
+-- line comment
+--@@case
+print(1.5f, 2d, 3D, 0.0f, 1e5, 1E+5, 1e-3, .5, 5., 0x1F, 0xff, 0XAB, 08, 1e308, 1e309)
+--@@case
+x = 0x
+--@@case
+x = 1e
+--@@case
+x = 1.2.3
+--@@case
+x = 1ff
+--@@case
+x = 0xFFFFFFFFFFFFFFFFF
+--@@case
+x = 3 % -2, 5 % 3, -7 % 2, 2 ^ 10, 1 / 0, 0 / 0, -0, 10 - 20, 2 * 3 + 4 / 5, - - 3, #t, not nil, not 1
+y = "a" .. "b" .. c .. 1 .. 2
+z = a == b, a ~= b, a < b, a <= b, a > b, a >= b, 1 < 2, "x" == "y"
+w = a and b or c, a or b and c, not a and b, (a or b) and (c or d)
+if a and not b or c then x = 1 elseif d then x = 2 else x = 3 end
+--@@case
+local function f(a, b, ...)
+  local t = {...}
+  local x, y = ...
+  return f(a, ...)
+end
+function g(...) return ... end
+function h() return 1, 2, 3 end
+function o.p.q:r(a) self.a = a return self end
+local m = obj:method("s"):other{1, 2} "str"
+--@@case
+for i = 1, 10 do local x = i end
+for i = 10, 1, -1 do break end
+for k, v in pairs(t) do print(k, v) end
+for a, b, c, d in next, t do end
+while true do if x then break end end
+repeat local y = 1 until y
+repeat local z = 1; local f = function() return z end until z
+while a do local q = 1; local g = function() return q end; if q then break end end
+do local d = 1 end
+--@@case
+local a = 1
+local function outer()
+  local b = 2
+  return function()
+    local c = 3
+    return function() return a + b + c end
+  end
+end
+--@@case
+x = = 1
+--@@case
+x = 'unfinished
+--@@case
+x = "a
+b"
+--@@case
+x = [==[ never closed
+--@@case
+--[==[ comment never closed
+--@@case
+x = [=x
+--@@case
+x = "\300"
+--@@case
+f() (g)
+--@@case
+local x <const> = 1
+--@@case
+break
+--@@case
+goto continue
+--@@case
+for i do end
+--@@case
+function f(a, 1) end
+--@@case
+x = ...
+--@@case
+x = {1, 2
+--@@case
+if x then
+  y = 1
+--@@case
+local t = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, f()}
+local u = {f()}
+local v = {..., 1}
+--@@case
+x = "é’日本😀" -- non-ASCII inside a string (truncated to bytes by the lexer)
+y = 'ä' .. "ß"
+--@@case
+#!/usr/bin/lua shebang line
+x = 1
+--@@case
+﻿x = 1
+--@@case
+x = 1 @ 2
+--@@case
+a.b.c = function() end
+local q = function(x) return function(y) return x end end
+--@@case
+return
+--@@case
+return 1, 2;
+--@@case
+return f()
+--@@case
+return (f())
+--@@case
+local a, b, c
+local d, e = f()
+local g, h, i = 1
+a, b, c = f()
+a, b = 1, 2, 3
+--@@case
+--@@gen bigtable 120
+--@@case
+--@@gen bigtable 26000
+--@@case
+--@@gen locals 199
+--@@case
+--@@gen locals 201
+--@@case
+--@@gen nest 150
+--@@case
+--@@gen nest 250
+--@@case
+--@@gen upvals 60
+--@@case
+--@@gen upvals 61
+--@@case
+--@@gen jump 30000
+--@@case
+--@@gen jump 70000
+--@@case
+x = 1 x = 2
+y = f
+(g)

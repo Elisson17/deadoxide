@@ -27,6 +27,25 @@ run_case() {
     echo "FAIL $name: first differences:"; diff target/oracle/$name.java.txt target/oracle/$name.rust.txt | head -6; fail=1
   fi
 }
+# jre_case <name> <ProbeClass> [probe args...]: like run_case, on the game's own bundled JRE (the JDK library
+# behaviour the game really has: UTF-8 decoding, Double.parseDouble), the probe compiled for it.
+PZ_JRE=${PZ_JRE:-"$HOME/Library/Application Support/Steam/steamapps/common/ProjectZomboid/Project Zomboid.app/Contents/PlugIns/jre-$( [ "$(uname -m)" = arm64 ] && echo aarch64 || echo x86_64 )/Contents/Home/bin/java"}
+jre_case() {
+  name=$1; probe=$2; shift 2
+  [ -x "$PZ_JRE" ] || { echo "FAIL $name: no game JRE at $PZ_JRE (set PZ_JRE)"; fail=1; return; }
+  javac -nowarn --release 25 -encoding UTF-8 -cp "$ROOT/projectzomboid.jar" -d target/original-probe-jre "tests/original_probe/$probe.java" 2>target/oracle/$name.javac \
+    || { cat target/oracle/$name.javac; echo "FAIL $name (javac)"; fail=1; return; }
+  (cd "$ROOT" && "$PZ_JRE" -cp "$HERE/target/original-probe-jre:projectzomboid.jar" "$probe" "$@" >"$HERE/target/oracle/$name.java.txt" 2>"$HERE/target/oracle/$name.java.err") \
+    || { tail -5 target/oracle/$name.java.err; echo "FAIL $name (java probe)"; fail=1; return; }
+  ./target/release/pz-dump "$name" "$ROOT" "$@" >target/oracle/$name.rust.txt 2>target/oracle/$name.rust.err \
+    || { tail -5 target/oracle/$name.rust.err; echo "FAIL $name (pz-dump)"; fail=1; return; }
+  if cmp -s target/oracle/$name.java.txt target/oracle/$name.rust.txt; then
+    shasum -a 256 target/oracle/$name.java.txt | cut -d' ' -f1 >tests/golden/engine/$name.sha256
+    echo "OK   $name: $(wc -l <target/oracle/$name.java.txt | tr -d ' ') lines identical"
+  else
+    echo "FAIL $name: first differences:"; diff target/oracle/$name.java.txt target/oracle/$name.rust.txt | head -6; fail=1
+  fi
+}
 # server_case <name> <ProbeClass> [args...]: the probe runs INSIDE the fully booted original (ServerHarness.java): a
 # headless dedicated server from the pinned jar, natives for this OS from $PZ_NATIVES, fresh scratch cache dir, fixed seed.
 PZ_NATIVES=${PZ_NATIVES:-"$HOME/Library/Application Support/Steam/steamapps/common/ProjectZomboid/Project Zomboid.app/Contents/Java"}
@@ -85,6 +104,7 @@ sel outfits && server_case outfits OutfitsProbe "$HERE/profile/Saves/Sandbox/202
 # media/fileGuidTable.xml and every clothing item file through OutfitManager.getClothingItem
 sel clothingitems && server_case clothingitems ClothingItemsProbe
 sel outfitrandom && server_case outfitrandom OutfitRandomProbe
+sel luacompile && jre_case luacompile LuaCompileProbe "$HERE/tests/lua_compile_cases.txt"
 sel doortoggle && { cp tests/golden/engine/specialcollide.sha256 target/oracle/sc.keep 2>/dev/null; server_case specialcollide SpecialCollideProbe 129 182 toggle; mv tests/golden/engine/specialcollide.sha256 tests/golden/engine/doortoggle.sha256 2>/dev/null; cp target/oracle/sc.keep tests/golden/engine/specialcollide.sha256 2>/dev/null; }
 sel los && server_case los LosProbe 129 182
 sel losdoors && { server_case los LosProbe 129 182 toggle; cp tests/golden/engine/los.sha256 tests/golden/engine/losdoors.sha256 2>/dev/null; server_case los LosProbe 129 182; }

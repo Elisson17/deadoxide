@@ -4,7 +4,7 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 189 of 3424 classes touched, 561 of 46121 method names cited (1.2%), 962280 decompiled lines.**
+**Total: 196 of 3432 classes touched, 722 of 46318 method names cited (1.6%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
@@ -25,7 +25,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.Lua | 8 | 0 | 875 | 0 (0.0%) | 14841 |
 | zombie.ai | 99 | 0 | 875 | 0 (0.0%) | 14312 |
 | zombie.erosion | 23 | 3 | 216 | 1 (0.5%) | 13296 |
-| se | 70 | 1 | 692 | 2 (0.3%) | 11221 |
+| se | 70 | 2 | 692 | 2 (0.3%) | 11221 |
 | zombie.gameStates | 19 | 1 | 429 | 1 (0.2%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
 | zombie.util | 70 | 5 | 520 | 10 (1.9%) | 8496 |
@@ -37,6 +37,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.tileDepth | 19 | 0 | 269 | 0 (0.0%) | 4029 |
 | zombie.chat | 22 | 0 | 287 | 0 (0.0%) | 3622 |
 | zombie.world | 18 | 8 | 232 | 15 (6.5%) | 3415 |
+| org | 8 | 6 | 197 | 161 (81.7%) | 3033 |
 | zombie.input | 19 | 0 | 245 | 0 (0.0%) | 2598 |
 | zombie.savefile | 7 | 1 | 102 | 0 (0.0%) | 2538 |
 | zombie.creative | 1 | 0 | 5 | 0 (0.0%) | 2258 |
@@ -74,7 +75,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 
 | Class | Cited / method names | Rust |
 |---|---:|---|
+| org.luaj.kahluafork.compiler.BlockCnt | 0 / 0 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/func_state.rs |
+| org.luaj.kahluafork.compiler.ConsControl | 0 / 0 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/func_state.rs |
+| org.luaj.kahluafork.compiler.ExpDesc | 6 / 6 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/exp_desc.rs |
+| org.luaj.kahluafork.compiler.FuncState | 82 / 95 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/func_state.rs, crates/zomboid-engine/src/org/luaj/kahluafork/compiler/lex_state.rs |
+| org.luaj.kahluafork.compiler.LexState | 73 / 92 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/lex_state.rs |
+| org.luaj.kahluafork.compiler.Token | 0 / 1 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/lex_state.rs |
 | se.krka.kahlua.j2se.KahluaTableImpl | 2 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
+| se.krka.kahlua.vm.Prototype | 0 / 11 | crates/zomboid-engine/src/se/krka/kahlua/vm/prototype.rs |
 | zombie.FileGuidPair | 0 / 0 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.FileGuidTable | 5 / 6 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.GameTime | 8 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
