@@ -65,6 +65,35 @@ server_case() {
     echo "FAIL $name: first differences:"; diff target/oracle/$name.java.txt target/oracle/$name.rust.txt | head -6; fail=1
   fi
 }
+# game_case <name> <ProbeClass> [args...]: the probe runs parts of the ORIGINAL game standalone (no server): the pinned
+# jar with this OS's natives, from the game root; its first argument is a fresh scratch cache dir, then the args.
+game_case() {
+  name=$1; probe=$2; shift 2
+  [ -d "$PZ_NATIVES" ] || { echo "FAIL $name: no natives in $PZ_NATIVES (set PZ_NATIVES)"; fail=1; return; }
+  javac -nowarn -encoding UTF-8 -cp "$ROOT/projectzomboid.jar" -d target/original-probe "tests/original_probe/$probe.java" 2>target/oracle/$name.javac \
+    || { cat target/oracle/$name.javac; echo "FAIL $name (javac)"; fail=1; return; }
+  scratch="$HERE/target/oracle/pz-oracle-$name"; rm -rf "$scratch"
+  (cd "$ROOT" && java -Djava.awt.headless=true --enable-final-field-mutation=ALL-UNNAMED -Djava.library.path="$PZ_NATIVES" -Xmx4g -cp "$HERE/target/original-probe:projectzomboid.jar" "$probe" "$scratch" "$@" >"$HERE/target/oracle/$name.java.txt" 2>"$HERE/target/oracle/$name.java.err") \
+    || { tail -5 target/oracle/$name.java.err; echo "FAIL $name (game probe)"; fail=1; return; }
+  ./target/release/pz-dump "$name" "$ROOT" "$scratch" "$@" >target/oracle/$name.rust.txt 2>target/oracle/$name.rust.err \
+    || { tail -5 target/oracle/$name.rust.err; echo "FAIL $name (pz-dump)"; fail=1; return; }
+  if cmp -s target/oracle/$name.java.txt target/oracle/$name.rust.txt; then
+    shasum -a 256 target/oracle/$name.java.txt | cut -d' ' -f1 >tests/golden/engine/$name.sha256
+    echo "OK   $name: $(wc -l <target/oracle/$name.java.txt | tr -d ' ') lines identical"
+  else
+    echo "FAIL $name: first differences:"; diff target/oracle/$name.java.txt target/oracle/$name.rust.txt | head -6; fail=1
+  fi
+}
+# game_measure <name> <ProbeClass> [args...]: a game probe whose output is input data for a generator (no Rust side).
+game_measure() {
+  name=$1; probe=$2; shift 2
+  javac -nowarn -encoding UTF-8 -cp "$ROOT/projectzomboid.jar" -d target/original-probe "tests/original_probe/$probe.java" 2>target/oracle/$name.javac \
+    || { cat target/oracle/$name.javac; echo "FAIL $name (javac)"; fail=1; return; }
+  scratch="$HERE/target/oracle/pz-oracle-$name"; rm -rf "$scratch"
+  (cd "$ROOT" && java -Djava.awt.headless=true --enable-final-field-mutation=ALL-UNNAMED -Djava.library.path="$PZ_NATIVES" -Xmx4g -cp "$HERE/target/original-probe:projectzomboid.jar" "$probe" "$scratch" "$@" >"$HERE/target/oracle/$name.txt" 2>"$HERE/target/oracle/$name.err") \
+    || { tail -5 target/oracle/$name.err; echo "FAIL $name (game probe)"; fail=1; return; }
+  echo "MEASURED $name: target/oracle/$name.txt ($(wc -l <target/oracle/$name.txt | tr -d ' ') lines)"
+}
 want=${1:-all}
 sel() { [ "$want" = all ] || [ "$want" = "$1" ]; }
 sel tiledefs && run_case tiledefs TileDefsProbe
@@ -110,6 +139,9 @@ sel luastring && jre_case luastring LuaVmProbe "$HERE/tests/lua_string_cases.txt
 sel luaos && jre_case luaos LuaVmProbe "$HERE/tests/lua_os_cases.txt"
 sel javachars && jre_case javachars JavaCharsProbe
 sel fdlibm && jre_case fdlibm FdLibmProbe
+sel luaload && game_case luaload LuaLoadEnvProbe shared
+# measurement only (no Rust side): what the original LuaManager.init exposes, the input of tools/gen_lua_expose.py
+[ "$want" = luaexpose ] && game_measure luaexpose LuaExposeProbe
 sel doortoggle && { cp tests/golden/engine/specialcollide.sha256 target/oracle/sc.keep 2>/dev/null; server_case specialcollide SpecialCollideProbe 129 182 toggle; mv tests/golden/engine/specialcollide.sha256 tests/golden/engine/doortoggle.sha256 2>/dev/null; cp target/oracle/sc.keep tests/golden/engine/specialcollide.sha256 2>/dev/null; }
 sel los && server_case los LosProbe 129 182
 sel losdoors && { server_case los LosProbe 129 182 toggle; cp tests/golden/engine/los.sha256 tests/golden/engine/losdoors.sha256 2>/dev/null; server_case los LosProbe 129 182; }

@@ -43,7 +43,9 @@ def add(kind, name, args):
     if kind == "Boolean": rows.append('    Def { name: "%s", kind: Kind::Boolean(%s) },' % (name, args[0]))
     elif kind == "Double":
         f = lambda a: a if "MAX" in a else (num(a) if any(c in num(a) for c in ".eE") else num(a) + ".0")
-        rows.append('    Def { name: "%s", kind: Kind::Double { min: %s, max: %s, default: %s } },' % (name, f(num(args[0])), f(num(args[1])), f(num(args[2]))))
+        # a float literal (0.65F) is widened to double: 0.6499999761581421
+        g = lambda a: "%s_f32 as f64" % f(num(a)) if a[-1:] in "fF" and "MAX" not in a else f(num(a))
+        rows.append('    Def { name: "%s", kind: Kind::Double { min: %s, max: %s, default: %s } },' % (name, g(args[0]), g(args[1]), g(args[2])))
     elif kind == "Integer": rows.append('    Def { name: "%s", kind: Kind::Integer { min: %s, max: %s, default: %s } },' % (name, num(args[0]), num(args[1]), num(args[2])))
     elif kind == "Enum":
         if args[0].endswith(".class"):

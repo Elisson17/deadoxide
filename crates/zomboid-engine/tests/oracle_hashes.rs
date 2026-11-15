@@ -282,3 +282,9 @@ fn luaos_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_os_cases.txt");
     check("luaos", &[cases.to_str().expect("utf-8 path")]);
 }
+
+#[test]
+fn luaload_matches_original() {
+    // the second argument is the probe's scratch cache dir, unused by pz-dump
+    check("luaload", &["-", "shared"]);
+}

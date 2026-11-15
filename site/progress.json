@@ -4,11 +4,11 @@
   "overall": 22.3,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 214,
+    "classesTouched": 229,
     "classes": 3432,
-    "methodsCited": 922,
+    "methodsCited": 981,
     "methods": 46318,
-    "methodPercent": 1.99,
+    "methodPercent": 2.12,
     "oracleCases": [
       "animalzones",
       "basements",
@@ -27,6 +27,7 @@
       "lotheaders",
       "lotpack",
       "luacompile",
+      "luaload",
       "luaos",
       "luastring",
       "luavm",
@@ -54,7 +55,7 @@
       "score": 0.625,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 922 of 46318 method names (1.99%) in 214 of 3432 classes; byte-identical to the original in 33 oracle cases (animalzones, basements, chunkobjects, chunksave, clothingitems, collide, doortoggle, entitysprites, fdlibm, gametime, items, javachars, los, losdoors, lotheaders, lotpack, luacompile, luaos, luastring, luavm, mapmeta, mapzone, metagrid, moddata, outfitrandom, outfits, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
+        "direct port from decompiled Java: 981 of 46318 method names (2.12%) in 229 of 3432 classes; byte-identical to the original in 34 oracle cases (animalzones, basements, chunkobjects, chunksave, clothingitems, collide, doortoggle, entitysprites, fdlibm, gametime, items, javachars, los, losdoors, lotheaders, lotpack, luacompile, luaload, luaos, luastring, luavm, mapmeta, mapzone, metagrid, moddata, outfitrandom, outfits, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
         "format families read: 10 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",

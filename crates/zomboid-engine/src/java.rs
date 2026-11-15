@@ -484,6 +484,44 @@ pub fn double_to_string(d: f64) -> String {
             exp = e2;
         }
     }
+    java_decimal(d < 0.0, &digits, exp)
+}
+
+/// java.lang.Float.toString (JDK 19 and later): as `double_to_string`, with the shortest decimal that reads back as
+/// the float.
+pub fn float_to_string(f: f32) -> String {
+    if f.is_nan() {
+        return "NaN".into();
+    }
+    if f.is_infinite() {
+        return if f > 0.0 {
+            "Infinity".into()
+        } else {
+            "-Infinity".into()
+        };
+    }
+    if f == 0.0 {
+        return if f.is_sign_negative() {
+            "-0.0".into()
+        } else {
+            "0.0".into()
+        };
+    }
+    let a = f.abs();
+    let (mut digits, mut exp) = split_sci(&format!("{a:e}"));
+    if digits.len() == 1 {
+        let two = format!("{a:.1e}");
+        if two.parse::<f32>().ok() == Some(a) {
+            let (d2, e2) = split_sci(&two);
+            digits = d2;
+            exp = e2;
+        }
+    }
+    java_decimal(f < 0.0, &digits, exp)
+}
+
+/// The text of Double/Float.toString from the significant digits and decimal exponent.
+fn java_decimal(negative: bool, digits: &str, exp: i32) -> String {
     let digits = digits.trim_end_matches('0').to_string();
     let digits = if digits.is_empty() {
         "0".to_string()
@@ -491,7 +529,7 @@ pub fn double_to_string(d: f64) -> String {
         digits
     };
     let mut out = String::new();
-    if d < 0.0 {
+    if negative {
         out.push('-');
     }
     if (-3..7).contains(&exp) {

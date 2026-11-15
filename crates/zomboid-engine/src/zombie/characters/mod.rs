@@ -1,4 +1,5 @@
 pub mod animals;
+pub mod attached_items;
 pub mod body_damage;
 pub mod faction;
 pub mod iso_game_character;
@@ -8,3 +9,4 @@ pub mod player_craft_history;
 pub mod stats;
 pub mod survivor_desc;
 pub mod traits;
+pub mod worn_items;

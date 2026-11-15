@@ -4,6 +4,23 @@ use std::collections::HashMap;
 
 use super::sandbox_options_table::OPTIONS;
 use crate::java;
+use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
+use crate::se::krka::kahlua::vm::object::{rstr, Object, TableRef, R};
+
+/// zombie.SandboxOptions.parseName: "Group.Name" is (group, name); anything else (no dot, or more than one) is the
+/// short name alone.
+pub fn parse_name(name: &str) -> (Option<&str>, &str) {
+    let mut ss: Vec<&str> = name.split('.').collect();
+    // String.split drops trailing empty strings
+    while ss.len() > 1 && ss.last() == Some(&"") {
+        ss.pop();
+    }
+    if name.contains('.') && ss.len() == 2 {
+        (Some(ss[0]), ss[1])
+    } else {
+        (None, name)
+    }
+}
 
 /// Definition of one option, as its `new...Option(...)` call declares it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -89,6 +106,8 @@ pub fn double_to_string(v: f64) -> String {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SandboxOptions {
     values: Vec<Value>,
+    /// ConfigOption.defaultValue of every option.
+    default_values: Vec<Value>,
     by_name: HashMap<&'static str, usize>,
     /// `IsoWorld.getPreset()` as stored at the end of `map_sand.bin`.
     pub preset: String,
@@ -105,7 +124,7 @@ impl Default for SandboxOptions {
 impl SandboxOptions {
     /// Every option at its default value.
     pub fn new() -> Self {
-        let values = OPTIONS
+        let values: Vec<Value> = OPTIONS
             .iter()
             .map(|d| match d.kind {
                 Kind::Boolean(b) => Value::Boolean(b),
@@ -123,6 +142,7 @@ impl SandboxOptions {
             .map(|(i, d)| (d.name, i))
             .collect();
         SandboxOptions {
+            default_values: values.clone(),
             values,
             by_name,
             preset: String::new(),
@@ -214,6 +234,152 @@ impl SandboxOptions {
             // Length limits of string options are not applied yet.
             Kind::Str { .. } => self.values[i] = Value::Str(s.to_string()),
         }
+    }
+
+    /// zombie.config.DoubleConfigOption.setValue / IntegerConfigOption.setValue (EnumConfigOption is an integer
+    /// option with min 1 and max `numValues`) / BooleanConfigOption.setValue for option `i`: an out-of-range value
+    /// is logged and the option keeps its value.
+    fn set_number(&mut self, i: usize, v: f64) {
+        let d = &OPTIONS[i];
+        match d.kind {
+            Kind::Boolean(_) => self.values[i] = Value::Boolean(v != 0.0),
+            Kind::Double { min, max, .. } => {
+                if v < min {
+                    self.log.push(format!(
+                        "ERROR: DoubleConfigOption.setValue() \"{}\" {} is less than min={}",
+                        d.name,
+                        double_to_string(v),
+                        double_to_string(min)
+                    ));
+                } else if v > max {
+                    self.log.push(format!(
+                        "ERROR: DoubleConfigOption.setValue() \"{}\" {} is greater than max={}",
+                        d.name,
+                        double_to_string(v),
+                        double_to_string(max)
+                    ));
+                } else {
+                    self.values[i] = Value::Double(v);
+                }
+            }
+            Kind::Integer { .. } | Kind::Enum { .. } => {
+                let (min, max) = match d.kind {
+                    Kind::Integer { min, max, .. } => (min, max),
+                    Kind::Enum { num_values, .. } => (1, num_values),
+                    _ => (0, 0),
+                };
+                // Double.intValue(): saturating, NaN -> 0, as `as i32` is.
+                let v = v as i32;
+                if v < min {
+                    self.log.push(format!(
+                        "ERROR: IntegerConfigOption.setValue() \"{}\" {v} is less than min={min}",
+                        d.name
+                    ));
+                } else if v > max {
+                    self.log.push(format!(
+                        "ERROR: IntegerConfigOption.setValue() \"{}\" {v} is greater than max={max}",
+                        d.name
+                    ));
+                } else {
+                    self.values[i] = Value::Integer(v);
+                }
+            }
+            Kind::Str { .. } => {
+                self.values[i] = Value::Str(crate::java::double_to_string(v));
+            }
+        }
+    }
+
+    /// zombie.config.BooleanConfigOption.setValueFromObject (and the Double/Integer/String ones) for option `i`
+    /// with a Lua value: a boolean or number sets it, a string is parsed; anything else is ignored, except by a
+    /// string option, which takes `toString()` of it.
+    pub fn set_value_from_object(&mut self, i: usize, o: &Object) {
+        let string_option = matches!(OPTIONS[i].kind, Kind::Str { .. });
+        match o {
+            Object::Boolean(b) if matches!(OPTIONS[i].kind, Kind::Boolean(_)) => {
+                self.values[i] = Value::Boolean(*b)
+            }
+            Object::Number(d) if !string_option => self.set_number(i, *d),
+            Object::String(s) => self.parse(i, &rstr(s)),
+            Object::Nil => {
+                if string_option {
+                    self.values[i] = Value::Str(String::new());
+                }
+            }
+            other => {
+                if string_option {
+                    self.values[i] = Value::Str(other.java_to_string());
+                }
+            }
+        }
+    }
+
+    /// zombie.config.BooleanConfigOption.getValueAsObject (and the others; an integer or enum option gives a
+    /// double) of option `i`.
+    pub fn value_as_object(&self, i: usize) -> Object {
+        match &self.values[i] {
+            Value::Boolean(b) => Object::Boolean(*b),
+            Value::Double(d) => Object::Number(*d),
+            Value::Integer(v) => Object::Number(f64::from(*v)),
+            Value::Str(s) => Object::str(s),
+        }
+    }
+
+    /// zombie.SandboxOptions.BooleanSandboxOption.fromTable (the same in every option class): the value under the
+    /// option's short name, inside its group table when the name has one ("ZombieLore.Speed"); a missing group or
+    /// value leaves the option as it is.
+    pub fn from_table(&mut self, i: usize, table: &TableRef) -> R<()> {
+        let (table_name, short_name) = parse_name(OPTIONS[i].name);
+        let mut table = table.clone();
+        if let Some(t) = table_name {
+            match KahluaTableImpl::rawget(&table, &Object::str(t))? {
+                Object::Table(sub) => table = sub,
+                _ => return Ok(()),
+            }
+        }
+        let o = KahluaTableImpl::rawget(&table, &Object::str(short_name))?;
+        if !o.is_nil() {
+            self.set_value_from_object(i, &o);
+        }
+        Ok(())
+    }
+
+    /// zombie.SandboxOptions.BooleanSandboxOption.toTable (the same in every option class): stores the value under
+    /// the short name, creating the group table when it is missing.
+    pub fn to_table(&self, i: usize, table: &TableRef) -> R<()> {
+        let (table_name, short_name) = parse_name(OPTIONS[i].name);
+        let mut table = table.clone();
+        if let Some(t) = table_name {
+            match KahluaTableImpl::rawget(&table, &Object::str(t))? {
+                Object::Table(sub) => table = sub,
+                _ => {
+                    let sub = KahluaTableImpl::new_ref();
+                    KahluaTableImpl::rawset(&table, Object::str(t), Object::Table(sub.clone()));
+                    table = sub;
+                }
+            }
+        }
+        KahluaTableImpl::rawset(&table, Object::str(short_name), self.value_as_object(i));
+        Ok(())
+    }
+
+    /// zombie.SandboxOptions.initSandboxVars: every option reads `vars`, then writes its value back.
+    pub fn init_sandbox_vars(&mut self, vars: &TableRef) -> R<()> {
+        for i in 0..OPTIONS.len() {
+            self.from_table(i, vars)?;
+            self.to_table(i, vars)?;
+        }
+        Ok(())
+    }
+
+    /// zombie.SandboxOptions.setDefaultsToCurrentValues
+    pub fn set_defaults_to_current_values(&mut self) {
+        self.default_values = self.values.clone();
+    }
+
+    /// The value `resetToDefault` would restore for option `i`.
+    pub fn default_value(&self, i: usize) -> &Value {
+        &self.default_values[i]
     }
 
     /// zombie.SandboxOptions.loadGameFile: applies a preset table (`media/lua/shared/Sandbox/<name>.lua`, a Lua file

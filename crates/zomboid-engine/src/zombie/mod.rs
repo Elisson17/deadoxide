@@ -7,6 +7,7 @@ pub mod game_states;
 pub mod game_time;
 pub mod inventory;
 pub mod iso;
+pub mod lua;
 pub mod pathfind;
 pub mod persistent_outfits;
 pub mod radio;

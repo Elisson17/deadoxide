@@ -61,6 +61,7 @@ fn main() {
         Some("luaos") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("javachars") if a.len() == 3 => javachars(),
         Some("fdlibm") if a.len() == 3 => fdlibm(),
+        Some("luaload") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[4..]),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4410,4 +4411,177 @@ pub fn fdlibm() -> Result<String, String> {
         let _ = writeln!(out, "{f} hash {:x}", h as u64);
     }
     Ok(out)
+}
+
+/// `tests/original_probe/LuaLoadEnvProbe.java` on the port: the game's own Lua loaded by the ported LuaManager.
+pub fn luaload(root: &Path, dirs: &[String]) -> Result<String, String> {
+    use std::collections::{HashMap, HashSet};
+    use std::rc::Rc;
+    use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
+    use zomboid_engine::se::krka::kahlua::vm::object::{Object, TableRef};
+    use zomboid_engine::zombie::lua::exposer::JavaEnum;
+    use zomboid_engine::zombie::lua::lua_manager::LuaManager;
+    fn esc(sb: &mut String, s: &[u16]) {
+        sb.push('"');
+        for &c in s {
+            if (0x20..0x7f).contains(&c) && c != u16::from(b'"') && c != u16::from(b'\\') {
+                sb.push(char::from(c as u8));
+            } else {
+                let _ = write!(sb, "\\u{c:04x}");
+            }
+        }
+        sb.push('"');
+    }
+    fn key(k: &Object) -> String {
+        if let Object::String(s) = k {
+            let mut b = String::new();
+            esc(&mut b, s);
+            return b;
+        }
+        value(k)
+    }
+    fn value(o: &Object) -> String {
+        match o {
+            Object::Nil => "nil".into(),
+            Object::Boolean(b) => b.to_string(),
+            Object::Number(d) => format!("d{:x}", d.to_bits()),
+            Object::String(s) => {
+                let mut b = String::from("s");
+                esc(&mut b, s);
+                b
+            }
+            Object::Closure(c) => {
+                let f = c.prototype.filename.as_deref().unwrap_or("null");
+                let f = f.find("/media/lua/").map_or(f, |i| &f[i + 1..]);
+                format!(
+                    "closure {f}:{}",
+                    c.prototype.lines.first().copied().unwrap_or(-1)
+                )
+            }
+            Object::Function(f) => format!("jfunction {}", f.class().name),
+            Object::Coroutine(_) => "coroutine".into(),
+            Object::Table(_) => "table".into(),
+            Object::Userdata(u) => match u.as_any().downcast_ref::<JavaEnum>() {
+                Some(e) => format!("userdata {}.{}", e.class.name, e.name),
+                None => format!("userdata {}", u.class().name),
+            },
+        }
+    }
+    struct Dumper {
+        sb: String,
+        seen: HashMap<usize, String>,
+        init_tables: HashMap<usize, String>,
+    }
+    fn addr(t: &TableRef) -> usize {
+        Rc::as_ptr(t) as usize
+    }
+    impl Dumper {
+        fn dump(&mut self, path: &str, v: &Object) {
+            if let Object::Table(t) = v {
+                if let Some(init) = self.init_tables.get(&addr(t)) {
+                    let _ = writeln!(self.sb, "{path} = init {init}");
+                    return;
+                }
+                if let Some(before) = self.seen.get(&addr(t)) {
+                    let _ = writeln!(self.sb, "{path} = ref {before}");
+                    return;
+                }
+                self.seen.insert(addr(t), path.to_string());
+                let _ = writeln!(self.sb, "{path} = table");
+                for (k, v) in KahluaTableImpl::iterate_snapshot(t) {
+                    self.dump(&format!("{path}[{}]", key(&k)), &v);
+                }
+            } else {
+                let _ = writeln!(self.sb, "{path} = {}", value(v));
+            }
+        }
+    }
+    let mut lm = LuaManager::init(root).map_err(|e| format!("init: {e:?}"))?;
+    let env = lm.env.clone();
+    let mut init_globals: Vec<(Object, Object)> = Vec::new();
+    let mut init_keys: HashMap<usize, HashSet<String>> = HashMap::new();
+    let mut d = Dumper {
+        sb: String::new(),
+        seen: HashMap::new(),
+        init_tables: HashMap::new(),
+    };
+    for (k, v) in KahluaTableImpl::iterate_snapshot(&env) {
+        if let (Object::Table(t), Object::String(name)) = (&v, &k) {
+            if !Rc::ptr_eq(t, &env) {
+                let keys = KahluaTableImpl::iterate_snapshot(t)
+                    .iter()
+                    .map(|(k, _)| key(k))
+                    .collect();
+                init_keys.insert(addr(t), keys);
+                d.init_tables
+                    .insert(addr(t), String::from_utf16_lossy(name));
+            }
+        }
+        init_globals.push((k, v));
+    }
+    d.init_tables.insert(addr(&env), "_G".into());
+    for dir in dirs {
+        lm.load_dir_base(dir)
+            .map_err(|e| format!("LoadDirBase {dir}: {e:?}"))?;
+    }
+    for line in &lm.loader.borrow().log {
+        eprintln!("LOG {line}");
+    }
+    for f in &lm.loader.borrow().loaded {
+        let i = f.find("/media/lua/").map_or(0, |i| i + 1);
+        let _ = writeln!(d.sb, "LOADED {}", &f[i..]);
+    }
+    let mut globals: Vec<(String, Object)> = KahluaTableImpl::iterate_snapshot(&env)
+        .into_iter()
+        .map(|(k, _)| (key(&k), k))
+        .collect();
+    globals.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
+    let init_value = |k: &Object| -> Option<Object> {
+        init_globals
+            .iter()
+            .find(|(ik, _)| ik.same(k) || key(ik) == key(k))
+            .map(|(_, v)| v.clone())
+    };
+    for (gk, k) in &globals {
+        let Some(Object::Table(t)) = init_value(k) else {
+            continue;
+        };
+        let now = KahluaTableImpl::rawget(&env, k).map_err(|e| format!("{e:?}"))?;
+        let Object::Table(now) = now else {
+            continue;
+        };
+        if !Rc::ptr_eq(&now, &t) || !init_keys.contains_key(&addr(&t)) {
+            continue;
+        }
+        let had = &init_keys[&addr(&t)];
+        let added: Vec<(Object, Object)> = KahluaTableImpl::iterate_snapshot(&t)
+            .into_iter()
+            .filter(|(k, _)| !had.contains(&key(k)))
+            .collect();
+        let name = d.init_tables.remove(&addr(&t)).unwrap_or_default();
+        for (k2, v2) in added {
+            d.dump(&format!("ADDED G[{gk}][{}]", key(&k2)), &v2);
+        }
+        d.init_tables.insert(addr(&t), name);
+    }
+    for (gk, k) in &globals {
+        let v = KahluaTableImpl::rawget(&env, k).map_err(|e| format!("{e:?}"))?;
+        if let Some(iv) = init_value(k) {
+            if iv.same(&v) {
+                continue;
+            }
+        }
+        d.dump(&format!("G[{gk}]"), &v);
+    }
+    for e in lm.events.event_list.borrow().iter() {
+        let callbacks = e.callbacks.borrow();
+        if callbacks.is_empty() {
+            continue;
+        }
+        let _ = writeln!(d.sb, "EVENT {} {}", e.name, callbacks.len());
+        for c in callbacks.iter() {
+            let _ = writeln!(d.sb, "  {}", value(&Object::Closure(c.clone())));
+        }
+    }
+    Ok(d.sb)
 }
