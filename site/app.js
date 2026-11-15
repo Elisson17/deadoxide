@@ -32,7 +32,10 @@ async function progress() {
     setTimeout(() => (bar.firstChild.style.width = a.percent + "%"), 120);
   }
   const n = p.numbers;
+  const e = p.engine;
   const stats = [
+    [`${e.methodPercent}%`, `of the game's Java methods ported directly from the decompiled code (${fmt(e.methodsCited)} of ${fmt(e.methods)}, in ${fmt(e.classesTouched)} of ${fmt(e.classes)} classes)`],
+    [fmt(e.oracleCases.length), "oracle cases where the port's output is byte-identical to the original game's own code"],
     [`${fmt(n.luaOk)} / ${fmt(n.luaAll)}`, "Lua files run without error under placeholder APIs"],
     [`${n.logKindsMatched} / ${n.goldenLogLines}`, "selected real-client log lines reproduced, sorted"],
     [fmt(n.zones), "Muldraugh map zones checked against the real Lua"],

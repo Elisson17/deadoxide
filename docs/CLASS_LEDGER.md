@@ -4,20 +4,20 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 172 of 3424 classes touched, 510 of 46121 method names cited (1.1%), 962280 decompiled lines.**
+**Total: 179 of 3424 classes touched, 531 of 46121 method names cited (1.2%), 962280 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 60 | 7277 | 292 (4.0%) | 144530 |
-| zombie.core | 450 | 17 | 5920 | 62 (1.0%) | 93574 |
-| zombie.characters | 200 | 19 | 5028 | 43 (0.9%) | 77144 |
+| zombie.core | 450 | 20 | 5920 | 69 (1.2%) | 93574 |
+| zombie.characters | 200 | 20 | 5028 | 44 (0.9%) | 77144 |
 | zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
 | zombie.inventory | 40 | 14 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 11 | 1411 | 10 (0.7%) | 28275 |
-| zombie | 60 | 3 | 1192 | 13 (1.1%) | 22185 |
+| zombie | 60 | 5 | 1192 | 24 (2.0%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 5 | 1328 | 3 (0.2%) | 18604 |
@@ -28,7 +28,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | se | 70 | 1 | 692 | 2 (0.3%) | 11221 |
 | zombie.gameStates | 19 | 1 | 429 | 1 (0.2%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
-| zombie.util | 70 | 3 | 520 | 4 (0.8%) | 8496 |
+| zombie.util | 70 | 4 | 520 | 6 (1.2%) | 8496 |
 | fmod | 102 | 0 | 652 | 0 (0.0%) | 7709 |
 | zombie.audio | 106 | 0 | 486 | 0 (0.0%) | 7002 |
 | zombie.radio | 27 | 3 | 445 | 4 (0.9%) | 6029 |
@@ -77,7 +77,9 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | se.krka.kahlua.j2se.KahluaTableImpl | 2 / 30 | crates/zomboid-engine/src/se/krka/kahlua/j2se/kahlua_table_impl.rs |
 | zombie.GameTime | 8 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.GameWindow | 1 / 47 | crates/zomboid-engine/src/java_nio.rs |
+| zombie.PersistentOutfits | 10 / 20 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.SandboxOptions | 4 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
+| zombie.SharedDescriptors | 1 / 16 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.basements.BasementDefinition | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
 | zombie.basements.BasementPlacement | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
 | zombie.basements.BasementSpawnLocation | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
@@ -100,6 +102,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.PlayerCraftHistory | 1 / 8 | crates/zomboid-engine/src/zombie/characters/player_craft_history.rs |
 | zombie.characters.Stats | 1 / 31 | crates/zomboid-engine/src/zombie/characters/stats.rs |
 | zombie.characters.SurvivorDesc | 1 / 81 | crates/zomboid-engine/src/zombie/characters/survivor_desc.rs |
+| zombie.characters.ZombiesZoneDefinition | 1 / 15 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.characters.animals.AnimalZone | 4 / 18 | crates/zomboid-engine/src/zombie/characters/animals/animal_zone.rs |
 | zombie.characters.animals.AnimalZoneJunction | 0 / 10 | crates/zomboid-engine/src/zombie/characters/animals/animal_zone_junction.rs |
 | zombie.characters.skills.PerkFactory | 0 / 31 | crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
@@ -116,6 +119,9 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.random.Rand | 1 / 5 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandAbstract | 1 / 2 | crates/zomboid-content/src/rng.rs, crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandInterface | 1 / 2 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
+| zombie.core.skinnedmodel.population.ClothingItemReference | 1 / 6 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item_reference.rs |
+| zombie.core.skinnedmodel.population.Outfit | 1 / 12 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit.rs |
+| zombie.core.skinnedmodel.population.OutfitManager | 5 / 29 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/outfit_manager.rs |
 | zombie.core.skinnedmodel.visual.HumanVisual | 2 / 66 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/human_visual.rs |
 | zombie.core.skinnedmodel.visual.ItemVisual | 1 / 57 | crates/zomboid-engine/src/zombie/core/skinnedmodel/visual/item_visual.rs |
 | zombie.core.stash.StashBuilding | 0 / 2 | crates/zomboid-engine/src/zombie/core/stash/stash_system.rs |
@@ -219,6 +225,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.scripting.objects.ModelScript | 4 / 28 | crates/zomboid-engine/src/zombie/scripting/model_script.rs |
 | zombie.scripting.objects.ResourceLocation | 1 / 7 | crates/zomboid-engine/src/zombie/scripting/objects/resource_location.rs |
 | zombie.scripting.objects.ScriptModule | 2 / 50 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
+| zombie.util.PZXmlUtil | 2 / 24 | crates/zomboid-engine/src/zombie/util/pz_xml_util.rs |
 | zombie.util.StringUtils | 3 / 36 | crates/zomboid-engine/src/zombie/util/string_utils.rs |
 | zombie.util.io.BitHeader | 1 / 27 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.util.io.BitHeaderRead | 0 / 0 | crates/zomboid-engine/src/java_nio.rs |

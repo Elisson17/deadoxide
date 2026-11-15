@@ -52,6 +52,7 @@ fn main() {
         Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
+        Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -3581,5 +3582,123 @@ pub fn moddata(save: &Path) -> Result<String, String> {
         sb.push_str(&it.export_group(g, Format::Text, Sort::Key, "\n"));
         sb.push_str(&it.export_group(g, Format::Csv, Sort::Key, "\n"));
     }
+    Ok(sb)
+}
+
+/// The outfits of `media/clothing/clothing.xml` (OutfitManager.init) sorted by name, and PersistentOutfits built from
+/// them with the save's `z_outfits.bin` loaded (pairs with OutfitsProbe.java).
+pub fn outfits(root: &Path, save: &Path) -> Result<String, String> {
+    use save_dump::fh;
+    use zomboid_engine::java::{equals_ignore_case, string_compare_to};
+    use zomboid_engine::zombie::core::skinnedmodel::population::clothing_item_reference::ClothingItemReference;
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit::Outfit;
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_manager::OutfitManager;
+    use zomboid_engine::zombie::persistent_outfits::{PersistentOutfits, FEMALE_BIT, NO_HAT_BIT};
+    fn item(sb: &mut String, r: &ClothingItemReference, depth: usize) {
+        let _ = writeln!(
+            sb,
+            "I {depth} {} {} {} {} {}",
+            fh(r.probability),
+            r.item_guid.as_deref().unwrap_or("null"),
+            u8::from(r.randomized),
+            u8::from(r.immutable),
+            r.sub_items.len()
+        );
+        for s in &r.sub_items {
+            item(sb, s, depth + 1);
+        }
+    }
+    let om = OutfitManager::init(root)?.ok_or("no media/clothing/clothing.xml")?;
+    let mut sb = String::new();
+    let mut names: Vec<String> = Vec::new();
+    for female in [true, false] {
+        let mut l: Vec<&Outfit> = if female {
+            om.female_outfits.iter().collect()
+        } else {
+            om.male_outfits.iter().collect()
+        };
+        l.sort_by(|a, b| string_compare_to(&a.name, &b.name));
+        let map_len = if female {
+            om.female_outfit_map_len()
+        } else {
+            om.male_outfit_map_len()
+        };
+        let _ = writeln!(
+            sb,
+            "OM {} {} {map_len}",
+            if female { "F" } else { "M" },
+            l.len()
+        );
+        for o in l {
+            if !names.iter().any(|n| equals_ignore_case(n, &o.name)) {
+                names.push(o.name.clone());
+            }
+            let same = om.get_specific_outfit(female, &o.name);
+            let upper = om.get_specific_outfit(female, &o.name.to_uppercase());
+            let _ = writeln!(
+                sb,
+                "O {} {} {} {} {} {} {} {} {} [{}] [{}] {} {} {}",
+                o.name,
+                u8::from(o.top),
+                u8::from(o.pants),
+                u8::from(o.allow_pants_hue),
+                u8::from(o.allow_pants_tint),
+                u8::from(o.allow_top_tint),
+                u8::from(o.allow_tshirt_decal),
+                o.mod_id.as_deref().unwrap_or("null"),
+                u8::from(o.immutable),
+                o.top_textures.join(","),
+                o.pants_textures.join(","),
+                o.items.len(),
+                u8::from(same.is_some_and(|s| std::ptr::eq(s, o))),
+                u8::from(upper.is_some_and(|s| std::ptr::eq(s, o)))
+            );
+            for r in &o.items {
+                item(&mut sb, r, 0);
+            }
+        }
+    }
+    let p = save.join("z_outfits.bin");
+    let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    let mut po = PersistentOutfits::default();
+    po.init(&om, false, &mut |_| 0);
+    po.load(&data)?;
+    for (i, s) in po.seeds.iter().enumerate() {
+        let _ = writeln!(sb, "PS {i} {s}");
+    }
+    let k = names.len();
+    let _ = writeln!(sb, "PA {k}");
+    for i in 0..k {
+        let d = &po.all[i];
+        let _ = writeln!(
+            sb,
+            "PD {i} {} {} {} {}",
+            d.index,
+            d.outfit_name,
+            u8::from(d.use_seed),
+            po.outfit_names[i]
+        );
+    }
+    for (sex, l, n) in [
+        ("F", &po.female, om.female_outfits.len()),
+        ("M", &po.male, om.male_outfits.len()),
+    ] {
+        let _ = writeln!(sb, "PL {sex} {n}");
+        let line: Vec<String> = l[..n]
+            .iter()
+            .map(|&i| po.all[i].index.to_string())
+            .collect();
+        let _ = writeln!(sb, "{}", line.join(" "));
+    }
+    let mut no_draw = |_: i32| -> i32 { panic!("getOutfit drew a random variant") };
+    for i in [0i32, 1, k as i32 - 1, 32767] {
+        for v in [1, 250, 500] {
+            for bits in [0, FEMALE_BIT, NO_HAT_BIT] {
+                let id = bits | (i << 16) | v;
+                let _ = writeln!(sb, "GO {id} {}", po.get_outfit(id, &mut no_draw));
+            }
+        }
+    }
+    let _ = writeln!(sb, "GO 0 {}", po.get_outfit(0, &mut no_draw));
     Ok(sb)
 }

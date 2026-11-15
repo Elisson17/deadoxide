@@ -1,8 +1,6 @@
 //! zombie.iso.InstanceTracker: counters by group and key (item spawns, container rolls, stats) that a save keeps in
 //! `iTrack.bin` and that saving exports to `ItemTracker.log`.
-use std::cmp::Ordering;
-
-use crate::java::is_whitespace;
+use crate::java::{is_whitespace, string_compare_to};
 use crate::java_nio::{read_string, ByteBuffer};
 
 /// zombie.iso.InstanceTracker.DEFAULT
@@ -30,11 +28,6 @@ pub enum Sort {
     Key,
     /// Highest count first; keys with equal counts keep the key set's order (not reproduced).
     Count,
-}
-
-/// java.lang.String.compareTo: UTF-16 code units, then length.
-fn compare_to(a: &str, b: &str) -> Ordering {
-    a.encode_utf16().cmp(b.encode_utf16())
 }
 
 /// java.lang.String.isBlank
@@ -115,7 +108,7 @@ impl InstanceTracker {
         let mut keys: Vec<&(String, i32)> = m.iter().collect();
         match sort {
             Sort::None => {}
-            Sort::Key => keys.sort_by(|a, b| compare_to(&a.0, &b.0)),
+            Sort::Key => keys.sort_by(|a, b| string_compare_to(&a.0, &b.0)),
             Sort::Count => keys.sort_by_key(|e| std::cmp::Reverse(e.1)),
         }
         Some(keys.into_iter().map(|(k, _)| k.clone()).collect())

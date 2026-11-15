@@ -48,7 +48,7 @@ const FAMILIES = [
   ["maps: lotheader (with rooms)", true], ["maps: lotpack (chunks)", true], ["texture packs (.pack)", true], ["tile definitions", true],
   ["item scripts and blocks", true], ["translations", true], ["map zones (objects.lua)", true], ["save: players.db", true],
   ["3D models and animations", false], ["FMOD sound banks", false], ["fonts (.fnt)", false], ["recipe and vehicle scripts", false],
-  ["other save files (map_*.bin, chunks)", false], ["cell header tail", true], ["UI layout and UI textures", false], ["mod loading", false],
+  ["other save files (map_*.bin, chunks)", true], ["cell header tail", true], ["UI layout and UI textures", false], ["mod loading", false],
 ];
 // ---- areas: score 0..1, weight. Score formulas are written next to each area. ----
 const areas = [

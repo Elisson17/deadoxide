@@ -1,14 +1,14 @@
 {
   "generated": "2026-11-15",
   "game": "Project Zomboid 42.21.0 (Steam build 25485521)",
-  "overall": 21.4,
+  "overall": 22.3,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 172,
+    "classesTouched": 179,
     "classes": 3424,
-    "methodsCited": 510,
+    "methodsCited": 531,
     "methods": 46121,
-    "methodPercent": 1.11,
+    "methodPercent": 1.15,
     "oracleCases": [
       "animalzones",
       "basements",
@@ -27,6 +27,7 @@
       "mapzone",
       "metagrid",
       "moddata",
+      "outfits",
       "sandbox",
       "specialcollide",
       "stairs",
@@ -42,17 +43,17 @@
       "name": "Reading the game's files",
       "weight": 15,
       "measured": false,
-      "score": 0.5625,
+      "score": 0.625,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 510 of 46121 method names (1.11%) in 172 of 3424 classes; byte-identical to the original in 24 oracle cases (animalzones, basements, chunkobjects, chunksave, collide, doortoggle, entitysprites, gametime, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, moddata, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
-        "format families read: 9 of 16",
+        "direct port from decompiled Java: 531 of 46121 method names (1.15%) in 179 of 3424 classes; byte-identical to the original in 25 oracle cases (animalzones, basements, chunkobjects, chunksave, collide, doortoggle, entitysprites, gametime, items, los, losdoors, lotheaders, lotpack, mapmeta, mapzone, metagrid, moddata, outfits, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
+        "format families read: 10 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",
         "Muldraugh map zones: 37389",
-        "not read: 3D models and animations, FMOD sound banks, fonts (.fnt), recipe and vehicle scripts, other save files (map_*.bin, chunks), UI layout and UI textures, mod loading"
+        "not read: 3D models and animations, FMOD sound banks, fonts (.fnt), recipe and vehicle scripts, UI layout and UI textures, mod loading"
       ],
-      "percent": 56.3
+      "percent": 62.5
     },
     {
       "id": "lua",

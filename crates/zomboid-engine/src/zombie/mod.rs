@@ -7,6 +7,7 @@ pub mod game_time;
 pub mod inventory;
 pub mod iso;
 pub mod pathfind;
+pub mod persistent_outfits;
 pub mod radio;
 pub mod sandbox_options;
 pub mod sandbox_options_table;

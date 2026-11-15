@@ -28,6 +28,11 @@ pub fn is_whitespace(c: char) -> bool {
         ) && c != '\u{2007}')
 }
 
+/// java.lang.String.compareTo: UTF-16 code units, then length.
+pub fn string_compare_to(a: &str, b: &str) -> std::cmp::Ordering {
+    a.encode_utf16().cmp(b.encode_utf16())
+}
+
 /// java.lang.String.equalsIgnoreCase: per-char comparison after toUpperCase, then toLowerCase.
 pub fn equals_ignore_case(a: &str, b: &str) -> bool {
     let (mut x, mut y) = (a.chars(), b.chars());
