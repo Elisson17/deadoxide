@@ -4,7 +4,7 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 214 of 3432 classes touched, 871 of 46318 method names cited (1.9%), 965313 decompiled lines.**
+**Total: 214 of 3432 classes touched, 904 of 46318 method names cited (2.0%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
@@ -25,7 +25,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.Lua | 8 | 0 | 875 | 0 (0.0%) | 14841 |
 | zombie.ai | 99 | 0 | 875 | 0 (0.0%) | 14312 |
 | zombie.erosion | 23 | 3 | 216 | 1 (0.5%) | 13296 |
-| se | 70 | 20 | 692 | 151 (21.8%) | 11221 |
+| se | 70 | 20 | 692 | 184 (26.6%) | 11221 |
 | zombie.gameStates | 19 | 1 | 429 | 1 (0.2%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
 | zombie.util | 70 | 5 | 520 | 10 (1.9%) | 8496 |
@@ -89,14 +89,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | se.krka.kahlua.stdlib.CoroutineLib | 7 / 11 | crates/zomboid-engine/src/se/krka/kahlua/stdlib/coroutine_lib.rs |
 | se.krka.kahlua.stdlib.OsLib | 1 / 14 | crates/zomboid-engine/src/se/krka/kahlua/j2se/j2se_platform.rs |
 | se.krka.kahlua.stdlib.RandomLib | 1 / 7 | crates/zomboid-engine/src/se/krka/kahlua/j2se/j2se_platform.rs |
-| se.krka.kahlua.stdlib.StringLib | 6 / 73 | crates/zomboid-engine/src/se/krka/kahlua/stdlib/string_lib.rs |
+| se.krka.kahlua.stdlib.StringLib | 38 / 73 | crates/zomboid-engine/src/se/krka/kahlua/stdlib/string_lib.rs |
 | se.krka.kahlua.stdlib.TableLib | 8 / 16 | crates/zomboid-engine/src/se/krka/kahlua/stdlib/table_lib.rs |
 | se.krka.kahlua.test.UserdataArray | 1 / 8 | crates/zomboid-engine/src/se/krka/kahlua/j2se/j2se_platform.rs |
 | se.krka.kahlua.vm.Coroutine | 25 / 34 | crates/zomboid-engine/src/se/krka/kahlua/vm/coroutine.rs, crates/zomboid-engine/src/se/krka/kahlua/vm/kahlua_thread.rs |
 | se.krka.kahlua.vm.JavaFunction | 0 / 0 | crates/zomboid-engine/src/se/krka/kahlua/vm/object.rs |
 | se.krka.kahlua.vm.KahluaException | 0 / 3 | crates/zomboid-engine/src/se/krka/kahlua/vm/object.rs |
 | se.krka.kahlua.vm.KahluaThread | 16 / 43 | crates/zomboid-engine/src/se/krka/kahlua/vm/kahlua_thread.rs |
-| se.krka.kahlua.vm.KahluaUtil | 24 / 40 | crates/zomboid-engine/src/se/krka/kahlua/vm/kahlua_util.rs |
+| se.krka.kahlua.vm.KahluaUtil | 25 / 40 | crates/zomboid-engine/src/se/krka/kahlua/stdlib/string_lib.rs, crates/zomboid-engine/src/se/krka/kahlua/vm/kahlua_util.rs |
 | se.krka.kahlua.vm.LuaCallFrame | 16 / 32 | crates/zomboid-engine/src/se/krka/kahlua/vm/coroutine.rs |
 | se.krka.kahlua.vm.LuaClosure | 1 / 17 | crates/zomboid-engine/src/se/krka/kahlua/vm/lua_closure.rs |
 | se.krka.kahlua.vm.Prototype | 0 / 11 | crates/zomboid-engine/src/se/krka/kahlua/vm/lua_closure.rs, crates/zomboid-engine/src/se/krka/kahlua/vm/prototype.rs |

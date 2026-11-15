@@ -260,3 +260,14 @@ fn luavm_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_vm_cases.txt");
     check("luavm", &[cases.to_str().expect("utf-8 path")]);
 }
+
+#[test]
+fn luastring_matches_original() {
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_string_cases.txt");
+    check("luastring", &[cases.to_str().expect("utf-8 path")]);
+}
+
+#[test]
+fn javachars_match_original() {
+    check("javachars", &[]);
+}

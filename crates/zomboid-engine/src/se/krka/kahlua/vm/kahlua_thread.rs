@@ -1267,9 +1267,11 @@ impl KahluaThread {
         }
     }
 
-    /// `getOut().println(s)`.
+    /// `getOut().println(s)` on a UTF-8 PrintStream: a lone surrogate is written as `?`.
     pub fn println(&mut self, s: &[u16]) {
-        self.out.push_str(&super::object::rstr(s));
+        for c in char::decode_utf16(s.iter().copied()) {
+            self.out.push(c.unwrap_or('?'));
+        }
         self.out.push('\n');
     }
 }

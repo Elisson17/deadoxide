@@ -1,0 +1,174 @@
+Cases for Kahlua's string library (tools/oracle.sh luastring), run like tests/lua_vm_cases.txt: each block after a
+"--@@case" line runs in a fresh environment. Not covered on purpose: a back reference (%1) to a capture slot the
+call never opened (the original reads a pooled MatchState left by earlier calls), %f/%e of numbers above 1e300
+(the original loops forever), widths of millions of characters.
+--@@case
+local f = string.format
+print(f("%d|%5d|%-5d|%05d|%+d|% d|%.3d|%d", 42, 42, 42, 42, 42, 42, 7, -42))
+print(f("%i|%5.2d|%-+6d|%0+5d|%d|%d|%.0d|", 3, 4, 5, -6, 3.99, -3.99, 0))
+print(f("%d|%d|%d", 1e15, -1e15, 2^53 + 2))
+print(f("%x|%X|%#x|%#X|%o|%#o|%u|%x", 255, 255, 255, 255, 8, 8, 42, -1))
+print(f("%x|%u|%o|%#o|%.0x|%5x|%-5x|%05x", -255, -1, 0, 0, 0, 10, 10, 10))
+print(f("%c%c%c|%5c|%-3c|", 72, 105, 33, 65, 66))
+--@@case
+local f = string.format
+print(f("%f|%.2f|%.0f|%#.0f|%10.3f|%-10.3f|%010.3f|%+.1f|% .1f", 3.14159, 3.14159, 2.5, 2.5, 3.14159, 3.14159, -3.14159, 1, 1))
+print(f("%.3f|%.3f|%.10f|%.1f|%.1f|%.1f|%f", 0.0005, 0.0015, 1/3, 0.05, 0.15, 0.25, -0.0))
+print(f("%f|%f|%f|%5.1f|%+f", 1e10, 123456789.123, 0.1 + 0.2, 1/0, -1/0))
+print(f("%f|%.2f|%e", 0/0, 0/0, 0/0))
+print(f("%e|%.2e|%E|%.0e|%#.0e|%e|%e", 12345.678, 0.000123, 1e-10, 5e5, 5e5, 0, -2.5))
+print(f("%e|%.3e|%e|%10.2e|%-12.2e|%012.2e", 1e100, 9.9996, 1e-300, 123, 123, -123))
+--@@case
+local f = string.format
+print(f("%g|%g|%g|%g|%g|%g|%g", 1, 0.5, 100000, 1000000, 1e-4, 1e-5, 123.456))
+print(f("%.3g|%.10g|%.1g|%.0g|%G|%g|%#g", 3.14159, 1/3, 0.06, 2.5, 1e-10, 0, 1))
+print(f("%g|%g|%g|%g|%10g|%-10g|%010g", -0.0001234, 1e15, 2^53, 99999.5, 1.5, 1.5, -1.5))
+print(f("%g|%g|%G", 1/0, 0/0, -1/0))
+--@@case
+local f = string.format
+print(f("%s|%10s|%-10s|%.2s|%5.1s|%s|%s", "abc", "abc", "abc", "abc", "abc", 12, 1.5))
+print(f("%q", 'he said "hi"\n\\ and \r ok'))
+print(f("%5q|%%|%s%%", "x", "50"))
+print(f("no args"), f(""), f("%s %s", "a", "b"))
+print(f("%s", "ünïcödé ☺"), f("%5s|", "☺"))
+--@@case
+local f = string.format
+print(pcall(f, "%"))
+print(pcall(f, "%5"))
+print(pcall(f, "%.3"))
+print(pcall(f, "%y", 1))
+print(pcall(f, "%d"))
+print(pcall(f, "%d", "x"))
+print(pcall(f, "%s", nil))
+print(pcall(f, "%s", {}))
+print(pcall(f))
+print(pcall(f, "%d", "12"), pcall(f, "%s", 12))
+--@@case
+local s = "hello world from kahlua"
+print(s:find("o"), s:find("o", 6), s:find("o", -5), s:find("xyz"), s:find(""), s:find("", 30))
+print(s:find("o w"), s:find("o", 100), s:find("h", -100), s:find("l+"), s:find("(o)(r)"))
+print(s:find(".", 1, true), s:find("o.", 1, true), s:find("%a+"), s:find("^world"), s:find("^hello"))
+print(s:find("a$"), s:find("o", 0), s:find("()o()"), ("aaa"):find("a-", 2), ("aaa"):find("", 4))
+print(("x.y"):find("."), ("x.y"):find(".", 1, true), ("x.y"):find("%."), ("a+b"):find("+", 1, true))
+--@@case
+print(("hello"):match("h(.)l"), ("hello"):match("(h)(e)(l)"), ("hello"):match("x"), ("hello"):match(""))
+print(("key = value"):match("^(%w+)%s*=%s*(%w+)$"))
+print(("  trim me  "):match("^%s*(.-)%s*$"), ("[tag]"):match("%[(.-)%]"), ("a,b,,c"):match("([^,]*),([^,]*)"))
+print(("2024-01-15"):match("(%d+)-(%d+)-(%d+)"))
+print(("f(a(b)c)d"):match("%b()"), ("THE (quick) fox"):find("%f[%a]%a+"), ("THE (quick) fox"):match("%f[%l]%a+"))
+print(("abc"):match("()b()"), ("abc"):match("a*"), ("abc"):match("a?b?c?d?"), ("aaab"):match("a-b"), ("aaab"):match("a+"))
+print(("hello world"):match("o", 6), ("hello world"):match("^(%a+)", 7), ("x"):match("x", 5))
+--@@case
+print(("abc123DEF_ !?\t\n"):gsub("%a", "."))
+print(("abc123DEF_ !?\t\n"):gsub("%A", "."))
+print(("abc123DEF_ !?"):gsub("%d", "#"), ("abc123DEF_ !?"):gsub("%l", "#"), ("abc123DEF_ !?"):gsub("%u", "#"))
+print(("abc123DEF_ !?"):gsub("%w", "#"), ("abc123DEF_ !?"):gsub("%p", "#"), ("abc 1\t2\n"):gsub("%s", "#"))
+print(("abc123DEF"):gsub("%x", "#"), ("a\1b\127c"):gsub("%c", "#"), ("a\0b"):gsub("%z", "#"))
+print(("abc"):gsub("[a-b]", "X"), ("abc"):gsub("[^a-b]", "X"), ("a-b"):gsub("[a-]", "X"), ("a]b"):gsub("[]]", "X"))
+print(("a%b"):gsub("%%", "pct"), ("a.b"):gsub("%.", ","), ("x^y"):gsub("%^", "!"), ("abc"):gsub("[%a]", "1"))
+--@@case
+-- Non-ASCII text is built with string.char: loadstring keeps only the low byte of each unit of its source.
+local U = string.char
+local privet = U(0x41F, 0x440, 0x438, 0x432, 0x435, 0x442)
+local mir = U(0x41C, 0x438, 0x440)
+local s = privet .. " " .. mir .. " 123"
+print(s:gsub("%a", "."))
+print(s:gsub("%l", "l"), s:gsub("%u", "U"), (U(0x661, 0x662, 0x663) .. " 456"):gsub("%d", "D"))
+local mixed = U(0x1C4, 0x1C5, 0x1C6, 32, 0xDF, 32, 0x17F, 32, 0x295, 32, 0x2B0, 0x2160, 0x24B6, 0x24D0, 0xAA, 0xBA)
+print(mixed:gsub("%u", "U"), mixed:gsub("%l", "l"), mixed:gsub("%a", "a"), mixed:gsub("%w", "w"))
+print(mixed:gsub("%U", "-"), mixed:gsub("%L", "-"), mixed:gsub("[%l%d]", "x"), mixed:gsub("[^%u ]", "y"))
+print(privet:upper() == U(0x41F, 0x420, 0x418, 0x412, 0x415, 0x422), mir:lower() == U(0x43C, 0x438, 0x440), privet:len(), privet:sub(2, 3):byte(1, -1))
+print(s:find(mir), s:match("(%S+) %d+$") == mir, (U(0x65E5, 0x672C) .. "x"):gsub(U(0x672C), "te"))
+print(U(0x130):lower():byte(1, -1), U(0x212A):lower():byte(1, -1), ("x" .. U(0x130)):gsub("%" .. U(0x130), "!"))
+print(string.format("%s|%5s|%-4s|%.1s", privet, mir, mir, privet), string.format("%q", U(0x263A, 10)))
+--@@case
+print(("hello world"):gsub("o", "0"))
+print(("hello world"):gsub("o", "0", 1), ("hello world"):gsub("o", "0", 0), ("hello world"):gsub("o", "0", -1))
+print(("hello world"):gsub("(%w+)", "<%1>"), ("hello world"):gsub("%w+", "%0 %0"), ("hello"):gsub("", "-"))
+print(("hello world"):gsub("(%w+) (%w+)", "%2 %1"), ("abc"):gsub("%w", "%%"), ("abc"):gsub("b", "%x"))
+print(("abc"):gsub("b", "%"), ("$name is $age"):gsub("%$(%w+)", {name = "Bob", age = 42}))
+print(("$name is $unknown"):gsub("%$(%w+)", {name = "Bob"}), ("abc"):gsub("%w", function(c) return c:upper() .. "." end))
+print(("abc"):gsub("%w", function(c) if c == "b" then return nil end return 1 end))
+print(("abc"):gsub("%w", function(c) return false end), ("abc"):gsub("%w", function(c) return {} end) == nil)
+print(("abc"):gsub("^a", "X"), ("abc"):gsub("^b", "X"), ("aaa"):gsub("^a", "X"), ("abc"):gsub("c$", "X"))
+print(("abc"):gsub("()", "%1"), ("hello"):gsub("l*", "X"), ("one two"):gsub("(%w+)", "%0%0"), ("x"):gsub(".", 5))
+print(("a.b.c"):gsub(".", {a = 1, b = true}), ("abc"):gsub("", ""), (""):gsub("", "x"), (""):gsub("a", "x"))
+--@@case
+print(pcall(string.gsub, "abc", "b", true))
+print(pcall(string.gsub, "abc", "b"))
+print(pcall(string.gsub, "abc", "(", "x"))
+print(pcall(string.gsub, "abc", "%", "x"))
+print(pcall(string.gsub, "abc", "[a", "x"))
+print(pcall(string.gsub, "abc", "b)", "x"))
+print(pcall(string.gsub, "abc", "(b)", "%2"))
+print(pcall(string.gsub, "abc", "%b", "x"))
+print(pcall(string.gsub, "abc", "%f", "x"))
+print(pcall(string.gsub, "abc", "%w", function() error("inside") end))
+print(pcall(string.find, "abc", "((((((((((((((((((((((((((((((((((a))))))))))))))))))))))))))))))))))"))
+print(pcall(string.match, "abc", "(%1)"))
+print(pcall(string.match, "aa", "(a)%1"))
+print(pcall(string.match, "abc", "%0"))
+print(pcall(string.find, nil, "x"))
+print(pcall(string.match, "abc"))
+--@@case
+local out = {}
+for w in ("one two  three"):gmatch("%a+") do out[#out + 1] = w end
+print(table.concat(out, "|"), #out)
+out = {}
+for k, v in ("a=1, b=2, c=3"):gmatch("(%w+)=(%w+)") do out[#out + 1] = k .. ":" .. v end
+print(table.concat(out, "|"))
+out = {}
+for n in ("1,22,,333"):gmatch("[^,]+") do out[#out + 1] = n end
+print(table.concat(out, "|"), #out)
+--@@case
+local function show(t) local r = {} for i, v in ipairs(t) do r[i] = "[" .. v .. "]" end return #t .. ":" .. table.concat(r) end
+print(show(string.split("a,b,c", ",")), show(string.split("a,,b,", ",")), show(string.split(",a", ",")))
+print(show(string.split("", ",")), show(string.split(",,,", ",")), show(string.split("abc", ",")), show(string.split("abc", "")))
+print(show(string.split("k=v=w", "=")), show(string.split("a<LINE>b<LINE>", "<LINE>")), show(string.split("a.b.c", "\\.")))
+print(show(string.split("a b  c", " ")), show(string.split("x\ny", "\\n")), show(string.split("MODURL=x MODURL=y", "MODURL=")))
+print(show(("a;b;c"):split(";")), show(string.split("aaa", "aa")), show(string.split("a|b", "\\|")))
+print(show(string.split("a1b2c", "%d")), show(string.split("a%db", "%d")), show(string.split("a\tb", "\\t")))
+--@@case
+print(("abc"):find("b", 1.9), ("abc"):find("b", "2"), ("abc"):sub("2"), ("x"):rep(0), ("ab"):rep(3, nil))
+print(("%d"):format(5), ("abc"):len(), string.find("a+b", "+"), string.find("a+b", "a+"))
+print(string.find("abc", "[b-]"), string.find("a-c", "[%-]"), string.find("abc", "[^%a]"), string.find("x]", "]"))
+print(string.match("  x", "^%s*()"), string.match("abc", ".-$"), string.match("abc", "b*$"), string.find("abc", "c?$"))
+--@@case
+-- Generated patterns: a fixed linear congruential sequence picks subjects, patterns and replacements; every
+-- result (or error message) is printed. No token ends in "%", so no back reference can appear.
+local seed = 12345
+local function rnd(n) seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n end
+local subj = {"a", "b", "c", "1", " ", "(", ")", ".", "A", "%", "ab", "-"}
+local toks = {"a", "b", "c", ".", "%a", "%d", "%s", "%w", "%p", "%u", "%l", "%x", "%A", "%S", "[ab]", "[^a]", "[a-c]",
+    "[%d%s]", "(", ")", "()", "*", "+", "-", "?", "^", "$", "%b()", "%f[%a]", "%f[%A]", "%.", "1", " ", "[]", "[^]"}
+local repls = {"<%0>", "[%1]", "%%", "x", "", "%2%1"}
+local function str(...) local n = select("#", ...); local r = {} for i = 1, n do r[i] = tostring((select(i, ...))) end return table.concat(r, ",") end
+for i = 1, 2500 do
+    local s = {}
+    for j = 1, rnd(9) do s[j] = subj[rnd(#subj) + 1] end
+    s = table.concat(s)
+    local p = {}
+    for j = 1, rnd(5) + 1 do p[j] = toks[rnd(#toks) + 1] end
+    p = table.concat(p)
+    local init = rnd(12) - 4
+    local r1 = str(pcall(string.find, s, p, init))
+    local r2 = str(pcall(string.match, s, p))
+    local r3 = str(pcall(string.gsub, s, p, repls[rnd(#repls) + 1], rnd(4) - 1))
+    print(i, s, p, init, (r1:gsub("\n.*", "")), (r2:gsub("\n.*", "")), (r3:gsub("\n.*", "")))
+end
+--@@case
+-- Generated formats over numbers from a fixed sequence (magnitudes 1e-9 to 1e15, both signs, integers).
+local seed = 777
+local function rnd(n) seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n end
+local convs = {"d", "i", "u", "x", "X", "o", "c", "e", "E", "f", "g", "G", "s", "q"}
+local flags = {"", "-", "+", " ", "#", "0", "-0", "+0", " #", "#0"}
+for i = 1, 2500 do
+    local mag = 10 ^ (rnd(25) - 9)
+    local v = (rnd(2000000) / 1000000 - 1) * mag
+    if rnd(4) == 0 then v = math.floor(v) end
+    if rnd(30) == 0 then v = 0 end
+    local spec = "%" .. flags[rnd(#flags) + 1] .. (rnd(3) == 0 and "" or tostring(rnd(21)))
+        .. (rnd(3) == 0 and "" or ("." .. tostring(rnd(16)))) .. convs[rnd(#convs) + 1]
+    local ok, r = pcall(string.format, spec, v)
+    print(i, spec, v, ok, ok and r or (r:gsub("\n.*", "")))
+end

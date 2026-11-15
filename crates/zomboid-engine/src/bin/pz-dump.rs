@@ -57,6 +57,8 @@ fn main() {
         Some("outfitrandom") if a.len() == 3 => outfitrandom(Path::new(&a[2])),
         Some("luacompile") if a.len() == 4 => luacompile(Path::new(&a[2]), Path::new(&a[3])),
         Some("luavm") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
+        Some("luastring") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
+        Some("javachars") if a.len() == 3 => javachars(),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4253,4 +4255,21 @@ pub fn luavm(root: &Path, cases: &Path) -> Result<String, String> {
         sb.push('\n');
     }
     Ok(sb)
+}
+
+/// `pz-dump javachars <root>`: java.lang.Character.isDigit/isLowerCase/isUpperCase of every UTF-16 unit, as
+/// `JavaCharsProbe` prints them.
+pub fn javachars() -> Result<String, String> {
+    use std::fmt::Write as _;
+    use zomboid_engine::java_chars::{is_digit, is_lower_case, is_upper_case};
+    let mut out = String::new();
+    for c in 0..=u16::MAX {
+        let f = u8::from(is_digit(c))
+            | (u8::from(is_lower_case(c)) << 1)
+            | (u8::from(is_upper_case(c)) << 2);
+        if f != 0 {
+            let _ = writeln!(out, "{c:x} {f}");
+        }
+    }
+    Ok(out)
 }
