@@ -1,7 +1,7 @@
 //! zombie.scripting.ScriptManager: so far reading the script files into modules and loading `entity` scripts'
-//! SpriteConfig components, items, models, vehicle templates, vehicles, timed actions, craft recipes and the XUI
-//! scripts (with XuiManager.ParseScripts) and the sound scripts (with GameSounds.ScriptsLoaded). Old-style recipes and
-//! the other script types are collected as raw text only.
+//! SpriteConfig components, items, models, vehicle templates, vehicles, timed actions, craft recipes, the XUI scripts
+//! (with XuiManager.ParseScripts), the sound scripts (with GameSounds.ScriptsLoaded) and the `soundTimeline` and
+//! `vehicleEngineRPM` scripts. Old-style recipes and the other script types are collected as raw text only.
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -10,6 +10,7 @@ use super::item::{Item, Value};
 use super::model_script::ModelScript;
 use super::objects::base_script_object::ScriptObject;
 use super::objects::game_sound_script::GameSoundScript;
+use super::objects::sound_timeline_script::SoundTimelineScript;
 use super::objects::timed_action_script::TimedActionScript;
 use super::objects::vehicle_script::VehicleScript;
 use super::objects::vehicle_template::{TemplateContext, VehicleTemplate};
@@ -27,6 +28,7 @@ use crate::zombie::core::translator::Translator;
 use crate::zombie::entity::components::crafting::recipe::output_mapper::Lookups;
 use crate::zombie::game_sounds::GameSounds;
 use crate::zombie::util::string_utils;
+use crate::zombie::vehicles::vehicle_engine_rpm::VehicleEngineRPM;
 
 /// zombie.scripting.entity.GameEntityScript, the ported part.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -112,6 +114,12 @@ pub struct ScriptManager {
     pub sounds: Vec<GameSoundScript>,
     /// `sound` scripts the original drops because a body threw (`RemoveLoadError`): (full type, error).
     pub sound_errors: Vec<(String, String)>,
+    /// zombie.scripting.ScriptManager.getAllSoundTimelines: per module, the HashMap order of the names kept.
+    pub sound_timelines: Vec<SoundTimelineScript>,
+    /// zombie.scripting.ScriptManager.getAllVehicleEngineRPMs: per module, the HashMap order of the names kept.
+    pub vehicle_engine_rpms: Vec<VehicleEngineRPM>,
+    /// `soundTimeline` and `vehicleEngineRPM` scripts the original drops because a body threw: (full type, error).
+    pub audio_script_errors: Vec<(String, String)>,
     /// zombie.GameSounds' static state after `GameSounds.ScriptsLoaded()`, without `loadINI` (ScriptManager.Load
     /// does not know the cache directory: the caller that has one runs `game_sounds.load_ini(cache_dir)`).
     pub game_sounds: GameSounds,
@@ -1079,8 +1087,8 @@ impl ScriptManager {
         self.xui_errors = errors;
     }
 
-    /// ScriptBucketCollection.LoadScripts of the `sound` collection (the default flags: ResetExisting, RemoveLoadError):
-    /// GameSoundScript.Load of every body, the script reset before each later one.
+    /// ScriptBucketCollection.LoadScripts of the `sound`, `soundTimeline` and `vehicleEngineRPM` collections (the default
+    /// flags: ResetExisting, RemoveLoadError): Load of every body, the script reset before each later one.
     fn load_sounds(&mut self) {
         let mut errors = Vec::new();
         self.sounds = self.load_bucket(
@@ -1090,6 +1098,20 @@ impl ScriptManager {
             &mut errors,
         );
         self.sound_errors = errors;
+        let mut errors = Vec::new();
+        self.sound_timelines = self.load_bucket(
+            "soundTimeline",
+            true,
+            |m| SoundTimelineScript::new(Some(m)),
+            &mut errors,
+        );
+        self.vehicle_engine_rpms = self.load_bucket(
+            "vehicleEngineRPM",
+            true,
+            |m| VehicleEngineRPM::new(Some(m)),
+            &mut errors,
+        );
+        self.audio_script_errors = errors;
     }
 
     /// The lookup data of the xuiSkin collection (ScriptManager.getXuiSkinScript).

@@ -18,13 +18,18 @@ import zombie.audio.GameSoundClip;
 import zombie.core.random.RandAbstract;
 import zombie.core.random.RandStandard;
 import zombie.scripting.ScriptManager;
+import zombie.scripting.objects.BaseScriptObject;
 import zombie.scripting.objects.GameSoundScript;
+import zombie.scripting.objects.SoundTimelineScript;
+import zombie.vehicles.EngineRPMData;
+import zombie.vehicles.VehicleEngineRPM;
 
 // Inside the booted original (a dedicated server): the `sound` scripts as ScriptManager loaded them
 // (getAllGameSounds, in its order), then the GameSounds registry GameSounds.ScriptsLoaded filled (the `sounds` list in
 // order and `soundByName` by sorted key, each entry as the index of its sound in the list), the categories and the
-// sounds of each. Then, when a command file is given (a[1]), crafted GameSoundScript.Load bodies and GameSounds calls
-// (see tests/sounds_cases.txt), run on the emptied registry after the real state was printed; a[2] (the Rust side's
+// sounds of each, then the `soundTimeline` scripts (getAllSoundTimelines) and the `vehicleEngineRPM` scripts
+// (getAllVehicleEngineRPMs). Then, when a command file is given (a[1]), crafted Load bodies of the three script types
+// and GameSounds calls (see tests/sounds_cases.txt), run on the emptied registry after the real state was printed; a[2] (the Rust side's
 // scratch folder) is not used here, the original writes sounds.ini into its own cache folder.
 // Every field of GameSound and GameSoundClip is printed by reflection in declaration order, one line per field:
 // "<path>\t<field>\t<value>"; clips as "size N" and one block per clip; the values derived from them follow as
@@ -99,12 +104,46 @@ public class SoundsProbe {
             .append(" looped=").append(g.isLooped()).append(" userVolume=").append(g.getUserVolume()).append('\n');
     }
 
-    static void dumpScript(StringBuilder sb, String path, GameSoundScript s) throws Exception {
+    static void base(StringBuilder sb, String path, BaseScriptObject s) {
         sb.append(path).append("\tmodule\t").append(s.getModule() == null ? "null" : esc(s.getModule().getName()))
             .append("\tenabled\t").append(s.isEnabled()).append("\tdebugOnly\t").append(s.isDebugOnly())
             .append("\tscriptVersion\t").append(Long.toHexString(s.getScriptVersion()))
             .append("\tbodies\t").append(s.getLoadedScriptBodyCount()).append('\n');
+    }
+
+    static void dumpScript(StringBuilder sb, String path, GameSoundScript s) throws Exception {
+        base(sb, path, s);
         dumpSound(sb, path + ".gameSound", s.gameSound);
+    }
+
+    // SoundTimelineScript: eventName and positionByName (by sorted key).
+    @SuppressWarnings("unchecked")
+    static void dumpTimeline(StringBuilder sb, String path, SoundTimelineScript s) throws Exception {
+        base(sb, path, s);
+        Field e = SoundTimelineScript.class.getDeclaredField("eventName");
+        e.setAccessible(true);
+        sb.append(path).append("\teventName\t").append(val(e.get(s))).append('\n');
+        Field m = SoundTimelineScript.class.getDeclaredField("positionByName");
+        m.setAccessible(true);
+        TreeMap<String, Integer> sorted = new TreeMap<>((Map<String, Integer>) m.get(s));
+        sb.append(path).append("\tpositionByName\tsize ").append(sorted.size()).append('\n');
+        for (Map.Entry<String, Integer> x : sorted.entrySet())
+            sb.append(path).append(".positionByName[").append(esc(x.getKey())).append("]\t=\t").append(x.getValue()).append('\n');
+    }
+
+    // VehicleEngineRPM: name and the eight rpmData slots.
+    static void dumpRpm(StringBuilder sb, String path, VehicleEngineRPM s) throws Exception {
+        base(sb, path, s);
+        Field n = VehicleEngineRPM.class.getDeclaredField("name");
+        n.setAccessible(true);
+        sb.append(path).append("\tname\t").append(val(n.get(s))).append('\n');
+        sb.append(path).append("\trpmData\tsize ").append(s.rpmData.length).append('\n');
+        for (int i = 0; i < s.rpmData.length; i++) {
+            EngineRPMData d = s.rpmData[i];
+            sb.append(path).append(".rpmData[").append(i).append("]\t");
+            if (d == null) sb.append("null\n");
+            else sb.append("gearChange\t").append(d.gearChange).append("\tafterGearChange\t").append(d.afterGearChange).append('\n');
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -165,6 +204,8 @@ public class SoundsProbe {
     // \t, \r, \\ and backslash-u with four hex digits as escapes.
     static void crafted(StringBuilder sb, String file) throws Exception {
         HashMap<String, GameSoundScript> scripts = new HashMap<>();
+        HashMap<String, SoundTimelineScript> timelines = new HashMap<>();
+        HashMap<String, VehicleEngineRPM> rpms = new HashMap<>();
         File cache = new File(ZomboidFileSystem.instance.getCacheDir());
         int n = 0;
         for (String line : Files.readAllLines(new File(file).toPath(), StandardCharsets.UTF_8)) {
@@ -187,6 +228,34 @@ public class SoundsProbe {
                     String body = a.length > 2 ? unescape(a[2]) : "";
                     call(sb, at, () -> s.Load(a[1], body));
                     dumpScript(sb, at + ".script", s);
+                }
+                case "timeline" -> {
+                    String[] a = rest.split(" ", 3);
+                    SoundTimelineScript t = timelines.computeIfAbsent(a[0], k -> new SoundTimelineScript());
+                    String body = a.length > 2 ? unescape(a[2]) : "";
+                    call(sb, at, () -> t.Load(a[1], body));
+                    dumpTimeline(sb, at + ".timeline", t);
+                }
+                case "timelinepos" -> {
+                    String[] a = rest.split(" ");
+                    sb.append(at).append("\tgetPosition\t").append(timelines.get(a[0]).getPosition(a[1])).append('\n');
+                }
+                case "timelinereset" -> {
+                    SoundTimelineScript t = timelines.get(rest);
+                    t.reset();
+                    dumpTimeline(sb, at + ".timeline", t);
+                }
+                case "rpm" -> {
+                    String[] a = rest.split(" ", 3);
+                    VehicleEngineRPM r = rpms.computeIfAbsent(a[0], k -> new VehicleEngineRPM());
+                    String body = a.length > 2 ? unescape(a[2]) : "";
+                    call(sb, at, () -> r.Load(a[1], body));
+                    dumpRpm(sb, at + ".rpm", r);
+                }
+                case "rpmreset" -> {
+                    VehicleEngineRPM r = rpms.get(rest);
+                    r.reset();
+                    dumpRpm(sb, at + ".rpm", r);
                 }
                 case "scriptreset" -> {
                     GameSoundScript s = scripts.get(rest);
@@ -267,6 +336,12 @@ public class SoundsProbe {
             sb.append("scripts\tsize ").append(scripts.size()).append('\n');
             for (int i = 0; i < scripts.size(); i++) dumpScript(sb, "script[" + i + "]", scripts.get(i));
             registry(sb, "registry", true);
+            ArrayList<SoundTimelineScript> timelines = ScriptManager.instance.getAllSoundTimelines();
+            sb.append("soundTimelines\tsize ").append(timelines.size()).append('\n');
+            for (int i = 0; i < timelines.size(); i++) dumpTimeline(sb, "timeline[" + i + "]", timelines.get(i));
+            ArrayList<VehicleEngineRPM> rpms = ScriptManager.instance.getAllVehicleEngineRPMs();
+            sb.append("vehicleEngineRPMs\tsize ").append(rpms.size()).append('\n');
+            for (int i = 0; i < rpms.size(); i++) dumpRpm(sb, "rpm[" + i + "]", rpms.get(i));
             if (a.length > 1) {
                 GameSounds.Reset();
                 crafted(sb, a[1]);

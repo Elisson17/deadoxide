@@ -3655,9 +3655,13 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
     use zomboid_engine::zombie::audio::game_sound::{GameSound, GameSoundClip};
     use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
     use zomboid_engine::zombie::game_sounds::GameSounds;
-    use zomboid_engine::zombie::scripting::objects::base_script_object::ScriptObject;
+    use zomboid_engine::zombie::scripting::objects::base_script_object::{
+        BaseScriptObject, ScriptObject,
+    };
     use zomboid_engine::zombie::scripting::objects::game_sound_script::GameSoundScript;
+    use zomboid_engine::zombie::scripting::objects::sound_timeline_script::SoundTimelineScript;
     use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
+    use zomboid_engine::zombie::vehicles::vehicle_engine_rpm::VehicleEngineRPM;
 
     /// SoundsProbe.esc: '\\', tab, LF, CR and every UTF-16 unit outside 0x20..0x7e escaped.
     fn esc(s: &str) -> String {
@@ -3773,17 +3777,52 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
             f(g.get_user_volume(advanced))
         );
     }
-    fn dump_script(sb: &mut String, path: &str, s: &GameSoundScript, advanced: bool) {
+    fn base_line(sb: &mut String, path: &str, b: &BaseScriptObject) {
         let _ = writeln!(
             sb,
             "{path}\tmodule\t{}\tenabled\t{}\tdebugOnly\t{}\tscriptVersion\t{:x}\tbodies\t{}",
-            opt(&s.base.module),
-            s.base.enabled,
-            s.base.debug_only,
-            s.base.script_version,
-            s.base.get_loaded_script_body_count()
+            opt(&b.module),
+            b.enabled,
+            b.debug_only,
+            b.script_version,
+            b.get_loaded_script_body_count()
         );
+    }
+    fn dump_script(sb: &mut String, path: &str, s: &GameSoundScript, advanced: bool) {
+        base_line(sb, path, &s.base);
         dump_sound(sb, &format!("{path}.gameSound"), &s.game_sound, advanced);
+    }
+    /// SoundsProbe.dumpTimeline
+    fn dump_timeline(sb: &mut String, path: &str, t: &SoundTimelineScript) {
+        base_line(sb, path, &t.base);
+        let _ = writeln!(sb, "{path}\teventName\t{}", opt(&t.event_name));
+        let mut entries: Vec<(&String, &i32)> = t.position_by_name.iter().collect();
+        entries.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+        let _ = writeln!(sb, "{path}\tpositionByName\tsize {}", entries.len());
+        for (k, v) in entries {
+            let _ = writeln!(sb, "{path}.positionByName[{}]\t=\t{v}", esc(k));
+        }
+    }
+    /// SoundsProbe.dumpRpm
+    fn dump_rpm(sb: &mut String, path: &str, r: &VehicleEngineRPM) {
+        base_line(sb, path, &r.base);
+        let _ = writeln!(sb, "{path}\tname\t{}", opt(&r.name));
+        let _ = writeln!(sb, "{path}\trpmData\tsize {}", r.rpm_data.len());
+        for (i, d) in r.rpm_data.iter().enumerate() {
+            match d {
+                None => {
+                    let _ = writeln!(sb, "{path}.rpmData[{i}]\tnull");
+                }
+                Some(d) => {
+                    let _ = writeln!(
+                        sb,
+                        "{path}.rpmData[{i}]\tgearChange\t{}\tafterGearChange\t{}",
+                        java::float_to_string(d.gear_change),
+                        java::float_to_string(d.after_gear_change)
+                    );
+                }
+            }
+        }
     }
     fn position(gs: &GameSounds, index: usize) -> i64 {
         gs.list_position(index).map_or(-1, |p| p as i64)
@@ -3842,6 +3881,18 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
         dump_script(&mut sb, &format!("script[{i}]"), s, advanced);
     }
     registry(&mut sb, "registry", &gs, true, advanced);
+    let _ = writeln!(sb, "soundTimelines\tsize {}", sm.sound_timelines.len());
+    for (i, t) in sm.sound_timelines.iter().enumerate() {
+        dump_timeline(&mut sb, &format!("timeline[{i}]"), t);
+    }
+    let _ = writeln!(
+        sb,
+        "vehicleEngineRPMs\tsize {}",
+        sm.vehicle_engine_rpms.len()
+    );
+    for (i, r) in sm.vehicle_engine_rpms.iter().enumerate() {
+        dump_rpm(&mut sb, &format!("rpm[{i}]"), r);
+    }
     let Some((cases, scratch)) = crafted else {
         return Ok(sb);
     };
@@ -3852,6 +3903,8 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
     std::fs::create_dir_all(scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
     let cache = scratch.to_str().ok_or("non-UTF-8 scratch path")?;
     let mut scripts: HashMap<String, GameSoundScript> = HashMap::new();
+    let mut timelines: HashMap<String, SoundTimelineScript> = HashMap::new();
+    let mut rpms: HashMap<String, VehicleEngineRPM> = HashMap::new();
     let mut n = 0;
     for line in java::buffered_reader_lines(&text) {
         if line.is_empty() || line.starts_with('#') {
@@ -3874,6 +3927,47 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
                     let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
                 }
                 dump_script(&mut sb, &format!("{at}.script"), script, advanced);
+            }
+            "timeline" => {
+                let mut a = rest.splitn(3, ' ');
+                let label = a.next().unwrap_or("");
+                let name = a.next().ok_or("timeline: no name")?;
+                let body = a.next().map(unescape).unwrap_or_default();
+                let t = timelines
+                    .entry(label.to_string())
+                    .or_insert_with(|| SoundTimelineScript::new(None));
+                if let Err(e) = t.load(name, &body, &sm.translator) {
+                    let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
+                }
+                dump_timeline(&mut sb, &format!("{at}.timeline"), t);
+            }
+            "timelinepos" => {
+                let a: Vec<&str> = rest.split(' ').collect();
+                let t = timelines.get(a[0]).ok_or("timelinepos: no script")?;
+                let _ = writeln!(sb, "{at}\tgetPosition\t{}", t.get_position(a[1]));
+            }
+            "timelinereset" => {
+                let t = timelines.get_mut(rest).ok_or("timelinereset: no script")?;
+                t.reset();
+                dump_timeline(&mut sb, &format!("{at}.timeline"), t);
+            }
+            "rpm" => {
+                let mut a = rest.splitn(3, ' ');
+                let label = a.next().unwrap_or("");
+                let name = a.next().ok_or("rpm: no name")?;
+                let body = a.next().map(unescape).unwrap_or_default();
+                let r = rpms
+                    .entry(label.to_string())
+                    .or_insert_with(|| VehicleEngineRPM::new(None));
+                if let Err(e) = r.load(name, &body, &sm.translator) {
+                    let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
+                }
+                dump_rpm(&mut sb, &format!("{at}.rpm"), r);
+            }
+            "rpmreset" => {
+                let r = rpms.get_mut(rest).ok_or("rpmreset: no script")?;
+                r.reset();
+                dump_rpm(&mut sb, &format!("{at}.rpm"), r);
             }
             "scriptreset" => match scripts.get_mut(rest) {
                 None => {

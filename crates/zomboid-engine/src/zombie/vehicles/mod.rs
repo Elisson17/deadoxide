@@ -2,5 +2,7 @@
 pub mod base_vehicle;
 pub mod clipper;
 pub mod clipper_offset;
+pub mod engine_rpm_data;
+pub mod vehicle_engine_rpm;
 pub mod vehicle_part;
 pub mod vehicles_db2;

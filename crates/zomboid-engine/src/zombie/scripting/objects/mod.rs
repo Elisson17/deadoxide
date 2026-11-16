@@ -7,6 +7,7 @@ pub mod item_tag;
 pub mod item_tag_table;
 pub mod model_attachment;
 pub mod resource_location;
+pub mod sound_timeline_script;
 pub mod timed_action_script;
 pub mod vehicle_script;
 pub mod vehicle_template;
