@@ -283,6 +283,13 @@ impl ByteBlock {
     }
 }
 
+/// zombie.core.utils.Bits.packFloatUnitToByte: the value is clamped to 0..1 (the original throws instead when
+/// `Core.debug` is set, which a normal run does not), then scaled to a signed byte.
+pub fn pack_float_unit_to_byte(f: f32) -> i8 {
+    let f = f.clamp(0.0, 1.0);
+    (f * 255.0 + -128.0) as i32 as i8
+}
+
 /// zombie.core.utils.Bits.unpackByteToFloatUnit
 pub fn unpack_byte_to_float_unit(b: i8) -> f32 {
     (i32::from(b) - -128) as f32 / 255.0
@@ -324,5 +331,17 @@ mod tests {
         // A continuation byte in first position is malformed (UTFDataFormatException).
         let mut bad = ByteBuffer::wrap(&[0, 1, 0x80]);
         assert!(read_utf(&mut bad).is_err());
+    }
+
+    /// zombie.core.utils.Bits.packFloatUnitToByte: (byte) (int) (f * 255 - 128) after clamping to 0..1; the Java
+    /// cast truncates toward zero, so 0.5 gives (int) -0.5 = 0.
+    #[test]
+    fn pack_float_unit_to_byte_scales_and_clamps() {
+        assert_eq!(pack_float_unit_to_byte(0.0), -128);
+        assert_eq!(pack_float_unit_to_byte(1.0), 127);
+        assert_eq!(pack_float_unit_to_byte(0.5), 0);
+        assert_eq!(pack_float_unit_to_byte(-3.0), -128);
+        assert_eq!(pack_float_unit_to_byte(2.0), 127);
+        assert_eq!(pack_float_unit_to_byte(f32::NAN), 0);
     }
 }

@@ -28,6 +28,7 @@ pub mod meta_tracker;
 pub mod objects;
 pub mod room_def;
 pub mod room_id;
+pub mod server_map;
 pub mod sprite;
 pub mod sprite_details;
 pub mod tile_overlays;
