@@ -209,6 +209,9 @@ sel savemeta && server_case savemeta SaveMetaProbe "$HERE/profile/Saves/Sandbox/
 # map_visited.bin (WorldMapVisited): the real file, the original's mutators and writer, and hand-made files of the current
 # and the legacy formats (tests/visited_cases.txt); args: the commands, then the save folder for the real file
 sel visited && server_case visited VisitedProbe "$HERE/tests/visited_cases.txt" "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
+# isoregiondata/datachunk_*.bin and RegionHeader.bin (the saved part of IsoRegions): IsoRegionWorker.loadSaveMap on the real folder
+# and on the scenario folders of tests/isoregion_crafted (the ORIGINAL writer's files and hand-made ones, written by the probe)
+sel isoregion && server_case isoregion IsoRegionProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/isoregion_crafted"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

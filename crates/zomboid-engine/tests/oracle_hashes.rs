@@ -350,6 +350,18 @@ fn world_map_visited_matches_original() {
     check("visited", &[cases.to_str().expect("utf-8 path"), &save]);
 }
 
+/// `IsoRegionWorker.loadSaveMap` over the player's real `isoregiondata` and the scenario folders of
+/// tests/isoregion_crafted (the original writer's files and hand-made ones).
+#[test]
+fn iso_region_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED isoregion: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/isoregion_crafted");
+    check("isoregion", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

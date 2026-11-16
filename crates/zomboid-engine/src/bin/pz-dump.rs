@@ -54,6 +54,7 @@ fn main() {
         }
         Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
+        Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
         Some("visited") if a.len() == 5 => {
             visited(Path::new(&a[2]), Path::new(&a[4]), Path::new(&a[3]))
         }
@@ -4668,6 +4669,107 @@ pub fn visited(root: &Path, save: &Path, cases: &Path) -> Result<String, String>
                 }
             }
         }
+    }
+    Ok(sb)
+}
+
+/// The saved part of IsoRegions (`isoregiondata/datachunk_*.bin`, `RegionHeader.bin`) loaded by the port's
+/// `IsoRegionWorker.loadSaveMap`, for the player's real folder and each scenario folder of the crafted dir (pairs
+/// with IsoRegionProbe.java).
+pub fn isoregion(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::iso::areas::isoregion::iso_region_worker::IsoRegionWorker;
+    fn scenario(sb: &mut String, label: &str, dir: Option<&Path>) -> Result<(), String> {
+        let mut header = None;
+        let mut chunk_files: Vec<(String, Vec<u8>)> = Vec::new();
+        if let Some(dir) = dir {
+            for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+                let e = e.map_err(|e| e.to_string())?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                let data = std::fs::read(e.path()).map_err(|e| e.to_string())?;
+                if name == "RegionHeader.bin" {
+                    header = Some(data);
+                } else if name.starts_with("datachunk_") && name.ends_with(".bin") {
+                    chunk_files.push((name, data));
+                }
+            }
+        }
+        // the original lists the directory in the file system's order; every scenario with more than one file
+        // loads them all without error, so the order is only visible in the discovery list, which is printed sorted
+        chunk_files.sort();
+        let files: Vec<Vec<u8>> = chunk_files.into_iter().map(|(_, d)| d).collect();
+        let mut w = IsoRegionWorker::new();
+        let _ = w.load_save_map(header.as_deref(), &files);
+        w.apply_jobs();
+        let mut disc = w.discovered_chunks.clone();
+        disc.sort_unstable();
+        let mut th = w.thread_discovered_chunks.clone();
+        th.sort_unstable();
+        let list = |v: &[i32]| {
+            format!(
+                "[{}]",
+                v.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")
+            )
+        };
+        let chunks = w.root_buffer.all_chunks_sorted();
+        let _ = writeln!(
+            sb,
+            "ISO {label} chunks={} disc={} thread={}",
+            chunks.len(),
+            list(&disc),
+            list(&th)
+        );
+        for c in chunks {
+            let mut act = String::new();
+            for &b in &c.active_z_layers {
+                act.push(if b { '1' } else { '0' });
+            }
+            let mut h: i32 = 0;
+            for z in 0..32 {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        let v = w.root_buffer.get_square_flags(
+                            c.chunk_x * 8 + x,
+                            c.chunk_y * 8 + y,
+                            z,
+                        )?;
+                        h = h.wrapping_mul(31).wrapping_add(i32::from(v));
+                    }
+                }
+            }
+            let flags = c.square_flags.as_ref().map_or("null".to_string(), |f| {
+                let mut fh: i32 = 1;
+                for &b in f {
+                    fh = fh.wrapping_mul(31).wrapping_add(i32::from(b as i8));
+                }
+                format!("{},{fh:x}", f.len())
+            });
+            let found = w
+                .root_buffer
+                .get_data_chunk(c.chunk_x, c.chunk_y)
+                .is_some_and(|f| std::ptr::eq(f, c));
+            let _ = writeln!(
+                sb,
+                "CH {label} {} {} id={:x} hz={} flags={flags} active={act} sq={h:x} found={}",
+                c.chunk_x,
+                c.chunk_y,
+                c.hash_id,
+                c.highest_z,
+                u8::from(found)
+            );
+        }
+        Ok(())
+    }
+    let mut sb = String::new();
+    scenario(&mut sb, "none", None)?;
+    scenario(&mut sb, "real", Some(&save.join("isoregiondata")))?;
+    let mut dirs: Vec<_> = std::fs::read_dir(crafted)
+        .map_err(|e| format!("{}: {e}", crafted.display()))?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .collect();
+    dirs.sort_by_key(|e| e.file_name());
+    for d in dirs {
+        scenario(&mut sb, &d.file_name().to_string_lossy(), Some(&d.path()))?;
     }
     Ok(sb)
 }
