@@ -25,7 +25,9 @@ import zombie.core.random.RandStandard;
  *   EVENT <name> <n>         every event with callbacks, in registration order, then its callbacks
  *   then the Java state the scripts filled (javaState): every event name, the non-empty collections of public static
  *   fields, MapObjects callbacks, TileOverlays, ContainerOverlays, BentFences, BrokenFences, RandomizedWorldBase's
- *   static lists, WorldGenUtils' file list, SGlobalObjects' system count
+ *   static lists, WorldGenUtils' file list, SGlobalObjects' system count, then the client's registries:
+ *   MusicIntensityConfig, MusicThreatConfig, the CharacterJoypadButtonBinding / CharacterJoypadAxis2dBinding
+ *   enum bindings and CharacterInputBindingSet.loadedBindingSets
  * Tables are walked in their own iteration order; a table met before prints as `ref <path>`, a table a global held
  * after init as `init <name>`. Values: numbers as raw bits, strings escaped, closures by file (from media/lua/) and
  * first line, Java
@@ -244,6 +246,63 @@ public class LuaLoadEnvProbe {
         }
         sb.append("WORLDGENFILES ").append(list(field(zombie.iso.worldgen.WorldGenUtils.INSTANCE, "files"))).append('\n');
         sb.append("SGLOBALSYSTEMS ").append(zombie.globalObjects.SGlobalObjects.getSystemCount()).append('\n');
+        // the client scripts' registries: the music configs (null until getInstance), the controller bindings
+        // (enum statics) and the loaded binding sets (null until getLoadedBindingSets)
+        Object mic = field(null, zombie.audio.MusicIntensityConfig.class, "instance");
+        if (mic == null) sb.append("MUSICINTENSITY nil\n");
+        else {
+            List<?> evs = (List<?>) field(mic, "events");
+            sb.append("MUSICINTENSITY ").append(evs.size()).append('\n');
+            for (Object e : evs)
+                sb.append("  ").append(value(field(e, "id"))).append(' ').append(floatBits(field(e, "intensity"))).append(' ')
+                    .append(field(e, "duration")).append(' ').append(field(e, "multiple")).append('\n');
+            for (Map.Entry<String, Object> e : LuaLoadEnvProbe.<Object>sorted(field(mic, "eventById")).entrySet())
+                sb.append("MUSICINTENSITYID ").append(value(e.getKey())).append(' ').append(indexOf(evs, e.getValue())).append('\n');
+        }
+        Object mtc = field(null, zombie.audio.MusicThreatConfig.class, "instance");
+        if (mtc == null) sb.append("MUSICTHREAT nil\n");
+        else {
+            List<?> sts = (List<?>) field(mtc, "statusList");
+            sb.append("MUSICTHREAT ").append(sts.size()).append('\n');
+            for (Object st : sts)
+                sb.append("  ").append(value(field(st, "id"))).append(' ').append(floatBits(field(st, "intensity"))).append(' ')
+                    .append(floatBits(field(st, "intensityOverride"))).append('\n');
+            for (Map.Entry<String, Object> e : LuaLoadEnvProbe.<Object>sorted(field(mtc, "statusById")).entrySet())
+                sb.append("MUSICTHREATID ").append(value(e.getKey())).append(' ').append(indexOf(sts, e.getValue())).append('\n');
+        }
+        for (zombie.characters.CharacterJoypadButtonBinding b : zombie.characters.CharacterJoypadButtonBinding.values()) {
+            Object d = field(b, zombie.characters.CharacterJoypadButtonBinding.class, "binding");
+            sb.append("JOYPADBUTTONBINDING ").append(b.name()).append(' ');
+            if (d == null) sb.append("nil");
+            else if (d instanceof zombie.characters.CharacterJoypadButtonBinding.JoypadButtonBinding) sb.append("button ").append(enumName(field(d, "binding")));
+            else sb.append(d instanceof zombie.characters.CharacterJoypadButtonBinding.Axis1dMinMaxBinding ? "axis1d " : "axis2d ")
+                .append(enumName(field(d, "binding"))).append(' ').append(floatBits(field(d, "min"))).append(' ').append(floatBits(field(d, "max")));
+            sb.append('\n');
+        }
+        for (zombie.characters.CharacterJoypadAxis2dBinding b : zombie.characters.CharacterJoypadAxis2dBinding.values())
+            sb.append("JOYPADAXISBINDING ").append(b.name()).append(' ').append(enumName(b.getBinding())).append('\n');
+        Object[] sets = (Object[]) field(null, zombie.characters.CharacterInputBindingSet.class, "loadedBindingSets");
+        sb.append("INPUTBINDINGSETS ");
+        if (sets == null) sb.append("nil");
+        else {
+            List<Object> names = new ArrayList<>();
+            for (Object s : sets) names.add(((zombie.characters.CharacterInputBindingSet) s).getName());
+            sb.append(list(names));
+        }
+        sb.append('\n');
+    }
+
+    static String floatBits(Object f) {
+        return Integer.toHexString(Float.floatToRawIntBits((Float) f));
+    }
+
+    static String enumName(Object e) {
+        return e == null ? "nil" : ((Enum<?>) e).name();
+    }
+
+    static int indexOf(List<?> l, Object o) {
+        for (int i = 0; i < l.size(); i++) if (l.get(i) == o) return i;
+        return -1;
     }
 
     public static void main(String[] a) throws Exception {

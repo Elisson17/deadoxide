@@ -294,3 +294,9 @@ fn luaserver_matches_original() {
     // media/lua/shared then media/lua/server, as the game's server loads them
     check("luaserver", &["-", "shared", "server"]);
 }
+
+#[test]
+fn luaclient_matches_original() {
+    // media/lua/shared then media/lua/client, as the game's client loads them
+    check("luaclient", &["-", "shared", "client"]);
+}

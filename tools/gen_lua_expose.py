@@ -16,7 +16,7 @@ import pathlib, re, sys
 root = pathlib.Path(__file__).resolve().parent.parent
 meas = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else root / "target/oracle/luaexpose.txt"
 
-# The classes the game's media/lua/shared and media/lua/server read while loading (measured, docs/COMPATIBILITY.md),
+# The classes the game's media/lua/shared, media/lua/server and media/lua/client read while loading (measured, docs/COMPATIBILITY.md),
 # the classes of the objects they call methods on, and SandboxOptions/Core. Nested classes come along with their outer class.
 CLASSES = """
 zombie.characters.animals.AnimalDefinitions zombie.characters.animals.AnimalGenomeDefinitions
@@ -36,6 +36,11 @@ zombie.ai.states.ClimbSheetRopeState zombie.ai.states.ClimbThroughWindowState zo
 zombie.Lua.LuaEventManager zombie.Lua.MapObjects zombie.characters.skills.PerkFactory zombie.globalObjects.SGlobalObjects
 zombie.globalObjects.SGlobalObjectSystem zombie.ui.UIFont zombie.ui.TextManager zombie.iso.worldgen.WorldGenUtils
 zombie.iso.IsoWorld zombie.randomizedWorld.RandomizedWorldBase
+zombie.ai.states.CloseWindowState zombie.ai.states.OpenWindowState zombie.input.JoypadButton
+zombie.characters.CharacterInputBindingSet zombie.audio.MusicIntensityConfig zombie.audio.MusicThreatConfig org.joml.Vector3f
+zombie.globalObjects.CGlobalObjects zombie.input.JoypadAxis1d zombie.input.JoypadAxis2d
+zombie.characters.CharacterJoypadButtonBinding zombie.characters.CharacterJoypadAxis2dBinding zombie.ui.AtomUI
+zombie.ui.AtomUIText zombie.ui.AtomUITexture zombie.ui.AtomUITextEntry
 """.split()
 
 

@@ -61,7 +61,9 @@ fn main() {
         Some("luaos") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("javachars") if a.len() == 3 => javachars(),
         Some("fdlibm") if a.len() == 3 => fdlibm(),
-        Some("luaload" | "luaserver") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[4..]),
+        Some("luaload" | "luaserver" | "luaclient") if a.len() >= 4 => {
+            luaload(Path::new(&a[2]), &a[3], &a[4..])
+        }
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4414,7 +4416,7 @@ pub fn fdlibm() -> Result<String, String> {
 }
 
 /// `tests/original_probe/LuaLoadEnvProbe.java` on the port: the game's own Lua loaded by the ported LuaManager.
-pub fn luaload(root: &Path, dirs: &[String]) -> Result<String, String> {
+pub fn luaload(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, String> {
     use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
     use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
@@ -4497,6 +4499,8 @@ pub fn luaload(root: &Path, dirs: &[String]) -> Result<String, String> {
         }
     }
     let mut lm = LuaManager::init(root).map_err(|e| format!("init: {e:?}"))?;
+    // the probe's ZomboidFileSystem.instance.setCacheDir(<scratch>)
+    *lm.statics.cache_dir.borrow_mut() = Some(cache_dir.to_string());
     let env = lm.env.clone();
     let mut init_globals: Vec<(Object, Object)> = Vec::new();
     let mut init_keys: HashMap<usize, HashSet<String>> = HashMap::new();
@@ -4861,4 +4865,127 @@ fn luaload_java_state(
     };
     let _ = writeln!(sb, "WORLDGENFILES {}", list(&files));
     let _ = writeln!(sb, "SGLOBALSYSTEMS 0");
+    luaload_client_state(lm, sb, &s);
+}
+
+/// The client part of LuaLoadEnvProbe.javaState: the music configs, the controller bindings, the loaded binding
+/// sets.
+fn luaload_client_state(
+    lm: &zomboid_engine::zombie::lua::lua_manager::LuaManager,
+    sb: &mut String,
+    s: &dyn Fn(&str) -> String,
+) {
+    use std::rc::Rc;
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::characters::character_joypad_axis2d_binding as axis2d;
+    use zomboid_engine::zombie::characters::character_joypad_button_binding::{
+        IsDownBinding, CONSTANTS,
+    };
+    use zomboid_engine::zombie::lua::exposed_client::{
+        MusicIntensityConfigObject, MusicThreatConfigObject,
+    };
+    // TreeMap<String, V>: String.compareTo is UTF-16 order
+    fn sorted<'a, V>(
+        m: impl IntoIterator<Item = (&'a String, V)>,
+    ) -> std::collections::BTreeMap<Vec<u16>, (&'a String, V)> {
+        m.into_iter()
+            .map(|(k, v)| (k.encode_utf16().collect(), (k, v)))
+            .collect()
+    }
+    let made = |class: &str| match lm.statics.singleton_if_made(class) {
+        Some(Object::Userdata(u)) => Some(u),
+        _ => None,
+    };
+    match made("zombie.audio.MusicIntensityConfig") {
+        None => sb.push_str("MUSICINTENSITY nil\n"),
+        Some(u) => {
+            if let Some(o) = u.as_any().downcast_ref::<MusicIntensityConfigObject>() {
+                let c = o.0.borrow();
+                let _ = writeln!(sb, "MUSICINTENSITY {}", c.events.len());
+                for e in &c.events {
+                    let _ = writeln!(
+                        sb,
+                        "  {} {:x} {} {}",
+                        s(&e.id),
+                        e.intensity.to_bits(),
+                        e.duration,
+                        e.multiple
+                    );
+                }
+                for (_, (k, e)) in sorted(&c.event_by_id) {
+                    let i = c
+                        .events
+                        .iter()
+                        .position(|x| Rc::ptr_eq(x, e))
+                        .map_or(-1, |i| i as i64);
+                    let _ = writeln!(sb, "MUSICINTENSITYID {} {i}", s(k));
+                }
+            }
+        }
+    }
+    match made("zombie.audio.MusicThreatConfig") {
+        None => sb.push_str("MUSICTHREAT nil\n"),
+        Some(u) => {
+            if let Some(o) = u.as_any().downcast_ref::<MusicThreatConfigObject>() {
+                let c = o.0.borrow();
+                let _ = writeln!(sb, "MUSICTHREAT {}", c.status_list.len());
+                for st in &c.status_list {
+                    let _ = writeln!(
+                        sb,
+                        "  {} {:x} {:x}",
+                        s(&st.id),
+                        st.intensity.to_bits(),
+                        st.intensity_override.get().to_bits()
+                    );
+                }
+                for (_, (k, st)) in sorted(&c.status_by_id) {
+                    let i = c
+                        .status_list
+                        .iter()
+                        .position(|x| Rc::ptr_eq(x, st))
+                        .map_or(-1, |i| i as i64);
+                    let _ = writeln!(sb, "MUSICTHREATID {} {i}", s(k));
+                }
+            }
+        }
+    }
+    let b = lm.statics.state.input_bindings.borrow();
+    let name = |n: Option<&str>| n.unwrap_or("nil").to_string();
+    for (i, (n, _)) in CONSTANTS.iter().enumerate() {
+        let d = match b.button_bindings.binding[i] {
+            None => "nil".to_string(),
+            Some(IsDownBinding::JoypadButton(x)) => format!("button {}", name(x)),
+            Some(IsDownBinding::Axis1dMinMax { axis1d, min, max }) => {
+                format!(
+                    "axis1d {} {:x} {:x}",
+                    name(axis1d),
+                    min.to_bits(),
+                    max.to_bits()
+                )
+            }
+            Some(IsDownBinding::Axis2dMinMax { axis2d, min, max }) => {
+                format!(
+                    "axis2d {} {:x} {:x}",
+                    name(axis2d),
+                    min.to_bits(),
+                    max.to_bits()
+                )
+            }
+        };
+        let _ = writeln!(sb, "JOYPADBUTTONBINDING {n} {d}");
+    }
+    for (i, (n, _)) in axis2d::CONSTANTS.iter().enumerate() {
+        let _ = writeln!(
+            sb,
+            "JOYPADAXISBINDING {n} {}",
+            name(b.axis2d_bindings.binding[i])
+        );
+    }
+    match &b.loaded_binding_sets {
+        None => sb.push_str("INPUTBINDINGSETS nil\n"),
+        Some(sets) => {
+            let names: Vec<String> = sets.iter().map(|x| s(&x.name)).collect();
+            let _ = writeln!(sb, "INPUTBINDINGSETS [{}]", names.join(","));
+        }
+    }
 }

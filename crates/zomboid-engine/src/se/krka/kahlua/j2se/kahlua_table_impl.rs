@@ -270,6 +270,19 @@ impl KahluaTableImpl {
         })
     }
 
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawgetFloat(Object): a Double's `floatValue()`, a Float as it is, else
+    /// -1.0F. A Lua table only holds a java.lang.Float when Lua stored an exposer static field in it (the port keeps
+    /// those opaque, without their value): that case is not ported and throws.
+    pub fn rawget_float(t: &TableRef, key: &str) -> R<f32> {
+        match Self::rawget(t, &Object::str(key))? {
+            Object::Number(d) => Ok(d as f32),
+            Object::Userdata(u) if u.class().name == "java.lang.Float" => Err(Throwable::runtime(
+                "not ported: KahluaTableImpl.rawgetFloat of a java.lang.Float",
+            )),
+            _ => Ok(-1.0),
+        }
+    }
+
     /// se.krka.kahlua.j2se.KahluaTableImpl.rawgetBool(Object): a boolean, else false.
     pub fn rawget_bool(t: &TableRef, key: &str) -> R<bool> {
         Ok(matches!(

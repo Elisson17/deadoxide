@@ -48,6 +48,9 @@ pub struct State {
     pub map_objects: RefCell<MapObjects>,
     /// RandomizedWorldBase's static clutter lists, by field name (made when first returned).
     pub clutter: RefCell<HashMap<&'static str, Object>>,
+    /// CharacterInputBindingSet.loadedBindingSets and the CharacterJoypad*Binding enum statics.
+    pub input_bindings:
+        RefCell<crate::zombie::characters::character_input_binding_set::InputBindings>,
 }
 
 /// zombie.SandboxOptions as a Lua value.
@@ -65,15 +68,24 @@ impl Userdata for SandboxOptionsObject {
     }
 }
 
-/// zombie.core.Core, the part the scripts reach so far: the highlight colours (the options at their defaults,
-/// as no options.ini is read in this state).
+/// zombie.core.Core, the part the scripts reach so far: the highlight colours and the options below (at their
+/// defaults, as no options.ini is read in this state).
 pub struct CoreObject {
     pub good_highlited_color: Rc<ColorInfo>,
     pub bad_highlited_color: Rc<ColorInfo>,
     /// optionGoodHighlightColor ("0.0,1.0,0.0") and optionBadHighlightColor ("1.0,0.0,0.0")
     pub option_good_highlight_color: [f64; 3],
     pub option_bad_highlight_color: [f64; 3],
+    /// optionFontSize: `newOption("fontSize", 1, 6, 6)`, 6 is "automatic"
+    pub option_font_size: i32,
+    /// optionControllerButtonStyle: `newOption("controllerButtonStyle", 1, 3, 1, ...)`
+    pub option_controller_button_style: i32,
+    /// optionGamepadBindingPreset: `newOption("gamepadBindingPreset", "Original", ...)`
+    pub option_gamepad_binding_preset: String,
 }
+
+/// zombie.core.Core.height (public static, 720 until the display is created).
+pub const CORE_HEIGHT: i32 = 720;
 
 impl CoreObject {
     /// zombie.core.Core.<init>, the fields above.
@@ -83,7 +95,40 @@ impl CoreObject {
             bad_highlited_color: Rc::new(ColorInfo::new(1.0, 0.0, 0.0, 1.0)),
             option_good_highlight_color: [0.0, 1.0, 0.0],
             option_bad_highlight_color: [1.0, 0.0, 0.0],
+            option_font_size: 6,
+            option_controller_button_style: 1,
+            option_gamepad_binding_preset: "Original".into(),
         }
+    }
+
+    /// zombie.core.Core.getOptionFontSizeReal: size 6 ("automatic") picks 1..5 from the screen height
+    /// (`getScreenHeight()` is Core.height), any other size is itself.
+    pub fn get_option_font_size_real(&self) -> i32 {
+        let mut size = self.option_font_size;
+        if size == 6 {
+            let scale =
+                crate::zombie::core::math::pz_math::floor((CORE_HEIGHT - 1080) as f32 / 132.0)
+                    as i32
+                    + 1;
+            let scale_clamp = crate::zombie::core::math::pz_math::clamp_i32(scale, 0, 10);
+            match scale_clamp {
+                0 => size = 1,
+                1 => size = 2,
+                2 | 3 => size = 3,
+                4..=6 => size = 4,
+                7..=10 => size = 5,
+                _ => {}
+            }
+        }
+        size
+    }
+
+    /// zombie.core.Core.getOptionControllerButtonStyleString
+    pub fn get_option_controller_button_style_string(&self) -> &'static str {
+        crate::zombie::input::controller_button_style::ControllerButtonStyle::from_option_code(
+            self.option_controller_button_style,
+        )
+        .get_label()
     }
 }
 
@@ -220,6 +265,7 @@ pub fn singleton(statics: &Rc<JavaStatics>, class: &'static JavaClass) -> Object
     statics.singleton(class.name, || match class.name {
         "zombie.scripting.ScriptManager" => ud(Rc::new(ScriptManagerObject)),
         name => super::exposed_world::make_singleton(name)
+            .or_else(|| super::exposed_client::make_singleton(name))
             .unwrap_or_else(|| Object::Userdata(Rc::new(JavaObject { class, id: "" }))),
     })
 }
@@ -446,6 +492,9 @@ pub fn global(name: &str) -> Option<Imp> {
     if let Some(f) = super::exposed_world::global(name) {
         return Some(f);
     }
+    if let Some(f) = super::exposed_client::global(name) {
+        return Some(f);
+    }
     Some(match name {
         "getSandboxOptions" => |s, t, cf, _| {
             let o = sandbox_options_instance(s, t)?;
@@ -606,6 +655,9 @@ fn static_method(class: &str, name: &str) -> Option<Imp> {
     if let Some(f) = super::exposed_world::static_method(class, name) {
         return Some(f);
     }
+    if let Some(f) = super::exposed_client::static_method(class, name) {
+        return Some(f);
+    }
     Some(match (class, name) {
         ("zombie.characters.WornItems.BodyLocations", "getGroup") => |s, _, cf, n| {
             want_args(n, false, 1)?;
@@ -691,6 +743,9 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
     if let Some(f) = super::exposed_world::instance_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_client::instance_method(class, name) {
         return Some(f);
     }
     Some(match (class, name) {

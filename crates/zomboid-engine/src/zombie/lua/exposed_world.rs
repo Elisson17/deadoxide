@@ -39,6 +39,8 @@ macro_rules! state_object {
     };
 }
 
+pub(super) use state_object;
+
 state_object!(TileOverlaysObject, TileOverlays, "zombie.iso.TileOverlays");
 state_object!(
     ContainerOverlaysObject,
@@ -70,7 +72,7 @@ fn the(s: &Rc<JavaStatics>, class: &str) -> Object {
 }
 
 /// A `KahluaTableImpl` parameter: a Lua table, or null for nil.
-fn table_impl_arg(cf: &FrameRef, i: i32) -> Result<Option<TableRef>, Fail> {
+pub(super) fn table_impl_arg(cf: &FrameRef, i: i32) -> Result<Option<TableRef>, Fail> {
     match cf.get(i) {
         Object::Nil => Ok(None),
         Object::Table(t) => Ok(Some(t)),
@@ -79,7 +81,7 @@ fn table_impl_arg(cf: &FrameRef, i: i32) -> Result<Option<TableRef>, Fail> {
 }
 
 /// An enum parameter of class `class` (`simple` is its simple name for the error), or null for nil.
-fn enum_arg(
+pub(super) fn enum_arg(
     cf: &FrameRef,
     i: i32,
     class: &str,

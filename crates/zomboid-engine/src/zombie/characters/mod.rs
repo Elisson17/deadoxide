@@ -1,6 +1,9 @@
 pub mod animals;
 pub mod attached_items;
 pub mod body_damage;
+pub mod character_input_binding_set;
+pub mod character_joypad_axis2d_binding;
+pub mod character_joypad_button_binding;
 pub mod faction;
 pub mod iso_game_character;
 pub mod iso_player;

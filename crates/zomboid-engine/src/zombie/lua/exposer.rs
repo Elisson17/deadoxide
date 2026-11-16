@@ -97,6 +97,9 @@ pub struct JavaStatics {
     pub state: super::exposed_methods::State,
     /// Core.debug
     pub debug: bool,
+    /// ZomboidFileSystem.getCacheDir(): the folder the host gave (`-cachedir=`, the probe's setCacheDir); `None`
+    /// until it is set.
+    pub cache_dir: RefCell<Option<String>>,
 }
 
 impl JavaStatics {
@@ -115,6 +118,7 @@ impl JavaStatics {
             events,
             state: Default::default(),
             debug: false,
+            cache_dir: RefCell::new(None),
         })
     }
 
@@ -135,6 +139,13 @@ impl JavaStatics {
             .unwrap_or_default()
     }
 
+    /// zombie.ZomboidFileSystem.getCacheDir
+    pub fn cache_dir(&self) -> R<String> {
+        self.cache_dir.borrow().clone().ok_or_else(|| {
+            Throwable::runtime("not ported: ZomboidFileSystem.getCacheDir before it is set")
+        })
+    }
+
     /// zombie.Lua.LuaManager.RunLua(String)
     pub fn run_lua(&self, thread: &mut KahluaThread, filename: &str) -> R<Object> {
         let env = self.env()?;
@@ -149,6 +160,11 @@ impl JavaStatics {
         let o = make();
         self.singletons.borrow_mut().insert(class, o.clone());
         o
+    }
+
+    /// The singleton of `class` if something made it already (a Java static still null otherwise).
+    pub fn singleton_if_made(&self, class: &str) -> Option<Object> {
+        self.singletons.borrow().get(class).cloned()
     }
 
     /// zombie.core.logger.ExceptionLogger.logException(Throwable): the game's log (kept with the loader's).

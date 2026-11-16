@@ -27,6 +27,15 @@ fn is_whitespace(s: &str) -> bool {
     true
 }
 
+/// zombie.util.StringUtils.discardNullOrWhitespace: null for null, empty or all-whitespace, else the string.
+pub fn discard_null_or_whitespace(s: Option<String>) -> Option<String> {
+    if is_null_or_whitespace(s.as_deref()) {
+        None
+    } else {
+        s
+    }
+}
+
 /// zombie.util.StringUtils.equalsIgnoreCase: null and empty compare equal to each other.
 pub fn equals_ignore_case(a: Option<&str>, b: Option<&str>) -> bool {
     let empty = |s: Option<&str>| s.is_none_or(str::is_empty);
