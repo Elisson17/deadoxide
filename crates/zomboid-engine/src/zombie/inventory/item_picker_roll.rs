@@ -21,9 +21,11 @@ use crate::zombie::sandbox_options::{SandboxOptions, Value as SoValue};
 use crate::zombie::scripting::item::{parse_float, Item, Value};
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
+mod classes;
 mod clothing;
 mod firearm;
 mod food;
+pub use classes::AlarmState;
 pub use firearm::WeaponState;
 pub use food::FoodState;
 
@@ -99,6 +101,10 @@ pub struct LootItem {
     pub ammo_item: Option<String>,
     /// A `HandWeapon`'s ammunition state (`None` for every other class).
     pub weapon: Option<WeaponState>,
+    /// `Key.keyId` (-1 until set), a `Radio`'s `DeviceData.channel`, an `IAlarmClock`'s alarm.
+    pub key_id: i32,
+    pub radio_channel: Option<i32>,
+    pub alarm: Option<AlarmState>,
 }
 
 /// An ItemContainer: the type, the capacity set on it, its items and the square it was made for (`sourceGrid`).
@@ -235,6 +241,11 @@ fn script_int_attribute(v: &str) -> i32 {
     java::parse_int(java::trim(v)).unwrap_or(10).clamp(0, 1000)
 }
 
+/// `instanceof Clothing`: a clothing item or a wristwatch (`AlarmClockClothing extends Clothing`).
+fn is_clothing(class: ItemType) -> bool {
+    matches!(class, ItemType::Clothing | ItemType::AlarmClockClothing)
+}
+
 fn has_tag(item: &Item, tag: &str) -> bool {
     match ResourceLocation::of(tag) {
         Ok(t) => item.tags.contains(&t),
@@ -300,6 +311,12 @@ pub struct LootRoller<'a> {
     pub buildings: Vec<LootBuilding>,
     /// `Core.getOptionReloadDifficulty()` (option `reloadDifficulty`, default 2).
     pub reload_difficulty: i32,
+    /// `MapDefinitions.definitions`: the `LootMaps.Init` keys of the Lua environment (none headless).
+    pub map_definitions: Vec<String>,
+    /// The Moveable scripts instanced so far: `Item.InstanceItem` writes the instance's weight back into the script
+    /// (`this.actualWeight = moveable.getActualWeight()`), which the next `tryAddItemToContainer` reads. The
+    /// original's scripts keep that for the whole process, so a caller running several scenarios hands the set on.
+    pub moveables_instanced: HashSet<usize>,
 }
 
 impl<'a> LootRoller<'a> {
@@ -318,6 +335,8 @@ impl<'a> LootRoller<'a> {
             rand,
             buildings: Vec::new(),
             reload_difficulty: 2,
+            map_definitions: Vec::new(),
+            moveables_instanced: HashSet::new(),
         }
     }
 
@@ -1037,7 +1056,7 @@ impl<'a> LootRoller<'a> {
         }
         // isInvalidClothingRackItem
         if container.type_name == "clothingrack"
-            && item.class != ItemType::Clothing
+            && !is_clothing(item.class)
             && !has_tag(self.script(item.script)?, "FitsClothingRack")
         {
             return Ok(false);
@@ -1061,7 +1080,12 @@ impl<'a> LootRoller<'a> {
             return Ok(None);
         }
         let script = self.script(si)?;
-        let total_weight = script_actual_weight(script) * script_int(script, "count") as f32;
+        let script_weight = if self.moveables_instanced.contains(&si) {
+            1.0
+        } else {
+            script_actual_weight(script)
+        };
+        let total_weight = script_weight * script_int(script, "count") as f32;
         if !self.has_room_for(container_at(root, path), total_weight)? {
             return Ok(None);
         }
@@ -1195,6 +1219,12 @@ impl<'a> LootRoller<'a> {
                 | ItemType::Clothing
                 | ItemType::Container
                 | ItemType::WeaponPart
+                | ItemType::Key
+                | ItemType::Radio
+                | ItemType::Moveable
+                | ItemType::AlarmClock
+                | ItemType::AlarmClockClothing
+                | ItemType::Map
         ) {
             return Err(unported(format!(
                 "item class {class:?} ({})",
@@ -1219,7 +1249,7 @@ impl<'a> LootRoller<'a> {
             ),
         };
         // Item.InstanceItem: a clothing item picks its palette, then the Clothing constructor draws the colour
-        if class == ItemType::Clothing {
+        if is_clothing(class) {
             if let Some(p) = script_complex(script, "palettes") {
                 let n = java::split_char(p, '/').len() as i32;
                 self.rand.next(n);
@@ -1227,6 +1257,25 @@ impl<'a> LootRoller<'a> {
             for _ in 0..3 {
                 self.rand.next(255);
             }
+        }
+        // the constructors and setters of the other classes that draw
+        let mut key_id = -1;
+        let mut radio_channel = None;
+        let mut alarm = None;
+        match class {
+            ItemType::Key => {
+                // `if (isPadlock()) { setNumberOfKey(2); setKeyId(Rand.Next(10000000)); }`
+                if script_bool(script, "padlock") {
+                    key_id = self.rand.next(10_000_000);
+                }
+            }
+            ItemType::AlarmClock => alarm = Some(self.randomize_alarm_clock()),
+            ItemType::AlarmClockClothing => {
+                alarm = Some(self.randomize_alarm_clock_clothing(&script.full_name()));
+            }
+            ItemType::Radio => radio_channel = Some(self.radio_random_channel(script)),
+            ItemType::Map => self.map_pick_random(script),
+            _ => {}
         }
         // Item.InstanceItem: the instance's fields from the script
         let (script_weight, _) = script_weight_capacity(script);
@@ -1258,7 +1307,17 @@ impl<'a> LootRoller<'a> {
             current_ammo: 0,
             ammo_item,
             weapon: (class == ItemType::Weapon).then(WeaponState::default),
+            key_id,
+            radio_channel,
+            alarm,
         };
+        if class == ItemType::Moveable {
+            // `ReadFromWorldSprite` finds no sprite headless (`IsoSpriteManager.namedMap` is empty): the instance keeps
+            // `actualWeight` 1.0 and the script takes it over. UNKNOWN: the weight a running game reads from the
+            // sprite's `PickUpWeight`.
+            item.actual_weight = 1.0;
+            self.moveables_instanced.insert(si);
+        }
         if class == ItemType::Container {
             // Item.InstanceItem: `new InventoryContainer` (its ItemContainer's type is the script name), then
             // setCapacity, setWeightReduction (clamped to 0..=100) and the container's accept settings
@@ -1395,12 +1454,16 @@ impl<'a> LootRoller<'a> {
         Ok(())
     }
 
+    /// ItemPickerJava.checkStashItem(item, containerDist) (a map takes the distribution's `stashChance`) and
     /// StashSystem.checkStashItem for an item no stash names.
-    fn check_stash_item(&mut self, it: &LootItem) -> Result<(), String> {
+    fn check_stash_item(&mut self, it: &LootItem, dist_stash_chance: i32) -> Result<(), String> {
         if self.stash.possible == 0 {
             return Ok(());
         }
         let mut chance = 60i32;
+        if dist_stash_chance > 0 && it.class == ItemType::Map {
+            chance = dist_stash_chance;
+        }
         match self.sandbox.get_int("AnnotatedMapChance").unwrap_or(4) {
             1 => return Ok(()),
             2 => chance += 15,
@@ -1527,9 +1590,20 @@ impl<'a> LootRoller<'a> {
                     // ItemConfigurator.ConfigureItem: the scripts have no item config
                     if !is_shop {
                         // checkStashItem(spawnItem, containerDist): a MapItem never gets here
-                        self.check_stash_item(&container.items[idx])?;
+                        self.check_stash_item(&container.items[idx], dist.stash_chance)?;
                     }
                     // the freezer: Food.isFreezing needs `isPowered()`, false without a parent object
+                    // `container.Remove(spawnItem)` of a key that stays unclaimed or of a NeverEmpty bag that stayed
+                    // empty: the original goes on with the item, so it leaves the container after its remaining steps
+                    let mut remove_bag = false;
+                    if class == ItemType::Key {
+                        remove_bag = self.spawned_key_removed(
+                            script,
+                            &full_type,
+                            corpse,
+                            &mut container.items[idx],
+                        );
+                    }
                     if let Some(cat) = script_str(script, "recordedMediaCat") {
                         if Self::recorded_media_random(cat).is_some() {
                             return Err(unported("recorded media data"));
@@ -1581,9 +1655,6 @@ impl<'a> LootRoller<'a> {
                             self.randomize_firearm_as_loot(container, &[], idx)?;
                         }
                     }
-                    // `container.Remove(spawnItem)` of a NeverEmpty bag that stayed empty is done after the item's
-                    // remaining steps (they draw nothing for a bag; a bag with `spawnWith` is not ported)
-                    let mut remove_bag = false;
                     if !is_shop && class == ItemType::Container {
                         if let Some(bags) = dist.bags.as_deref() {
                             if !has_tag(script, "BagsFillException") {
@@ -1634,7 +1705,7 @@ impl<'a> LootRoller<'a> {
                     if has_tag(script, "Regional") && container.square.is_some() {
                         self.on_create_region();
                     }
-                    if class == ItemType::Clothing && (dirty_clothes || wet_clothes) {
+                    if is_clothing(class) && (dirty_clothes || wet_clothes) {
                         if dirty_clothes {
                             self.clothing_randomize_condition(
                                 &mut container.items[idx],
@@ -1654,7 +1725,6 @@ impl<'a> LootRoller<'a> {
                             )?;
                         }
                     }
-                    self.reject_unported_tags(script, &full_type)?;
                     if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
                         if !is_trash && !dist.is_worn {
                             self.spawn_with(container, &[], sw)?;
@@ -1708,16 +1778,6 @@ impl<'a> LootRoller<'a> {
             }
         }
         Ok(false)
-    }
-
-    /// The item tags whose handling in the rolls is not ported (each returns `not ported`).
-    fn reject_unported_tags(&self, script: &Item, full_type: &str) -> Result<(), String> {
-        for tag in ["KeyRing", "CarKey", "BuildingKey"] {
-            if has_tag(script, tag) {
-                return Err(unported(format!("item tag {tag} ({full_type})")));
-            }
-        }
-        Ok(())
     }
 
     /// `spawnItem.setCurrentUses(spawnItem.getMaxUses())` (SpawnFullUnlessLaundry).
@@ -1898,7 +1958,18 @@ impl<'a> LootRoller<'a> {
                 };
                 let script = self.script(script_idx)?;
                 // ItemConfigurator.ConfigureItem: no item config; a MapItem is not ported
-                self.check_stash_item(&container_at(root, bag).items[idx])?;
+                // a MapItem over `maxMap` in the container is removed (the original goes on with it)
+                if class == ItemType::Map && dist.max_map > 0 {
+                    let maps = container_at(root, bag)
+                        .items
+                        .iter()
+                        .filter(|i| i.class == ItemType::Map)
+                        .count() as i32;
+                    if maps > dist.max_map {
+                        remove_bag = true;
+                    }
+                }
+                self.check_stash_item(&container_at(root, bag).items[idx], dist.stash_chance)?;
                 if !dist.is_trash && self.picker.weapon_upgrade_map.contains_key(&type_name) {
                     self.do_weapon_upgrade(container_at_mut(root, bag), idx, &type_name)?;
                 }
@@ -1923,8 +1994,13 @@ impl<'a> LootRoller<'a> {
                 if is_empty_fluid_container && script.contains_component("FluidContainer") {
                     container_at_mut(root, bag).items[idx].fluid_amount = Some((0.0, 0.0));
                 }
-                if has_tag(script, "BuildingKey") {
-                    return Err(unported("BuildingKey in a bag"));
+                if class == ItemType::Key {
+                    remove_bag = self.spawned_key_removed(
+                        script,
+                        &full_type,
+                        false,
+                        &mut container_at_mut(root, bag).items[idx],
+                    );
                 }
                 if let Some(cat) = script_str(script, "recordedMediaCat") {
                     if Self::recorded_media_random(cat).is_some() {
@@ -1959,7 +2035,6 @@ impl<'a> LootRoller<'a> {
                 if has_tag(script, "Regional") && root.square.is_some() {
                     self.on_create_region();
                 }
-                self.reject_unported_tags(script, &full_type)?;
                 if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
                     if !dist.is_worn && !dist.is_trash {
                         self.spawn_with(root, bag, sw)?;
@@ -2063,6 +2138,15 @@ impl<'a> LootRoller<'a> {
                         u8::from(w.round_chambered)
                     );
                 }
+            }
+            if i.class == ItemType::Key {
+                let _ = write!(out, " key={}", i.key_id);
+            }
+            if let Some(c) = i.radio_channel {
+                let _ = write!(out, " rch={c}");
+            }
+            if let Some(a) = i.alarm {
+                let _ = write!(out, " al={}:{}:{}", a.hour, a.minute, u8::from(a.set));
             }
             if let Some(f) = &i.food {
                 let _ = write!(

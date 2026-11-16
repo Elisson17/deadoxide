@@ -478,7 +478,7 @@ impl LootRoller<'_> {
             }
             it.food = Some(food);
         }
-        if it.class == ItemType::Clothing {
+        if is_clothing(it.class) {
             self.clothing_randomize_condition(it, 25, 95, 10, 75)?;
         }
         Ok(())
@@ -547,7 +547,7 @@ impl LootRoller<'_> {
             }
             it.food = Some(food);
         }
-        if it.class == ItemType::Clothing {
+        if is_clothing(it.class) {
             self.clothing_randomize_condition(it, 0, 25, 1, 25)?;
         }
         Ok(())
@@ -575,7 +575,7 @@ impl LootRoller<'_> {
                 }
             }
         }
-        if it.class == ItemType::Clothing {
+        if is_clothing(it.class) {
             self.clothing_randomize_condition(it, 0, 75, 1, 25)?;
         }
         Ok(())

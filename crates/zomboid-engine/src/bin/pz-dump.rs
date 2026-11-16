@@ -8421,8 +8421,34 @@ pub fn loot(root: &Path, cache_dir: &str, scenarios: &[String]) -> Result<String
     }
     let sandbox = so.0.borrow();
     eprintln!("LOOT sandbox MaximumDiminishedLoot={:?} DaysUntil={:?} Zombies={:?} AnnotatedMapChance={:?}", sandbox.get("MaximumDiminishedLoot"), sandbox.get("DaysUntilMaximumDiminishedLoot"), sandbox.get("Zombies"), sandbox.get("AnnotatedMapChance"));
+    // MapDefinitions.definitions: the `LootMaps.Init` keys of the Lua environment (the client Lua defines them)
+    let mut map_definitions: Vec<String> = Vec::new();
+    if let Object::Table(lm_table) = KahluaTableImpl::rawget(&lm.env, &Object::str("LootMaps"))
+        .map_err(|e| format!("LootMaps: {e:?}"))?
+    {
+        if let Object::Table(init) = KahluaTableImpl::rawget(&lm_table, &Object::str("Init"))
+            .map_err(|e| format!("LootMaps.Init: {e:?}"))?
+        {
+            for (k, _) in KahluaTableImpl::iterate_snapshot(&init) {
+                if let Object::String(_) = k {
+                    map_definitions.push(k.java_to_string());
+                }
+            }
+        }
+    }
+    // the Moveable scripts instanced so far persist over the scenarios of one run (the original's scripts do)
+    let mut moveables = std::collections::HashSet::new();
     for spec in scenarios {
-        loot_scenario(&mut out, spec, &startup, &picker, &sandbox, &stash)?;
+        loot_scenario(
+            &mut out,
+            spec,
+            &startup,
+            &picker,
+            &sandbox,
+            &stash,
+            &map_definitions,
+            &mut moveables,
+        )?;
     }
     Ok(out)
 }
@@ -8436,6 +8462,8 @@ fn loot_scenario(
     picker: &zomboid_engine::zombie::inventory::item_picker_java::ItemPickerJava,
     sandbox: &zomboid_engine::zombie::sandbox_options::SandboxOptions,
     stash: &zomboid_engine::zombie::inventory::item_picker_roll::StashInfo,
+    map_definitions: &[String],
+    moveables: &mut std::collections::HashSet<usize>,
 ) -> Result<(), String> {
     use zomboid_engine::zombie::inventory::item_picker_roll::{
         LootBuilding, LootContainer, LootRoller, LootRoom, LootSquare,
@@ -8461,6 +8489,8 @@ fn loot_scenario(
         stash,
         RandAbstract::new(java::Random::new(seed)),
     );
+    roller.map_definitions = map_definitions.to_vec();
+    roller.moveables_instanced = std::mem::take(moveables);
     let mut square: Option<LootSquare> = None;
     for t in 0..times {
         let mut c;
@@ -8538,6 +8568,7 @@ fn loot_scenario(
         out.push_str(&lines);
     }
     let _ = writeln!(out, "END {spec} rand={}", roller.rand.id());
+    *moveables = std::mem::take(&mut roller.moveables_instanced);
     Ok(())
 }
 
