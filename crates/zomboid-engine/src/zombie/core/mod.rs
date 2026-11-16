@@ -3,6 +3,7 @@ pub mod color;
 pub mod core;
 pub mod fonts;
 pub mod immutable_color;
+pub mod input;
 pub mod language;
 pub mod language_file;
 pub mod languages;

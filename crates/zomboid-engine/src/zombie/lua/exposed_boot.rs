@@ -8,12 +8,13 @@ use std::rc::Rc;
 
 use super::exposed_client::static_args;
 use super::exposed_methods::{
-    core, hash, npe, ret, ret_bool, ret_int, singleton, string_arg, translator_get_text,
+    core, hash, npe, ret, ret_bool, ret_int, ret_str, singleton, string_arg, translator_get_text,
     type_error, ud, want_args, with_this, ArrayListObject, CoreObject, ScriptManagerObject,
     CORE_HEIGHT, CORE_WIDTH,
 };
 use super::exposer::{class_named, Fail, Imp, JavaObject, JavaStatics, Ret};
 use crate::java::float_to_string;
+use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::object::{classes, JavaClass, Object, Throwable, Userdata};
 use crate::zombie::characters::traits::observation_factory::ObservationFactory;
@@ -364,6 +365,64 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 };
                 ret(cf, list)
             })
+        },
+        // Core.getScreenModes: the lines of <Lua cache dir>/screenresolution.ini at 1..n. A missing file is created
+        // and filled from `Display.getAvailableDisplayModes()`; with no display (this headless state) there are no
+        // modes (UNKNOWN whether that call throws: either way the table stays empty, the exception is logged and the
+        // file stays empty).
+        ("zombie.core.Core", "getScreenModes") => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            let t = s.platform.new_table();
+            // LuaManager.getLuaCacheDir: <cache>/Lua, made with mkdir
+            let dir = std::path::Path::new(&s.cache_dir()?).join("Lua");
+            if !dir.exists() {
+                let _ = std::fs::create_dir(&dir);
+            }
+            let file = dir.join("screenresolution.ini");
+            if !file.exists() {
+                // createNewFile; a failure (no Lua folder) is logged and leaves the table empty
+                let _ = std::fs::File::create(&file);
+            } else if let Ok(bytes) = std::fs::read(&file) {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                let mut c = 1.0;
+                let mut rest: &str = &text;
+                while !rest.is_empty() {
+                    let (line, tail) = match rest.find(['\n', '\r']) {
+                        Some(i) => {
+                            let skip = if rest[i..].starts_with("\r\n") { 2 } else { 1 };
+                            (&rest[..i], &rest[i + skip..])
+                        }
+                        None => (rest, ""),
+                    };
+                    KahluaTableImpl::rawset(
+                        &t,
+                        Object::Number(c),
+                        Object::str(crate::java::trim(line)),
+                    );
+                    c += 1.0;
+                    rest = tail;
+                }
+            }
+            ret(cf, Object::Table(t))
+        },
+        ("zombie.core.Core", "getVersion") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(cf, Some(&crate::zombie::core::core::get_version()))
+        },
+        ("zombie.core.Core", "getGameAndBuildVersion") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(
+                cf,
+                Some(&crate::zombie::core::core::get_game_and_build_version()),
+            )
+        },
+        ("zombie.core.Core", "getBulletVersion") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(cf, Some(crate::zombie::core::core::BULLET_VERSION))
+        },
+        ("zombie.core.Core", "getGitSha") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(cf, Some(crate::zombie::core::core::GIT_REVISION))
         },
         ("zombie.core.Core", "getScreenWidth") => |s, _, cf, n| {
             want_args(n, true, 0)?;

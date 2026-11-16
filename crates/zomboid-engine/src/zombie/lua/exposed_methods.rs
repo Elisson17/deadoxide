@@ -64,6 +64,10 @@ pub struct State {
         RefCell<HashMap<usize, Rc<super::exposed_game::SandboxOptionObject>>>,
     /// The Texture objects handed to Lua, by texture.
     pub textures: RefCell<HashMap<usize, Rc<super::exposed_game::TextureObject>>>,
+    /// zombie.SystemDisabler's switches.
+    pub system_disabler: RefCell<crate::zombie::system_disabler::SystemDisabler>,
+    /// TextureID.useFiltering (`useTextureFiltering(bool)`).
+    pub use_texture_filtering: std::cell::Cell<bool>,
     /// GameWindow.doRenderEvent (private: whether a frame fires OnRenderTick/OnPostRender).
     pub do_render_event: std::cell::Cell<bool>,
     /// UIManager's element lists.
@@ -739,6 +743,20 @@ fn is_enum_class(class: &str) -> bool {
     })
 }
 
+/// SandboxOptions' static methods.
+fn static_sandbox_method(class: &str, name: &str) -> Option<Imp> {
+    Some(match (class, name) {
+        // SandboxOptions(): a new set of options (another object than SandboxOptions.instance): defines.lua and
+        // Apocalypse.lua run again (so does the Lua state they change), then the defaults are the current values.
+        ("zombie.SandboxOptions", "new") => |s, t, cf, n| {
+            want_args(n, false, 0)?;
+            let o = sandbox_options_new(s, t)?;
+            ret(cf, ud(Rc::new(SandboxOptionsObject(RefCell::new(o)))))
+        },
+        _ => return None,
+    })
+}
+
 /// The registry id of a JavaObject receiver.
 pub(super) fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
     match cf.get(0) {
@@ -752,6 +770,9 @@ pub(super) fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
 }
 
 fn static_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = static_sandbox_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_ui::static_method(class, name) {
         return Some(f);
     }

@@ -8,7 +8,7 @@ use std::rc::Rc;
 use super::exposed_client::TextManagerObject;
 use super::exposed_methods::SandboxOptionsObject;
 use super::exposed_methods::{
-    float_arg, hash, int_arg, npe, registry_id, ret, ret_int, ret_str, string_arg, want_args,
+    float_arg, hash, int_arg, npe, registry_id, ret, ret_int, ret_str, string_arg, ud, want_args,
     with_this,
 };
 use super::exposed_world::enum_arg;
@@ -423,6 +423,29 @@ fn server_option_method(name: &str) -> Option<Imp> {
 
 pub fn global(name: &str) -> Option<Imp> {
     Some(match name {
+        // Input.getKeyName(code)
+        "getKeyName" => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let code = int_arg(cf, 0)?;
+            let Some(client) = s.state.client.borrow().clone() else {
+                return Err(Fail::Lua(Throwable::runtime(
+                    "not ported: getKeyName without a client startup",
+                )));
+            };
+            let name = crate::zombie::core::input::input::get_key_name(
+                &mut client.translator.borrow_mut(),
+                code,
+            )
+            .map_err(|e| Fail::Lua(Throwable::runtime(e)))?;
+            ret_str(cf, name.as_deref())
+        },
+        // TextureID.useFiltering = bUse: the filter new textures are made with (not observable headless)
+        "useTextureFiltering" => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.use_texture_filtering.set(b);
+            Ok(0)
+        },
         // Texture.getSharedTexture: the startup's packs and the game folder's files (null without the startup, as
         // in a Lua state made on its own)
         "getTexture" => |s, _, cf, n| {
@@ -446,6 +469,127 @@ pub fn global(name: &str) -> Option<Imp> {
 
 pub fn static_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
+        // ---- SystemDisabler ----
+        ("zombie.SystemDisabler", "setDoCharacterStats") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().do_character_stats = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setDoZombieCreation") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().do_zombie_creation = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setDoSurvivorCreation") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().do_survivor_creation = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setDoPlayerCreation") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().do_player_creation = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setOverridePOVCharacters") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state
+                .system_disabler
+                .borrow_mut()
+                .do_override_pov_characters = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setVehiclesEverywhere") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().do_vehicles_everywhere = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setWorldSyncEnable") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().do_world_sync_enable = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setEnableAdvancedSoundOptions") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state
+                .system_disabler
+                .borrow_mut()
+                .enable_advanced_sound_options = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "setUncappedFPS") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let b = super::exposed_methods::bool_arg(cf, 0)?;
+            s.state.system_disabler.borrow_mut().uncapped_fps = b;
+            Ok(0)
+        },
+        ("zombie.SystemDisabler", "getEnableAdvancedSoundOptions") => |s, _, cf, n| {
+            want_args(n, false, 0)?;
+            let b = s
+                .state
+                .system_disabler
+                .borrow()
+                .enable_advanced_sound_options;
+            super::exposed_methods::ret_bool(cf, b)
+        },
+        ("zombie.SystemDisabler", "getUncappedFPS") => |s, _, cf, n| {
+            want_args(n, false, 0)?;
+            let b = s.state.system_disabler.borrow().uncapped_fps;
+            super::exposed_methods::ret_bool(cf, b)
+        },
+        ("zombie.SystemDisabler", "getDoMainLoopDealWithNetData") => |s, _, cf, n| {
+            want_args(n, false, 0)?;
+            let b = s
+                .state
+                .system_disabler
+                .borrow()
+                .do_main_loop_deal_with_net_data;
+            super::exposed_methods::ret_bool(cf, b)
+        },
+        (
+            "zombie.SystemDisabler",
+            "getdoHighFriction" | "getdoVehicleLowRider" | "printDetailedInfo",
+        ) => |_, _, cf, n| {
+            want_args(n, false, 0)?;
+            super::exposed_methods::ret_bool(cf, false)
+        },
+        ("zombie.SystemDisabler", "Reset") => |s, _, _, n| {
+            want_args(n, false, 0)?;
+            s.state.system_disabler.borrow_mut().reset();
+            Ok(0)
+        },
+        // Keyboard.getKeyName(code): `keyName[code]` (null until Keyboard.initKeyNames)
+        ("org.lwjglx.input.Keyboard", "getKeyName") => |_, _, cf, n| {
+            want_args(n, false, 1)?;
+            let code = int_arg(cf, 0)?;
+            let name = crate::zombie::core::input::input::keyboard_get_key_name(code)
+                .map_err(|e| Fail::Lua(Throwable::runtime(e)))?;
+            ret_str(cf, name.as_deref())
+        },
+        // MapGroups(): empty groups and directories
+        ("zombie.MapGroups", "new") => |_, _, cf, n| {
+            want_args(n, false, 0)?;
+            ret(cf, ud(Rc::new(MapGroupsObject::default())))
+        },
+        // MapGroups.addMissingVanillaDirectories(mapName)
+        ("zombie.MapGroups", "addMissingVanillaDirectories") => |s, _, cf, n| {
+            want_args(n, false, 1)?;
+            let name = string_arg(cf, 0)?.ok_or_else(npe)?;
+            let client = s.state.client.borrow().clone().ok_or_else(|| {
+                Fail::Lua(Throwable::runtime(
+                    "not ported: zombie.MapGroups.addMissingVanillaDirectories without a client startup",
+                ))
+            })?;
+            let r = crate::zombie::map_groups::add_missing_vanilla_directories(&client.fs, &name);
+            ret_str(cf, Some(&r))
+        },
         // ServerOptions(): its random defaults come from Rand (the startup's RandStandard)
         ("zombie.network.ServerOptions", "new") => |s, _, cf, n| {
             want_args(n, false, 0)?;
@@ -479,6 +623,42 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
         }
     }
     Some(match (class, name) {
+        // ---- MapGroups ----
+        ("zombie.MapGroups", "getNumberOfGroups") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, MapGroupsObject, m, {
+                let v = m.0.borrow().get_number_of_groups();
+                ret_int(cf, v)
+            })
+        },
+        ("zombie.MapGroups", "getAllMapsInOrder") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, MapGroupsObject, m, {
+                let names = m.0.borrow().get_all_maps_in_order();
+                ret(cf, string_list(&names))
+            })
+        },
+        ("zombie.MapGroups", "getMapDirectoriesInGroup") => |_, _, cf, n| {
+            want_args(n, true, 1)?;
+            let i = int_arg(cf, 1)?;
+            with_this!(cf, MapGroupsObject, m, {
+                let names =
+                    m.0.borrow()
+                        .get_map_directories_in_group(i)
+                        .map_err(|e| Fail::Lua(Throwable::runtime(e)))?;
+                ret(cf, string_list(&names))
+            })
+        },
+        ("zombie.MapGroups", "getMapConflicts") => |_, _, cf, n| {
+            want_args(n, true, 1)?;
+            let name = string_arg(cf, 1)?.ok_or_else(npe)?;
+            with_this!(cf, MapGroupsObject, m, {
+                match m.0.borrow().get_map_conflicts(&name) {
+                    Some(c) => ret(cf, string_list(&c)),
+                    None => ret(cf, Object::Nil),
+                }
+            })
+        },
         // ---- DummySoundBank: BaseSoundBank.instance of a client without sound; every method does nothing ----
         ("zombie.audio.DummySoundBank", "addVoice") => |_, _, cf, n| {
             want_args(n, true, 3)?;
@@ -862,6 +1042,29 @@ pub fn items_with_tag(s: &Rc<JavaStatics>, tag: &Object) -> Vec<Object> {
         .filter(|i| shared.scripts.items[**i].tags.iter().any(has))
         .map(|i| item_object(s, *i))
         .collect()
+}
+
+/// zombie.MapGroups as a Lua value.
+#[derive(Default)]
+pub struct MapGroupsObject(pub RefCell<crate::zombie::map_groups::MapGroups>);
+
+impl Userdata for MapGroupsObject {
+    fn class(&self) -> &'static JavaClass {
+        class_named("zombie.MapGroups")
+    }
+    fn java_to_string(&self) -> String {
+        format!("zombie.MapGroups@{:x}", hash(self))
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// A new java.util.ArrayList<String> (the converter hands the strings to Lua as they are).
+fn string_list(items: &[String]) -> Object {
+    Object::Userdata(Rc::new(super::exposed_methods::ArrayListObject(
+        RefCell::new(items.iter().map(|s| Object::str(s)).collect()),
+    )))
 }
 
 /// BaseSoundBank.instance: GameWindow.mainThreadInit's `new DummySoundBank()` (Core.soundDisabled) in a client
