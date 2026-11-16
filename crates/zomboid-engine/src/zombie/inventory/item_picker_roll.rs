@@ -1100,6 +1100,17 @@ impl<'a> LootRoller<'a> {
         Ok(Some(idx))
     }
 
+    /// ItemPickerJava.onCreateRegion(item, getSquareRegion(square)) and RecipeCodeHelper.nameNewspaper: a paper of
+    /// the region's list (`Rand.Next(list)`), then an issue (`Rand.Next(issues)`; a `NewspaperNew` item takes the
+    /// last issue after drawing). A square's region is "General" without zones (headless); the item's new name and
+    /// `printMedia` mod data are not compared.
+    fn on_create_region(&mut self) {
+        // ItemGenerationConstants.REGIONAL_PAPERS["General"]: KNOX_KNEWS (6 issues), KENTUCKY_HERALD (5 issues)
+        const GENERAL: [i32; 2] = [6, 5];
+        let paper = self.rand.next(GENERAL.len() as i32);
+        self.rand.next(GENERAL[paper as usize]);
+    }
+
     /// The `getSpawnWith()` step of `doRollItemInternal` / `rollContainerItemInternal`:
     /// `ItemSpawner.spawnItem(spawnWith, container)` and then `spawnWithItem.copyClothing(spawnItem)`. Headless,
     /// `copyClothing` calls the Lua `copyClothingItem`, which fails on the first `getVisual()` (a `ClothingItem` asset
@@ -1566,6 +1577,9 @@ impl<'a> LootRoller<'a> {
                     if dist.is_trash || dist.is_worn || dist.is_rotten {
                         return Err(unported("trashItem / wearDownItem / rotItem"));
                     }
+                    if has_tag(script, "Regional") && container.square.is_some() {
+                        self.on_create_region();
+                    }
                     if class == ItemType::Clothing && (dirty_clothes || wet_clothes) {
                         return Err(unported("Clothing.randomizeCondition of a laundry item"));
                     }
@@ -1622,7 +1636,6 @@ impl<'a> LootRoller<'a> {
     /// The item tags whose handling in the rolls is not ported (each returns `not ported`).
     fn reject_unported_tags(&self, script: &Item, full_type: &str) -> Result<(), String> {
         for tag in [
-            "Regional",
             "KeyRing",
             "CarKey",
             "BuildingKey",
@@ -1854,6 +1867,9 @@ impl<'a> LootRoller<'a> {
                 }
                 if dist.is_trash || dist.is_worn {
                     return Err(unported("trashItem / wearDownItem"));
+                }
+                if has_tag(script, "Regional") && root.square.is_some() {
+                    self.on_create_region();
                 }
                 self.reject_unported_tags(script, &full_type)?;
                 if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
