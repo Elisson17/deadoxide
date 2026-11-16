@@ -2,6 +2,7 @@
 pub mod event;
 pub mod exposed_boot;
 pub mod exposed_client;
+pub mod exposed_game;
 pub mod exposed_methods;
 #[rustfmt::skip] // generated, one entry per line
 pub mod exposed_table;

@@ -163,8 +163,9 @@ fn survivor_name(s: &Rc<JavaStatics>, cf: &FrameRef, n: i32, prefix: &str, field
     static_args(n, 1)?;
     let name = string_arg(cf, 0)?;
     let text = translator_get_text(
+        s,
         &format!("{prefix}{}", name.as_deref().unwrap_or("null")),
-        false,
+        &[],
     )?;
     add_to_static_list(
         s,

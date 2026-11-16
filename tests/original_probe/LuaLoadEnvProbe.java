@@ -337,6 +337,12 @@ public class LuaLoadEnvProbe {
         ZomboidFileSystem.instance.setCacheDir(a[0]);
         ZomboidFileSystem.instance.init();
         RandStandard.INSTANCE.init();
+        luaInit();
+        loadDirs(a);
+    }
+
+    /** LuaManager.init and the state it leaves (what report compares with). */
+    static void luaInit() throws Exception {
         LuaManager.init();
         KahluaTableIterator it = LuaManager.env.iterator();
         while (it.advance()) {
@@ -352,6 +358,10 @@ public class LuaLoadEnvProbe {
         initTables.put(LuaManager.env, "_G");
         for (Map.Entry<String, Object> e : staticCollections().entrySet())
             initCollections.put(e.getKey(), e.getValue() instanceof Map<?, ?> m ? "size " + m.size() : list(e.getValue()));
+    }
+
+    /** LuaManager.LoadDirBase of each directory in a[1..]. */
+    static void loadDirs(String[] a) throws Exception {
         for (int i = 1; i < a.length; i++) LuaManager.LoadDirBase(a[i]);
     }
 

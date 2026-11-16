@@ -154,6 +154,15 @@ impl LuaManager {
     /// zombie.Lua.LuaManager.init: a new platform and environment, `Events`, `Hook`, then the exposed Java API
     /// (`exposer`; reading SandboxOptions.instance runs `defines.lua` and `Sandbox/Apocalypse.lua`).
     pub fn init(game_root: &Path) -> R<LuaManager> {
+        Self::init_after(game_root, None)
+    }
+
+    /// zombie.Lua.LuaManager.init in a client whose startup steps ran before it (GameWindow.init): the exposed
+    /// Java API reads what they left (`startup`).
+    pub fn init_after(
+        game_root: &Path,
+        startup: Option<Rc<crate::zombie::game_window::ClientStartup>>,
+    ) -> R<LuaManager> {
         let platform = J2SEPlatform::new();
         let env = platform.new_environment(game_root)?;
         let mut thread = KahluaThread::new(platform.clone(), env.clone());
@@ -166,6 +175,17 @@ impl LuaManager {
             Object::Function(Rc::new(Require(loader.clone(), Rc::downgrade(&env)))),
         );
         let statics = JavaStatics::new(platform.clone(), loader.clone(), &env, events.clone());
+        if let Some(startup) = startup {
+            if let Some(tm) = startup.text_manager.borrow_mut().take() {
+                statics.set_singleton(
+                    "zombie.ui.TextManager",
+                    Object::Userdata(Rc::new(super::exposed_client::TextManagerObject(
+                        RefCell::new(tm),
+                    ))),
+                );
+            }
+            *statics.state.client.borrow_mut() = Some(startup);
+        }
         exposer::expose_all(&statics, &mut thread)?;
         Ok(LuaManager {
             platform,

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::exposer::{is_instance, Fail, Imp, JavaEnum, JavaObject, JavaStatics, Ret};
+use crate::java_formatter::FormatArg;
 use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
@@ -53,6 +54,16 @@ pub struct State {
         RefCell<crate::zombie::characters::character_input_binding_set::InputBindings>,
     /// zombie.ZomboidGlobals' statics (ZomboidGlobals.Load runs after LoadDirBase).
     pub zomboid_globals: RefCell<crate::zombie::zomboid_globals::ZomboidGlobals>,
+    /// What the client's startup (GameWindow.init, initShared) left, when the host ran it before LuaManager.init;
+    /// `None` for a Lua state made on its own (the translations, fonts and scripts not loaded).
+    pub client: RefCell<Option<Rc<crate::zombie::game_window::ClientStartup>>>,
+    /// The AngelCodeFont objects handed to Lua, by font.
+    pub fonts: RefCell<
+        Vec<(
+            crate::zombie::ui::text_manager::FontRef,
+            Rc<super::exposed_game::AngelCodeFontObject>,
+        )>,
+    >,
 }
 
 /// zombie.SandboxOptions as a Lua value.
@@ -487,6 +498,9 @@ pub(super) use with_this;
 
 /// The written ones of LuaManager.GlobalObject's `@LuaMethod(global = true)` functions.
 pub fn global(name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_game::global(name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_world::global(name) {
         return Some(f);
     }
@@ -508,14 +522,25 @@ pub fn global(name: &str) -> Option<Imp> {
         "isSystemMacOS" => |_, _, cf, _| ret_bool(cf, cfg!(target_os = "macos")),
         "isSystemWindows" => |_, _, cf, _| ret_bool(cf, cfg!(target_os = "windows")),
         "isSystemLinux" => |_, _, cf, _| ret_bool(cf, cfg!(target_os = "linux")),
-        "getText" => |_, _, cf, n| {
+        "getText" => |s, _, cf, n| {
             let desc = string_arg_nn(cf, 0)?;
-            let text = translator_get_text(&desc, n > 1)?;
+            let args = format_args(cf, n)?;
+            let text = translator_get_text(s, &desc, &args)?;
             ret_str(cf, Some(&text))
         },
-        "getTextOrNull" => |_, _, cf, _| {
-            string_arg_nn(cf, 0)?;
-            ret(cf, Object::Nil)
+        "getTextOrNull" => |s, _, cf, n| {
+            let desc = string_arg_nn(cf, 0)?;
+            let args = format_args(cf, n)?;
+            let Some(client) = s.state.client.borrow().clone() else {
+                // no translation loaded: every key is missing
+                return ret(cf, Object::Nil);
+            };
+            let text = client
+                .translator
+                .borrow_mut()
+                .get_text_or_null(&desc, &args)
+                .map_err(|m| Fail::Lua(Throwable::runtime(m)))?;
+            ret_str(cf, text.as_deref())
         },
         // Texture.getSharedTexture: null without a renderer.
         "getTexture" | "tryGetTexture" => |_, _, cf, _| {
@@ -542,10 +567,61 @@ pub fn global(name: &str) -> Option<Imp> {
     })
 }
 
+/// The `Object... args` of a varargs Java method from Lua argument 1 on, as `String.formatted` sees them (Kahlua
+/// numbers are Doubles). Another object is its class, `toString()` and the identity hash that `toString` prints
+/// (this port's, as in every `Class@hash`; 0 for an object whose `toString` prints none).
+pub(super) fn format_args(cf: &FrameRef, n: i32) -> Result<Vec<FormatArg>, Fail> {
+    Ok((1..n)
+        .map(|i| match cf.get(i) {
+            Object::Nil => FormatArg::Null,
+            Object::String(s) => FormatArg::Str(rstr(&s)),
+            Object::Number(d) => FormatArg::Double(d),
+            Object::Boolean(b) => FormatArg::Bool(b),
+            o => {
+                let class = match &o {
+                    Object::Table(_) => "se.krka.kahlua.j2se.KahluaTableImpl",
+                    Object::Closure(_) => "se.krka.kahlua.vm.LuaClosure",
+                    Object::Coroutine(_) => "se.krka.kahlua.vm.Coroutine",
+                    Object::Function(f) => f.class().name,
+                    Object::Userdata(u) => u.class().name,
+                    _ => "java.lang.Object",
+                };
+                let string = o.java_to_string();
+                let hash_code = string
+                    .rsplit_once('@')
+                    .and_then(|(_, h)| i64::from_str_radix(h, 16).ok())
+                    .map_or(0, |h| h as i32);
+                FormatArg::Object {
+                    class: class.to_string(),
+                    string,
+                    hash_code,
+                }
+            }
+        })
+        .collect())
+}
+
+/// zombie.core.Translator.getText(String, Object...): through the client's Translator when its startup ran
+/// (`Translator.loadFiles`), else as in a state where no translation file is loaded.
+pub(super) fn translator_get_text(
+    s: &Rc<JavaStatics>,
+    desc: &str,
+    args: &[FormatArg],
+) -> Result<String, Fail> {
+    if let Some(client) = s.state.client.borrow().clone() {
+        return client
+            .translator
+            .borrow_mut()
+            .get_text(desc, args)
+            .map_err(|m| Fail::Lua(Throwable::runtime(m)));
+    }
+    translator_get_text_unloaded(desc)
+}
+
 /// zombie.core.Translator.getText in a state where no translation file is loaded: every key is missing, so the
 /// key itself is the text, formatted with the arguments (`String.formatted`, which a key without `%` leaves as
 /// it is) and with `<br>` turned into newlines.
-pub(super) fn translator_get_text(desc: &str, _has_args: bool) -> Result<String, Fail> {
+fn translator_get_text_unloaded(desc: &str) -> Result<String, Fail> {
     if desc.contains('%') {
         return Err(Fail::Lua(Throwable::runtime(format!(
             "not ported: Translator.getText formatting of \"{desc}\""
@@ -653,6 +729,9 @@ fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
 }
 
 fn static_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_game::static_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_world::static_method(class, name) {
         return Some(f);
     }
@@ -746,6 +825,9 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 }
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_game::instance_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_world::instance_method(class, name) {
         return Some(f);
     }

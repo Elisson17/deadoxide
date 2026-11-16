@@ -7,6 +7,7 @@ pub mod erosion;
 pub mod file_guid_table;
 pub mod game_states;
 pub mod game_time;
+pub mod game_window;
 pub mod input;
 pub mod inventory;
 pub mod iso;

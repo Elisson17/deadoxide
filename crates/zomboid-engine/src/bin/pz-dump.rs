@@ -73,6 +73,7 @@ fn main() {
             luaload(Path::new(&a[2]), &a[3], &a[4..], false)
         }
         Some("luaboot") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[3], &a[4..], true),
+        Some("luagame") if a.len() >= 4 => luagame(Path::new(&a[2]), &a[3], &a[4..]),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -5631,6 +5632,24 @@ pub fn luaload(
     dirs: &[String],
     boot: bool,
 ) -> Result<String, String> {
+    luaload_after(root, cache_dir, dirs, boot, None)
+}
+
+/// LuaGameProbe on the port: the client's startup (zombie::game_window), then luaboot's LoadDirBase, boot events and
+/// report, then the UI the scripts built.
+pub fn luagame(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, String> {
+    use zomboid_engine::zombie::game_window::ClientStartup;
+    let startup = ClientStartup::init(root).map_err(|e| format!("startup: {e}"))?;
+    luaload_after(root, cache_dir, dirs, true, Some(std::rc::Rc::new(startup)))
+}
+
+fn luaload_after(
+    root: &Path,
+    cache_dir: &str,
+    dirs: &[String],
+    boot: bool,
+    startup: Option<std::rc::Rc<zomboid_engine::zombie::game_window::ClientStartup>>,
+) -> Result<String, String> {
     use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
     use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
@@ -5730,7 +5749,7 @@ pub fn luaload(
             }
         }
     }
-    let mut lm = LuaManager::init(root).map_err(|e| format!("init: {e:?}"))?;
+    let mut lm = LuaManager::init_after(root, startup).map_err(|e| format!("init: {e:?}"))?;
     // the probe's ZomboidFileSystem.instance.setCacheDir(<scratch>)
     *lm.statics.cache_dir.borrow_mut() = Some(cache_dir.to_string());
     let env = lm.env.clone();
@@ -5886,17 +5905,31 @@ fn luaboot_events(
         }
         Ok(())
     };
+    // LuaBootProbe's debugging aid: LUABOOT_STOP=<event> stops after that event, =load before ZomboidGlobals.Load
+    let stop = std::env::var("LUABOOT_STOP").unwrap_or_default();
+    let tos = Rc::new(TermsOfServiceStateObject::default());
+    if stop == "load" {
+        return Ok((sb, tos));
+    }
     lm.statics
         .state
         .zomboid_globals
         .borrow_mut()
         .load(&lm.env)?;
     fire(lm, "OnLoadSoundBanks", &[])?;
+    if stop == "OnLoadSoundBanks" {
+        return Ok((sb, tos));
+    }
     fire(lm, "OnGameBoot", &[])?;
-    let tos = Rc::new(TermsOfServiceStateObject::default());
+    if stop == "OnGameBoot" {
+        return Ok((sb, tos));
+    }
     fire(lm, "OnGameStateEnter", &[Object::Userdata(tos.clone())])?;
     // the rest of TermsOfServiceState.enter
     tos.0.borrow_mut().after_enter_event();
+    if stop == "OnGameStateEnter" {
+        return Ok((sb, tos));
+    }
     fire(lm, "OnMainMenuEnter", &[])?;
     Ok((sb, tos))
 }
