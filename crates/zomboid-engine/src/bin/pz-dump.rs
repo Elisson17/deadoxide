@@ -6602,6 +6602,19 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
     };
     let mut world = IsoWorld::init(root, "Muldraugh, KY", &|_| false, &alarm, None, &mut rand)?;
     let rands = erosion_data::load_rands(root)?;
+    // zombie.erosion.ErosionGlobals.Boot (called by IsoWorld.init): the server's own ErosionMain, made before any
+    // probe runs; it leaves the 90 winter sprites the ice queen makes in the sprite manager (the scenarios' ErosionMain
+    // then finds them there).
+    let _boot = ErosionMain::new(
+        ErosionOptions::default(),
+        None,
+        &GameTime::default(),
+        &mut world.sprites,
+        &world.alias,
+        rands.clone(),
+    );
+    // the Lua of OnServerStarted runs after the world is booted
+    apply_custom_tile_props(root, &mut world.sprites, &world.alias)?;
     let mut sb = String::new();
     // the erosion.ini of the save: what the last ErosionMain.mainTimer wrote
     let mut saved_ini: Option<String> = None;
@@ -6863,6 +6876,149 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
         let _ = writeln!(sb, "END {spec}");
     }
     Ok(sb)
+}
+
+/// What `media/lua/shared/Util/CustomTileProps.lua` does at `OnServerStarted` (the server has run it before a probe
+/// does): for every tile of its `CustomTileProps_SetPair`, `_RemovePair` and `_SetFlag` tables, in that order,
+/// `IsoSpriteManager.instance:getSprite(tile):getProperties()` gets `set(key, value)`, `unset(value)` or `set(flag)`.
+/// The ported Lua VM does not expose the sprite manager yet, so the file (read from the install, not copied) is read
+/// as the three table constructors it consists of; any other statement shape is an error, so a changed file cannot be
+/// half applied unnoticed. UNKNOWN: whether other Lua of the install changes sprites at server start.
+fn apply_custom_tile_props(
+    root: &Path,
+    sm: &mut IsoSpriteManager,
+    alias: &TilePropertyAliasMap,
+) -> Result<usize, String> {
+    use std::collections::BTreeMap;
+    let path = root.join("media/lua/shared/Util/CustomTileProps.lua");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut code = String::new();
+    for line in text.lines() {
+        let mut in_str = false;
+        let b = line.as_bytes();
+        let mut end = line.len();
+        for i in 0..b.len() {
+            if b[i] == b'"' {
+                in_str = !in_str;
+            } else if !in_str && b[i] == b'-' && b.get(i + 1) == Some(&b'-') {
+                end = i;
+                break;
+            }
+        }
+        code.push_str(&line[..end]);
+        code.push('\n');
+    }
+    // the tables end where the handler `OnGameStart` (also run at `OnServerStarted`) begins
+    let code = code
+        .split_once("local function OnGameStart()")
+        .map(|(tables, _)| tables.to_string())
+        .ok_or("CustomTileProps.lua: no OnGameStart handler")?;
+    let mut pairs: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let mut removes: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut flags: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut rest = code.as_str();
+    while let Some(i) = rest.find("CustomTileProps_") {
+        rest = &rest[i + "CustomTileProps_".len()..];
+        let kind_end = rest
+            .find(|c: char| !c.is_ascii_alphabetic())
+            .ok_or("CustomTileProps.lua: truncated")?;
+        let kind = &rest[..kind_end];
+        rest = rest[kind_end..].trim_start();
+        if let Some(r) = rest.strip_prefix('=') {
+            // `CustomTileProps_SetPair = {}`
+            if r.trim_start().starts_with("{}") {
+                continue;
+            }
+            return Err(format!("CustomTileProps.lua: unexpected statement after {kind}"));
+        }
+        let r = rest
+            .strip_prefix("[\"")
+            .ok_or_else(|| format!("CustomTileProps.lua: unexpected text after {kind}"))?;
+        let q = r.find("\"]").ok_or("CustomTileProps.lua: bad tile name")?;
+        let tile = r[..q].to_string();
+        let r = r[q + 2..].trim_start();
+        let r = r
+            .strip_prefix('=')
+            .ok_or("CustomTileProps.lua: missing =")?
+            .trim_start();
+        let r = r.strip_prefix('{').ok_or("CustomTileProps.lua: missing {")?;
+        let close = r.find('}').ok_or("CustomTileProps.lua: missing }")?;
+        let body = &r[..close];
+        rest = &r[close + 1..];
+        let items: Vec<&str> = body
+            .split(',')
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .collect();
+        match kind {
+            "SetPair" => {
+                let mut v: Vec<(String, String)> = Vec::new();
+                for it in items {
+                    let (k, val) = it
+                        .split_once('=')
+                        .ok_or_else(|| format!("CustomTileProps.lua: bad pair {it}"))?;
+                    let val = val
+                        .trim()
+                        .strip_prefix('"')
+                        .and_then(|x| x.strip_suffix('"'))
+                        .ok_or_else(|| format!("CustomTileProps.lua: bad value {it}"))?;
+                    let k = k.trim().to_string();
+                    v.retain(|(ek, _)| *ek != k);
+                    v.push((k, val.to_string()));
+                }
+                pairs.insert(tile, v);
+            }
+            "RemovePair" => {
+                let mut v = Vec::new();
+                for it in items {
+                    let val = it
+                        .strip_prefix('"')
+                        .and_then(|x| x.strip_suffix('"'))
+                        .ok_or_else(|| format!("CustomTileProps.lua: bad value {it}"))?;
+                    v.push(val.to_string());
+                }
+                removes.insert(tile, v);
+            }
+            "SetFlag" => {
+                let mut v = Vec::new();
+                for it in items {
+                    let name = it
+                        .strip_prefix("IsoFlagType.")
+                        .ok_or_else(|| format!("CustomTileProps.lua: bad flag {it}"))?;
+                    v.push(name.to_string());
+                }
+                flags.insert(tile, v);
+            }
+            _ => return Err(format!("CustomTileProps.lua: unknown table {kind}")),
+        }
+    }
+    let mut n = 0;
+    for (tile, values) in &pairs {
+        let r = sm.get_sprite(tile);
+        for (k, v) in values {
+            sm.sprite_mut(r).properties.set_str(alias, k, v, true);
+        }
+        n += 1;
+    }
+    for (tile, values) in &removes {
+        let r = sm.get_sprite(tile);
+        for v in values {
+            sm.sprite_mut(r).properties.unset_str(alias, v);
+        }
+        n += 1;
+    }
+    for (tile, values) in &flags {
+        let r = sm.get_sprite(tile);
+        for v in values {
+            let f = IsoFlagType::from_string(v);
+            if f == IsoFlagType::MAX {
+                return Err(format!("CustomTileProps.lua: unknown flag {v}"));
+            }
+            sm.sprite_mut(r).properties.set(f);
+        }
+        n += 1;
+    }
+    Ok(n)
 }
 
 fn hex(b: &[u8]) -> String {

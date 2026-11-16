@@ -159,7 +159,14 @@ pub fn update_obj(
         let Some(sq) = env.map.get_grid_square_mut(pos.0, pos.1, pos.2) else {
             return Err("java.lang.NullPointerException: no square".into());
         };
-        game_obj.set_stage_object(sm, stage, &mut sq.objects[index], disp_season, bloom);
+        game_obj.set_stage_object(
+            sm,
+            env.alias,
+            stage,
+            &mut sq.objects[index],
+            disp_season,
+            bloom,
+        )?;
     }
     data.stage = stage;
     data.disp_season = disp_season;

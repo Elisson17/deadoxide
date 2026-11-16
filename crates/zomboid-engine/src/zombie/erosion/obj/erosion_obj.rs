@@ -42,6 +42,7 @@ fn init_tree(
         .properties
         .get(alias, "tree")
         .map(str::to_string);
+    eprintln!("DBG init_tree {:?} prop={:?}", sm.sprite(spr).name, prop);
     let size = match prop {
         Some(v) => {
             let n = crate::java::parse_int(&v).ok_or_else(|| {
@@ -58,6 +59,19 @@ fn init_tree(
         log_yield,
         damage,
     });
+    Ok(())
+}
+
+/// zombie.iso.objects.IsoTree.setSprite: `IsoObject.setSprite` and then `initTree` again, which takes the size, log
+/// yield and damage of the new sprite. A plain object is only given the sprite.
+fn set_sprite_init_tree(
+    sm: &mut IsoSpriteManager,
+    alias: &TilePropertyAliasMap,
+    obj: &mut IsoObject,
+) -> Result<(), String> {
+    if matches!(obj.kind, ObjectKind::IsoTree(_)) {
+        init_tree(sm, alias, obj)?;
+    }
     Ok(())
 }
 
@@ -137,7 +151,7 @@ impl ErosionObj {
         bloom: bool,
     ) -> Result<bool, String> {
         let mut obj = self.create_object(env.sm, env.alias, stage, tree, season)?;
-        if !self.set_stage_object(env.sm, stage, &mut obj, season, bloom) {
+        if !self.set_stage_object(env.sm, env.alias, stage, &mut obj, season, bloom)? {
             return Ok(false);
         }
         if !tree {
@@ -152,23 +166,26 @@ impl ErosionObj {
     pub fn set_stage_object(
         &mut self,
         sm: &mut IsoSpriteManager,
+        alias: &TilePropertyAliasMap,
         stage: i32,
         obj: &mut IsoObject,
         season: i32,
         bloom: bool,
-    ) -> bool {
+    ) -> Result<bool, String> {
         if stage >= 0 && stage < self.stages {
             let sprite_name = self
                 .sprites
                 .get_base(stage, if self.no_season_base { 0 } else { season });
             let Some(sprite_name) = sprite_name else {
                 obj.sprite = Some(sm.get_sprite(""));
+                set_sprite_init_tree(sm, alias, obj)?;
                 if let Some(a) = obj.attached_anim_sprite.as_mut() {
                     a.clear();
                 }
-                return true;
+                return Ok(true);
             };
             obj.sprite = Some(sm.get_sprite(&sprite_name));
+            set_sprite_init_tree(sm, alias, obj)?;
             if self.has_child_sprite || self.has_flower {
                 obj.attached_anim_sprite.get_or_insert_with(Vec::new).clear();
                 if self.has_child_sprite && season != 0 {
@@ -184,9 +201,9 @@ impl ErosionObj {
                     }
                 }
             }
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
