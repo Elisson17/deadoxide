@@ -78,17 +78,17 @@ const VALUES: [UIFont; 34] = [
 ];
 
 impl UIFont {
-    /// zombie.ui.UIFont.values
+    /// java.lang.Enum: the implicit `UIFont.values()` (declaration order).
     pub fn values() -> &'static [UIFont] {
         &VALUES
     }
 
-    /// zombie.ui.UIFont.ordinal
+    /// java.lang.Enum.ordinal of a UIFont.
     pub fn ordinal(self) -> usize {
         self as usize
     }
 
-    /// zombie.ui.UIFont.name
+    /// java.lang.Enum.name of a UIFont.
     pub fn name(self) -> &'static str {
         match self {
             Small => "Small",
