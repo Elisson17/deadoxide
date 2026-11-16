@@ -108,7 +108,9 @@ impl ErosionCategory for StreetCracks {
     ) -> Result<(), String> {
         if e_tick >= data.spawn_time && !data.do_nothing {
             let floor = env.sq(pos)?.get_floor(env.sm);
-            if data.game_obj >= 0 && (data.game_obj as usize) < self.crack_objs.len() && floor.is_some()
+            if data.game_obj >= 0
+                && (data.game_obj as usize) < self.crack_objs.len()
+                && floor.is_some()
             {
                 let floor = floor.unwrap_or(0);
                 let game_obj = &self.crack_objs[data.game_obj as usize];
@@ -125,10 +127,12 @@ impl ErosionCategory for StreetCracks {
                 if stage != data.stage {
                     let cur_id = data.cur_id;
                     let sm = &mut *env.sm;
-                    let sq = env.map.get_grid_square_mut(pos.0, pos.1, pos.2).ok_or_else(|| {
-                        "java.lang.NullPointerException: no square".to_string()
-                    })?;
-                    let id = game_obj.set_overlay(sm, &mut sq.objects[floor], cur_id, stage, 0, 0.0);
+                    let sq = env
+                        .map
+                        .get_grid_square_mut(pos.0, pos.1, pos.2)
+                        .ok_or_else(|| "java.lang.NullPointerException: no square".to_string())?;
+                    let id =
+                        game_obj.set_overlay(sm, &mut sq.objects[floor], cur_id, stage, 0, 0.0);
                     if id >= 0 {
                         data.cur_id = id;
                     }
@@ -141,7 +145,15 @@ impl ErosionCategory for StreetCracks {
                     if let Some(grass_obj) = grass_obj {
                         let disp_season = current_season(&self.base, env, ed.magic_num);
                         update_obj(
-                            &self.base, env, ed, data, pos, grass_obj, false, stage, disp_season,
+                            &self.base,
+                            env,
+                            ed,
+                            data,
+                            pos,
+                            grass_obj,
+                            false,
+                            stage,
+                            disp_season,
                             false,
                         )?;
                     }
@@ -193,8 +205,10 @@ impl ErosionCategory for StreetCracks {
                     }
                 }
             }
-            self.crack_objs.push(ErosionObjOverlay::new(crackspr, 60, false));
-            self.objs.push(ErosionObj::new(grassspr, 60, 0.0, 0.0, false));
+            self.crack_objs
+                .push(ErosionObjOverlay::new(crackspr, 60, false));
+            self.objs
+                .push(ErosionObj::new(grassspr, 60, 0.0, 0.0, false));
         }
     }
 }

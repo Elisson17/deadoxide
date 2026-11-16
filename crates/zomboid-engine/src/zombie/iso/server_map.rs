@@ -132,7 +132,8 @@ impl ServerMap {
                     .sprite
                     .is_some_and(|s| sm.sprite(s).properties.is_table_top(alias));
                 if table_top
-                    || o.is_table_surface(sm, alias) && !o.has_property_str(sm, alias, pt::COUNTERTOP)
+                    || o.is_table_surface(sm, alias)
+                        && !o.has_property_str(sm, alias, pt::COUNTERTOP)
                 {
                     o.render_y_offset -= offset;
                 }

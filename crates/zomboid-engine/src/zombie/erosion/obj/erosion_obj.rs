@@ -187,17 +187,23 @@ impl ErosionObj {
             obj.sprite = Some(sm.get_sprite(&sprite_name));
             set_sprite_init_tree(sm, alias, obj)?;
             if self.has_child_sprite || self.has_flower {
-                obj.attached_anim_sprite.get_or_insert_with(Vec::new).clear();
+                obj.attached_anim_sprite
+                    .get_or_insert_with(Vec::new)
+                    .clear();
                 if self.has_child_sprite && season != 0 {
                     if let Some(n) = self.sprites.get_child_sprite(stage, season) {
                         let s = sm.get_sprite(&n);
-                        obj.attached_anim_sprite.get_or_insert_with(Vec::new).push(s);
+                        obj.attached_anim_sprite
+                            .get_or_insert_with(Vec::new)
+                            .push(s);
                     }
                 }
                 if self.has_flower && bloom {
                     if let Some(n) = self.sprites.get_flower(stage) {
                         let s = sm.get_sprite(&n);
-                        obj.attached_anim_sprite.get_or_insert_with(Vec::new).push(s);
+                        obj.attached_anim_sprite
+                            .get_or_insert_with(Vec::new)
+                            .push(s);
                     }
                 }
             }

@@ -140,7 +140,11 @@ impl IsoChunk {
     /// tile get `haveRoof` (and lose `exterior`), `RecalcAllWithNeighbours(true, chunkGetter)` builds the properties
     /// of the squares that are still dirty (those `ensureNotNull` made after their level had been passed) and every
     /// square is marked dirty. The collide, path and vision matrices of that pass are not modelled.
-    pub fn load_in_world_streamer_thread(&mut self, sm: &IsoSpriteManager, meta_grid: &IsoMetaGrid) {
+    pub fn load_in_world_streamer_thread(
+        &mut self,
+        sm: &IsoSpriteManager,
+        meta_grid: &IsoMetaGrid,
+    ) {
         for z in self.min_level..=self.max_level {
             for y in 0..8 {
                 for x in 0..8 {

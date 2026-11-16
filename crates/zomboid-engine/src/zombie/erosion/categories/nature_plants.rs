@@ -230,7 +230,16 @@ impl ErosionCategory for NaturePlants {
                 let disp_season = current_season(&self.base, env, ed.magic_num);
                 let bloom = current_bloom(env, ed.magic_num, game_obj);
                 update_obj(
-                    &self.base, env, ed, data, pos, game_obj, false, 0, disp_season, bloom,
+                    &self.base,
+                    env,
+                    ed,
+                    data,
+                    pos,
+                    game_obj,
+                    false,
+                    0,
+                    disp_season,
+                    bloom,
                 )?;
             } else {
                 clear_cat_mod_data(&self.base, ed);
@@ -277,8 +286,16 @@ impl ErosionCategory for NaturePlants {
             obj_spr.set_base_list(0, &autumn_spr, 4);
             obj_spr.set_base(0, &format!("d_plants_1_{}", offset + ix), 2);
             obj_spr.set_flower(0, &format!("d_plants_1_{}", offset + ix + 8));
-            let bloomstart = if plant.has_flower { plant.bloomstart } else { 0.0 };
-            let bloomend = if plant.has_flower { plant.bloomend } else { 0.0 };
+            let bloomstart = if plant.has_flower {
+                plant.bloomstart
+            } else {
+                0.0
+            };
+            let bloomend = if plant.has_flower {
+                plant.bloomend
+            } else {
+                0.0
+            };
             self.objs
                 .push(ErosionObj::new(obj_spr, 30, bloomstart, bloomend, false));
         }

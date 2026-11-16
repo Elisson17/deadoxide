@@ -104,17 +104,15 @@ impl ErosionMain {
         }
         let days_till_100_percent = (cfg.time.tickunit * 100) as f32 / 144.0;
         let days_since_apo = ((options.time_since_apo - 1) * 30) as f32;
-        cfg.time.eticks = (f64::from(
-            java::math_min_f32(1.0, days_since_apo / days_till_100_percent) * 100.0,
-        ))
-        .floor() as i32;
+        cfg.time.eticks =
+            (f64::from(java::math_min_f32(1.0, days_since_apo / days_till_100_percent) * 100.0))
+                .floor() as i32;
         let erosion_days = options.erosion_days;
         if erosion_days > 0 {
             cfg.time.tickunit = 144;
-            cfg.time.eticks = (f64::from(
-                java::math_min_f32(1.0, days_since_apo / erosion_days as f32) * 100.0,
-            ))
-            .floor() as i32;
+            cfg.time.eticks =
+                (f64::from(java::math_min_f32(1.0, days_since_apo / erosion_days as f32) * 100.0))
+                    .floor() as i32;
         }
         cfg
     }
@@ -375,7 +373,8 @@ impl ErosionMain {
         if chunk_data.e_tick_stamp >= self.e_ticks && chunk_data.epoch == self.epoch {
             return Ok(());
         }
-        self.world.update(&mut env, pos, ed, chunk_data, self.e_ticks)
+        self.world
+            .update(&mut env, pos, ed, chunk_data, self.e_ticks)
     }
 
     /// zombie.erosion.ErosionMain.initGridSquare: the noise values, soil and "magic number" of a square.

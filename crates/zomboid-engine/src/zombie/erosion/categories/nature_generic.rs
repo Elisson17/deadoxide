@@ -211,7 +211,16 @@ impl ErosionCategory for NatureGeneric {
                     }
                 }
                 update_obj(
-                    &self.base, env, ed, data, pos, game_obj, false, stage, disp_season, false,
+                    &self.base,
+                    env,
+                    ed,
+                    data,
+                    pos,
+                    game_obj,
+                    false,
+                    stage,
+                    disp_season,
+                    false,
                 )?;
             } else {
                 data.do_nothing = true;
@@ -223,7 +232,7 @@ impl ErosionCategory for NatureGeneric {
     /// zombie.erosion.categories.NatureGeneric.init
     fn init(&mut self, sm: &mut IsoSpriteManager, ice_queen: &mut ErosionIceQueen) {
         self.spawn_chance = (0..100)
-            .map(|i| clerp((i - 0) as f32 / 100.0, 0.0, 99.0) as i32)
+            .map(|i| clerp(i as f32 / 100.0, 0.0, 99.0) as i32)
             .collect();
         let sd = &mut self.base.season_disp;
         sd[5].season1 = 5;
@@ -248,7 +257,8 @@ impl ErosionCategory for NatureGeneric {
                     obj_spr.set_base(*st, &format!("e_newgrass_1_{sheetid}"), *sname);
                 }
             }
-            self.objs.push(ErosionObj::new(obj_spr, 60, 0.0, 0.0, false));
+            self.objs
+                .push(ErosionObj::new(obj_spr, 60, 0.0, 0.0, false));
         }
         for genericx in 0..=15 {
             let mut obj_spr = ErosionObjSprites::new(2, "Generic", false, false, false);

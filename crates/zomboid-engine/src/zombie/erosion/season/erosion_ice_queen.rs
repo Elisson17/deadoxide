@@ -2,8 +2,8 @@
 use crate::java;
 use crate::zombie::core::math::pz_math;
 use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
-use crate::zombie::util::string_utils;
 use crate::zombie::iso::sprite::iso_sprite_manager::{IsoSpriteManager, SpriteRef};
+use crate::zombie::util::string_utils;
 
 /// zombie.erosion.season.ErosionIceQueen.Sprite
 #[derive(Clone, Debug)]

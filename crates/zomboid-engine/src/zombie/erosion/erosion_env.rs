@@ -21,7 +21,9 @@ pub struct Env<'a> {
 
 /// `ArrayIndexOutOfBoundsException` of a Java array read, as the message the JVM gives.
 pub fn aioobe(index: i32, len: usize) -> String {
-    format!("java.lang.ArrayIndexOutOfBoundsException: Index {index} out of bounds for length {len}")
+    format!(
+        "java.lang.ArrayIndexOutOfBoundsException: Index {index} out of bounds for length {len}"
+    )
 }
 
 /// `array[index]` of a Java int array.
@@ -38,12 +40,14 @@ pub fn at(array: &[i32], index: i32) -> Result<i32, String> {
 impl Env<'_> {
     /// The square at `pos`; the erosion code is only called for squares of loaded chunks.
     pub fn sq(&self, pos: Pos) -> Result<&IsoGridSquare, String> {
-        self.map.get_grid_square(pos.0, pos.1, pos.2).ok_or_else(|| {
-            format!(
-                "java.lang.NullPointerException: no square at {},{},{}",
-                pos.0, pos.1, pos.2
-            )
-        })
+        self.map
+            .get_grid_square(pos.0, pos.1, pos.2)
+            .ok_or_else(|| {
+                format!(
+                    "java.lang.NullPointerException: no square at {},{},{}",
+                    pos.0, pos.1, pos.2
+                )
+            })
     }
 
     pub fn sq_mut(&mut self, pos: Pos) -> Result<&mut IsoGridSquare, String> {
@@ -67,7 +71,6 @@ impl Env<'_> {
                 sq.objects.len()
             )
         })?;
-        Ok(o.sprite
-            .and_then(|s| self.sm.sprite(s).name.clone()))
+        Ok(o.sprite.and_then(|s| self.sm.sprite(s).name.clone()))
     }
 }

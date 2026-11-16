@@ -83,7 +83,8 @@ pub fn set_cat_mod_data(base: &CategoryBase, kind: Category, ed: &mut Square) ->
     if let Some(i) = get_cat_mod_data(base, ed) {
         return i;
     }
-    ed.regions.push(CategoryData::alloc(kind, base.region, base.id));
+    ed.regions
+        .push(CategoryData::alloc(kind, base.region, base.id));
     // the original logs "> 5 regions on a square" when there are more than five
     ed.regions.len() - 1
 }
@@ -97,6 +98,8 @@ pub fn clear_cat_mod_data(base: &CategoryBase, ed: &mut Square) {
 
 /// zombie.erosion.categories.ErosionCategory.currentSeason: the season (0 to 5, as the category displays it) for a
 /// square with that magic number, from the day of the current season.
+// the negated float comparisons are the original's own (they differ from `<` for NaN)
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 pub fn current_season(base: &CategoryBase, env: &Env, magic_num: f32) -> i32 {
     let seasons = env.season;
     let season = seasons.get_season();

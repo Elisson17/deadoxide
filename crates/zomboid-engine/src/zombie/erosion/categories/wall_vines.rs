@@ -76,7 +76,8 @@ impl ErosionCategory for WallVines {
                     d.stage = self.sprite_to_stage[&name];
                     d.max_stage = 2;
                     d.spawn_time = 0;
-                    if let Some(list) = env.sq_mut(pos)?.objects[idx].attached_anim_sprite.as_mut() {
+                    if let Some(list) = env.sq_mut(pos)?.objects[idx].attached_anim_sprite.as_mut()
+                    {
                         list.remove(j);
                         if j < list.len() {
                             list.remove(j);
@@ -143,7 +144,11 @@ impl ErosionCategory for WallVines {
         d.spawn_time = 100 - e_value;
         if d.max_stage == 3 {
             let top_pos = (pos.0, pos.1, pos.2 + 1);
-            if env.map.get_grid_square(top_pos.0, top_pos.1, top_pos.2).is_some() {
+            if env
+                .map
+                .get_grid_square(top_pos.0, top_pos.1, top_pos.2)
+                .is_some()
+            {
                 let obj = valid_wall(env, Some(top_pos), dir == 1, true)?;
                 let game_obj_overlay = self.objs.get(d.game_obj as usize);
                 match (obj, game_obj_overlay) {
@@ -172,6 +177,8 @@ impl ErosionCategory for WallVines {
     }
 
     /// zombie.erosion.categories.WallVines.update
+    // `ed` and `chunk` only go down the recursion into the top square's data, as in the original
+    #[allow(clippy::only_used_in_recursion)]
     fn update(
         &mut self,
         env: &mut Env,
@@ -204,9 +211,7 @@ impl ErosionCategory for WallVines {
                 if stage != data.stage || data.disp_season != disp_season {
                     let north = valid_wall(env, Some(pos), true, true)?;
                     let west = valid_wall(env, Some(pos), false, true)?;
-                    let object = if north.is_some() && west.is_some() {
-                        north
-                    } else if north.is_some() {
+                    let object = if north.is_some() {
                         north
                     } else if west.is_some() {
                         west
@@ -220,7 +225,9 @@ impl ErosionCategory for WallVines {
                         let sq = env
                             .map
                             .get_grid_square_mut(object.x, object.y, object.z)
-                            .ok_or_else(|| "java.lang.NullPointerException: no square".to_string())?;
+                            .ok_or_else(|| {
+                                "java.lang.NullPointerException: no square".to_string()
+                            })?;
                         let id = game_obj.set_overlay(
                             sm,
                             &mut sq.objects[object.index],
@@ -237,7 +244,11 @@ impl ErosionCategory for WallVines {
                     }
                     if stage == 3 && data.has_top.is_some() {
                         let top_pos = (pos.0, pos.1, pos.2 + 1);
-                        if env.map.get_grid_square(top_pos.0, top_pos.1, top_pos.2).is_some() {
+                        if env
+                            .map
+                            .get_grid_square(top_pos.0, top_pos.1, top_pos.2)
+                            .is_some()
+                        {
                             if let Some(top) = data.has_top.as_deref_mut() {
                                 self.update(env, top_pos, ed, top, chunk, e_tick)?;
                             }
@@ -277,7 +288,11 @@ impl ErosionCategory for WallVines {
             for stage in 0..=3 {
                 for season in 0..=2 {
                     let id = season * 24 + stage * 6 + i as i32;
-                    vinespr.set_sprite(stage, &format!("f_wallvines_1_{id}"), seasons[season as usize]);
+                    vinespr.set_sprite(
+                        stage,
+                        &format!("f_wallvines_1_{id}"),
+                        seasons[season as usize],
+                    );
                     if season == 2 {
                         vinespr.set_sprite(
                             stage,

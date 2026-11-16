@@ -22,8 +22,12 @@ const SOIL_REF: [&[i32]; 12] = [
     &[1, 1, 2, 2, 3, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6],
     &[1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 8, 8, 8, 6],
     &[3, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11],
-    &[1, 1, 3, 3, 3, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11],
-    &[1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 10, 10, 10, 11],
+    &[
+        1, 1, 3, 3, 3, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11,
+    ],
+    &[
+        1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 10, 10, 10, 11,
+    ],
 ];
 
 /// zombie.erosion.categories.NatureTrees.TreeInit
@@ -127,7 +131,8 @@ impl ErosionCategory for NatureTrees {
                     let soil_ref = Self::soil_row(env, ed, x, y);
                     let e_value = ed.noise_main_int;
                     let di = set_cat_mod_data(&self.base, Category::NatureTrees, ed);
-                    let game_obj = at(soil_ref, ed.rand(env.rands, x, y, soil_ref.len() as i32))? - 1;
+                    let game_obj =
+                        at(soil_ref, ed.rand(env.rands, x, y, soil_ref.len() as i32))? - 1;
                     let d = &mut ed.regions[di];
                     d.game_obj = game_obj;
                     let base_stage = if jumbo { 5 } else { 3 };
@@ -246,7 +251,16 @@ impl ErosionCategory for NatureTrees {
                 }
                 let disp_season = current_season(&self.base, env, ed.magic_num);
                 update_obj(
-                    &self.base, env, ed, data, pos, game_obj, true, stage, disp_season, false,
+                    &self.base,
+                    env,
+                    ed,
+                    data,
+                    pos,
+                    game_obj,
+                    true,
+                    stage,
+                    disp_season,
+                    false,
                 )?;
             } else {
                 clear_cat_mod_data(&self.base, ed);

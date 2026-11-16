@@ -139,8 +139,31 @@ sel climate && server_case climate ClimateProbe 1984:1993:6:8:9.0:6 12:1995:2:10
   "5:1995:7:3:6.0:2:mode=A Storm is Coming" "5:1995:5:3:6.0:1:daynight=2" "5:1995:5:3:6.0:1:daynight=3"
 # the original erosion system (ErosionMain with ErosionWorld, the eight categories, ErosionObj*, ErosionIceQueen, ErosionSeason)
 # run by the booted server over chunks of the real map: chunk load, LoadGridsquare/ChunkLoaded, then simulated days of 144
-# EveryTenMinutes; scenarios x1,y1,x2,y2:year:month:day:days:dumps[:options] (chunk coordinates; dump days separated by "/")
-sel erosion && server_case erosion ErosionProbe 1033,1457,1038,1462:1993:6:8:0:0:speed=1
+# EveryTenMinutes; scenarios x1,y1,x2,y2:year:month:day:days:dumps[:options] (chunk coordinates; month and day 0-based; dump days
+# separated by "/"; options speed, edays, apo, temp = the sandbox ErosionSpeed, ErosionDays, TimeSinceApo, Temperature, and
+# keep=1 = start from the erosion.ini the previous scenario wrote): the load of a small stretch of Rosewood; a winter into
+# spring over the same; the flowerbeds' chunks and a town through spring into summer; default options over 400 days; every
+# option; and a chain that reads the ini back
+sel erosion && server_case erosion ErosionProbe \
+  "1033,1457,1038,1462:1993:6:8:0:0:speed=1" \
+  "1033,1457,1038,1462:1993:9:20:200:40/80/120/160/200:speed=1" \
+  "1017,1418,1020,1421:1993:3:10:100:20/50/100:speed=1" \
+  "1327,1285,1332,1290:1993:3:10:100:20/50/100:speed=1" \
+  "1034,1458,1036,1460:1993:6:8:400:100/200/300/400" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:speed=2" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:speed=4" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:speed=5" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:edays=30" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:edays=-1" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:apo=7" \
+  "1034,1458,1036,1460:1993:6:8:20:0/20:apo=13,speed=5" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:temp=1" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:temp=2" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:temp=4" \
+  "1034,1458,1036,1460:1993:6:8:40:0/40:temp=5" \
+  "1034,1458,1036,1460:1993:6:8:3:0/3:speed=1" \
+  "1034,1458,1036,1460:1993:6:11:4:0/4:speed=5,keep=1" \
+  "1034,1458,1036,1460:1994:0:1:2:2:speed=3,apo=5,temp=1,keep=1"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

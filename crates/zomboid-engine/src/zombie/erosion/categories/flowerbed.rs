@@ -67,7 +67,9 @@ impl ErosionCategory for Flowerbed {
                         let obj_name = self
                             .objs
                             .get(id as usize)
-                            .ok_or_else(|| format!("java.lang.IndexOutOfBoundsException: Index {id}"))?
+                            .ok_or_else(|| {
+                                format!("java.lang.IndexOutOfBoundsException: Index {id}")
+                            })?
                             .name
                             .clone();
                         env.sq_mut(pos)?.objects[idx].name = Some(obj_name);
@@ -134,7 +136,16 @@ impl ErosionCategory for Flowerbed {
                     clear_cat_mod_data(&self.base, ed);
                 } else {
                     update_obj(
-                        &self.base, env, ed, data, pos, game_obj, false, 0, disp_season, false,
+                        &self.base,
+                        env,
+                        ed,
+                        data,
+                        pos,
+                        game_obj,
+                        false,
+                        0,
+                        disp_season,
+                        false,
                     )?;
                 }
             } else {
@@ -151,7 +162,8 @@ impl ErosionCategory for Flowerbed {
             obj_spr.set_base(0, &format!("vegetation_ornamental_01_{tile}"), 1);
             obj_spr.set_base(0, &format!("vegetation_ornamental_01_{tile}"), 2);
             obj_spr.set_base(0, &format!("vegetation_ornamental_01_{}", tile + 16), 4);
-            self.objs.push(ErosionObj::new(obj_spr, 30, 0.0, 0.0, false));
+            self.objs
+                .push(ErosionObj::new(obj_spr, 30, 0.0, 0.0, false));
         }
     }
 }

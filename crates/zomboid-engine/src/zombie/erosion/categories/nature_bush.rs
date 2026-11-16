@@ -34,22 +34,102 @@ struct BushInit {
 }
 
 const BUSH: [BushInit; 16] = [
-    BushInit { name: "Spicebush", bloomstart: 0.05, bloomend: 0.35, has_flower: false },
-    BushInit { name: "Ninebark", bloomstart: 0.65, bloomend: 0.75, has_flower: true },
-    BushInit { name: "Ninebark", bloomstart: 0.65, bloomend: 0.75, has_flower: true },
-    BushInit { name: "Blueberry", bloomstart: 0.4, bloomend: 0.5, has_flower: true },
-    BushInit { name: "Blackberry", bloomstart: 0.4, bloomend: 0.5, has_flower: true },
-    BushInit { name: "Piedmont azalea", bloomstart: 0.0, bloomend: 0.15, has_flower: true },
-    BushInit { name: "Piedmont azalea", bloomstart: 0.0, bloomend: 0.15, has_flower: true },
-    BushInit { name: "Arrowwood viburnum", bloomstart: 0.3, bloomend: 0.8, has_flower: true },
-    BushInit { name: "Red chokeberry", bloomstart: 0.9, bloomend: 1.0, has_flower: true },
-    BushInit { name: "Red chokeberry", bloomstart: 0.9, bloomend: 1.0, has_flower: true },
-    BushInit { name: "Beautyberry", bloomstart: 0.7, bloomend: 0.85, has_flower: true },
-    BushInit { name: "New jersey tea", bloomstart: 0.4, bloomend: 0.8, has_flower: true },
-    BushInit { name: "New jersey tea", bloomstart: 0.4, bloomend: 0.8, has_flower: true },
-    BushInit { name: "Wild hydrangea", bloomstart: 0.2, bloomend: 0.35, has_flower: true },
-    BushInit { name: "Wild hydrangea", bloomstart: 0.2, bloomend: 0.35, has_flower: true },
-    BushInit { name: "Shrubby St. John's wort", bloomstart: 0.35, bloomend: 0.75, has_flower: true },
+    BushInit {
+        name: "Spicebush",
+        bloomstart: 0.05,
+        bloomend: 0.35,
+        has_flower: false,
+    },
+    BushInit {
+        name: "Ninebark",
+        bloomstart: 0.65,
+        bloomend: 0.75,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Ninebark",
+        bloomstart: 0.65,
+        bloomend: 0.75,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Blueberry",
+        bloomstart: 0.4,
+        bloomend: 0.5,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Blackberry",
+        bloomstart: 0.4,
+        bloomend: 0.5,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Piedmont azalea",
+        bloomstart: 0.0,
+        bloomend: 0.15,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Piedmont azalea",
+        bloomstart: 0.0,
+        bloomend: 0.15,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Arrowwood viburnum",
+        bloomstart: 0.3,
+        bloomend: 0.8,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Red chokeberry",
+        bloomstart: 0.9,
+        bloomend: 1.0,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Red chokeberry",
+        bloomstart: 0.9,
+        bloomend: 1.0,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Beautyberry",
+        bloomstart: 0.7,
+        bloomend: 0.85,
+        has_flower: true,
+    },
+    BushInit {
+        name: "New jersey tea",
+        bloomstart: 0.4,
+        bloomend: 0.8,
+        has_flower: true,
+    },
+    BushInit {
+        name: "New jersey tea",
+        bloomstart: 0.4,
+        bloomend: 0.8,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Wild hydrangea",
+        bloomstart: 0.2,
+        bloomend: 0.35,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Wild hydrangea",
+        bloomstart: 0.2,
+        bloomend: 0.35,
+        has_flower: true,
+    },
+    BushInit {
+        name: "Shrubby St. John's wort",
+        bloomstart: 0.35,
+        bloomend: 0.75,
+        has_flower: true,
+    },
 ];
 
 /// zombie.erosion.categories.NatureBush
@@ -108,7 +188,8 @@ impl ErosionCategory for NatureBush {
                     let soil_ref = SOIL_REF[soil as usize];
                     let e_value = ed.noise_main_int;
                     let di = set_cat_mod_data(&self.base, Category::NatureBush, ed);
-                    let game_obj = at(soil_ref, ed.rand(env.rands, x, y, soil_ref.len() as i32))? - 1;
+                    let game_obj =
+                        at(soil_ref, ed.rand(env.rands, x, y, soil_ref.len() as i32))? - 1;
                     let d = &mut ed.regions[di];
                     d.game_obj = game_obj;
                     d.max_stage = (e_value as f32 / 60.0).floor() as i32;
@@ -188,7 +269,16 @@ impl ErosionCategory for NatureBush {
                 let disp_season = current_season(&self.base, env, ed.magic_num);
                 let bloom = current_bloom(env, ed.magic_num, game_obj);
                 update_obj(
-                    &self.base, env, ed, data, pos, game_obj, false, stage, disp_season, bloom,
+                    &self.base,
+                    env,
+                    ed,
+                    data,
+                    pos,
+                    game_obj,
+                    false,
+                    stage,
+                    disp_season,
+                    bloom,
                 )?;
             } else {
                 data.do_nothing = true;
@@ -234,7 +324,11 @@ impl ErosionCategory for NatureBush {
             let bloom_id = summer_id + 16;
             obj_spr.set_base(0, &format!("f_bushes_1_{base_id}"), 0);
             obj_spr.set_base(1, &format!("f_bushes_1_{}", base_id + 8), 0);
-            ice_queen.add_sprite(sm, &format!("f_bushes_1_{base_id}"), &format!("f_bushes_1_{snow_id}"));
+            ice_queen.add_sprite(
+                sm,
+                &format!("f_bushes_1_{base_id}"),
+                &format!("f_bushes_1_{snow_id}"),
+            );
             ice_queen.add_sprite(
                 sm,
                 &format!("f_bushes_1_{}", base_id + 8),

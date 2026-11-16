@@ -117,7 +117,11 @@ impl ErosionCategory for WallCracks {
         d.spawn_time = e_value;
         if do_top {
             let top_pos = (pos.0, pos.1, pos.2 + 1);
-            if env.map.get_grid_square(top_pos.0, top_pos.1, top_pos.2).is_some() {
+            if env
+                .map
+                .get_grid_square(top_pos.0, top_pos.1, top_pos.2)
+                .is_some()
+            {
                 let obj = valid_wall(env, Some(top_pos), dir == 1, false)?;
                 if obj.is_some() {
                     let refid = ed.rand(env.rands, x, y, self.bot_ref[dir].len() as i32);
@@ -136,6 +140,8 @@ impl ErosionCategory for WallCracks {
 
     /// zombie.erosion.categories.WallCracks.update: the crack fades in over 100 erosion ticks; the part on the
     /// square above follows through the same method.
+    // `ed` and `chunk` only go down the recursion into the top square's data, as in the original
+    #[allow(clippy::only_used_in_recursion)]
     fn update(
         &mut self,
         env: &mut Env,
@@ -148,19 +154,11 @@ impl ErosionCategory for WallCracks {
         if e_tick >= data.spawn_time && !data.do_nothing {
             if data.game_obj >= 0 && (data.game_obj as usize) < self.objs.len() {
                 let old_alpha = data.alpha;
-                let mut this_alpha = (e_tick - data.spawn_time) as f32 / 100.0;
-                if this_alpha > 1.0 {
-                    this_alpha = 1.0;
-                }
-                if this_alpha < 0.0 {
-                    this_alpha = 0.0;
-                }
+                let this_alpha = ((e_tick - data.spawn_time) as f32 / 100.0).clamp(0.0, 1.0);
                 if this_alpha != old_alpha {
                     let north = valid_wall(env, Some(pos), true, false)?;
                     let west = valid_wall(env, Some(pos), false, false)?;
-                    let object = if north.is_some() && west.is_some() {
-                        north
-                    } else if north.is_some() {
+                    let object = if north.is_some() {
                         north
                     } else if west.is_some() {
                         west
@@ -174,7 +172,9 @@ impl ErosionCategory for WallCracks {
                         let sq = env
                             .map
                             .get_grid_square_mut(object.x, object.y, object.z)
-                            .ok_or_else(|| "java.lang.NullPointerException: no square".to_string())?;
+                            .ok_or_else(|| {
+                                "java.lang.NullPointerException: no square".to_string()
+                            })?;
                         let id = game_obj.set_overlay(
                             sm,
                             &mut sq.objects[object.index],
@@ -192,7 +192,11 @@ impl ErosionCategory for WallCracks {
                     }
                     if data.has_top.is_some() {
                         let top_pos = (pos.0, pos.1, pos.2 + 1);
-                        if env.map.get_grid_square(top_pos.0, top_pos.1, top_pos.2).is_some() {
+                        if env
+                            .map
+                            .get_grid_square(top_pos.0, top_pos.1, top_pos.2)
+                            .is_some()
+                        {
                             if let Some(top) = data.has_top.as_deref_mut() {
                                 self.update(env, top_pos, ed, top, chunk, e_tick)?;
                             }

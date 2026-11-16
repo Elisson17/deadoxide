@@ -14,7 +14,11 @@ pub struct ErosionWorld {
 
 impl ErosionWorld {
     /// zombie.erosion.ErosionWorld.init: `ErosionRegions.init()`.
-    pub fn init(&mut self, sm: &mut crate::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager, ice_queen: &mut ErosionIceQueen) -> bool {
+    pub fn init(
+        &mut self,
+        sm: &mut crate::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager,
+        ice_queen: &mut ErosionIceQueen,
+    ) -> bool {
         self.regions.init(sm, ice_queen);
         true
     }

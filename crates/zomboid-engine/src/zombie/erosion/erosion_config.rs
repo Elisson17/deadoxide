@@ -231,7 +231,9 @@ impl ErosionConfig {
                     "season.seedA" => se.seed_a = int(v)?,
                     "season.seedB" => se.seed_b = int(v)?,
                     "season.seedC" => se.seed_c = int(v)?,
-                    "debug.enabled" => self.debug.enabled = java::trim(v).eq_ignore_ascii_case("true"),
+                    "debug.enabled" => {
+                        self.debug.enabled = java::trim(v).eq_ignore_ascii_case("true")
+                    }
                     "debug.startday" => self.debug.startday = int(v)?,
                     "debug.startmonth" => self.debug.startmonth = int(v)?,
                     _ => {

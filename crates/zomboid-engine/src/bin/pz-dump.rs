@@ -6751,7 +6751,13 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
                                     .filter(|s| !s.objects.is_empty())
                                     .map(|s| (s.x, s.y, s.z));
                                 if let Some(pos) = pos {
-                                    em.load_gridsquare(&gt, &mut map, &mut world.sprites, &world.alias, pos)?;
+                                    em.load_gridsquare(
+                                        &gt,
+                                        &mut map,
+                                        &mut world.sprites,
+                                        &world.alias,
+                                        pos,
+                                    )?;
                                 }
                             }
                         }
@@ -6764,92 +6770,90 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
         let _ = writeln!(sb, "RAND after load=0");
 
         let mut dumped = 0;
-        let do_dump = |sb: &mut String,
-                           em: &ErosionMain,
-                           map: &ServerMap,
-                           world: &IsoWorld,
-                           d: i32| {
-            let _ = writeln!(
-                sb,
-                "DUMP {d} {} newSprites={}",
-                describe(em),
-                world.sprites.named_map.len() - sprites_before
-            );
-            let mut all: Vec<(i32, i32, i32)> = Vec::new();
-            for ((wx, wy), ch) in &map.chunks {
-                let mut bb = Vec::new();
-                ch.erosion.save(&mut bb);
+        let do_dump =
+            |sb: &mut String, em: &ErosionMain, map: &ServerMap, world: &IsoWorld, d: i32| {
                 let _ = writeln!(
                     sb,
-                    "C {wx} {wy} {} moisture={} minerals={}",
-                    hex(&bb),
-                    f(ch.erosion.moisture),
-                    f(ch.erosion.minerals)
+                    "DUMP {d} {} newSprites={}",
+                    describe(em),
+                    world.sprites.named_map.len() - sprites_before
                 );
-                for z in ch.get_min_level()..=ch.get_max_level() {
-                    for y in 0..8 {
-                        for x in 0..8 {
-                            if let Some(sq) = ch.get_grid_square(x, y, z) {
-                                if !sq.objects.is_empty() {
-                                    all.push((sq.x, sq.y, sq.z));
+                let mut all: Vec<(i32, i32, i32)> = Vec::new();
+                for ((wx, wy), ch) in &map.chunks {
+                    let mut bb = Vec::new();
+                    ch.erosion.save(&mut bb);
+                    let _ = writeln!(
+                        sb,
+                        "C {wx} {wy} {} moisture={} minerals={}",
+                        hex(&bb),
+                        f(ch.erosion.moisture),
+                        f(ch.erosion.minerals)
+                    );
+                    for z in ch.get_min_level()..=ch.get_max_level() {
+                        for y in 0..8 {
+                            for x in 0..8 {
+                                if let Some(sq) = ch.get_grid_square(x, y, z) {
+                                    if !sq.objects.is_empty() {
+                                        all.push((sq.x, sq.y, sq.z));
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            all.sort();
-            for (x, y, z) in all {
-                let Some(sq) = map.get_grid_square(x, y, z) else {
-                    continue;
-                };
-                let default_ed = Square::default();
-                let ed = sq.erosion.as_deref().unwrap_or(&default_ed);
-                let mut bb = Vec::new();
-                ed.save(&mut bb);
-                let flags: Vec<&str> = sq
-                    .properties
-                    .get_flags_list()
-                    .iter()
-                    .map(|fl| fl.name())
-                    .collect();
-                let _ = write!(
-                    sb,
-                    "S {x} {y} {z} {} kudzu={:x} {} {} {:x}",
-                    hex(&bb),
-                    ed.noise_kudzu.to_bits(),
-                    u8::from(sq.have_roof),
-                    flags.join(","),
-                    sq.has_types
-                );
-                for o in &sq.objects {
-                    let sprite_name = |r: zomboid_engine::zombie::iso::sprite::iso_sprite_manager::SpriteRef| {
-                        world
-                            .sprites
-                            .sprite(r)
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| "null".to_string())
+                all.sort();
+                for (x, y, z) in all {
+                    let Some(sq) = map.get_grid_square(x, y, z) else {
+                        continue;
                     };
+                    let default_ed = Square::default();
+                    let ed = sq.erosion.as_deref().unwrap_or(&default_ed);
+                    let mut bb = Vec::new();
+                    ed.save(&mut bb);
+                    let flags: Vec<&str> = sq
+                        .properties
+                        .get_flags_list()
+                        .iter()
+                        .map(|fl| fl.name())
+                        .collect();
                     let _ = write!(
                         sb,
-                        " {}:{}:{}",
-                        o.kind.class_name(),
-                        o.name.as_deref().unwrap_or("null"),
-                        o.sprite.map_or_else(|| "null".to_string(), sprite_name)
+                        "S {x} {y} {z} {} kudzu={:x} {} {} {:x}",
+                        hex(&bb),
+                        ed.noise_kudzu.to_bits(),
+                        u8::from(sq.have_roof),
+                        flags.join(","),
+                        sq.has_types
                     );
-                    if let Some(att) = &o.attached_anim_sprite {
-                        for a in att {
-                            let _ = write!(sb, "+{}", sprite_name(*a));
+                    for o in &sq.objects {
+                        let sprite_name =
+                        |r: zomboid_engine::zombie::iso::sprite::iso_sprite_manager::SpriteRef| {
+                            world
+                                .sprites
+                                .sprite(r)
+                                .name
+                                .clone()
+                                .unwrap_or_else(|| "null".to_string())
+                        };
+                        let _ = write!(
+                            sb,
+                            " {}:{}:{}",
+                            o.kind.class_name(),
+                            o.name.as_deref().unwrap_or("null"),
+                            o.sprite.map_or_else(|| "null".to_string(), sprite_name)
+                        );
+                        if let Some(att) = &o.attached_anim_sprite {
+                            for a in att {
+                                let _ = write!(sb, "+{}", sprite_name(*a));
+                            }
+                        }
+                        if let ObjectKind::IsoTree(t) = &o.kind {
+                            let _ = write!(sb, "{{s{}}}", t.size);
                         }
                     }
-                    if let ObjectKind::IsoTree(t) = &o.kind {
-                        let _ = write!(sb, "{{s{}}}", t.size);
-                    }
+                    sb.push('\n');
                 }
-                sb.push('\n');
-            }
-        };
+            };
         if dumps.contains(&0) {
             do_dump(&mut sb, &em, &map, &world, 0);
             dumped += 1;
@@ -6865,7 +6869,10 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
             }
         }
         let _ = writeln!(sb, "RAND end=0 dumps={dumped}");
-        let ini = em.ini_file.clone().or(if keep { saved_ini.clone() } else { None });
+        let ini = em
+            .ini_file
+            .clone()
+            .or(if keep { saved_ini.clone() } else { None });
         let _ = writeln!(sb, "INI exists={}", u8::from(ini.is_some()));
         if let Some(text) = &ini {
             for line in text.lines() {
@@ -6929,7 +6936,9 @@ fn apply_custom_tile_props(
             if r.trim_start().starts_with("{}") {
                 continue;
             }
-            return Err(format!("CustomTileProps.lua: unexpected statement after {kind}"));
+            return Err(format!(
+                "CustomTileProps.lua: unexpected statement after {kind}"
+            ));
         }
         let r = rest
             .strip_prefix("[\"")
@@ -6941,7 +6950,9 @@ fn apply_custom_tile_props(
             .strip_prefix('=')
             .ok_or("CustomTileProps.lua: missing =")?
             .trim_start();
-        let r = r.strip_prefix('{').ok_or("CustomTileProps.lua: missing {")?;
+        let r = r
+            .strip_prefix('{')
+            .ok_or("CustomTileProps.lua: missing {")?;
         let close = r.find('}').ok_or("CustomTileProps.lua: missing }")?;
         let body = &r[..close];
         rest = &r[close + 1..];
