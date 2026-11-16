@@ -6,9 +6,13 @@
 use super::iso_game_character::IsoGameCharacterBase;
 use super::survivor_factory::SurvivorFactory;
 use crate::java::Random;
+use crate::zombie::core::math::pz_math;
 use crate::zombie::core::random::rand_abstract::RandAbstract;
 use crate::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 use crate::zombie::iso::iso_directions::IsoDirections;
+use crate::zombie::iso::iso_grid_square::GetSquare;
+use crate::zombie::iso::sprite_details::iso_flag_type::IsoFlagType;
+use crate::zombie::pathfind::path_find_behavior2::PathFindBehavior2;
 use crate::zombie::sandbox_options::SandboxOptions;
 
 /// The `SandboxOptions.instance.lore` values the zombie code reads, as the integers `getValue()` returns.
@@ -57,6 +61,33 @@ pub struct ZombieWorld {
     pub lore: Lore,
     pub survivors: SurvivorFactory,
     pub survivor_id_count: i32,
+    /// `GameTime.instance.getMultiplier()` (0.8 on a dedicated server at the default frame multipliers)
+    pub multiplier: f32,
+    /// `RainManager.isRaining()`
+    pub raining: bool,
+}
+
+impl ZombieWorld {
+    /// zombie.GameTime.getThirtyFPSMultiplier: `getMultiplier() / 1.6F`
+    pub fn thirty_fps_multiplier(&self) -> f32 {
+        self.multiplier / 1.6
+    }
+}
+
+/// The AI states a zombie is in so far as this port goes (zombie.ai.states.*).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZombieState {
+    /// zombie.ai.states.ZombieIdleState
+    Idle,
+}
+
+impl ZombieState {
+    /// `getClass().getSimpleName()`
+    pub fn name(self) -> &'static str {
+        match self {
+            ZombieState::Idle => "ZombieIdleState",
+        }
+    }
 }
 
 /// zombie.characters.IsoZombie, the fields construction sets or reads.
@@ -85,6 +116,19 @@ pub struct IsoZombie {
     pub crawling: bool,
     pub inactive: bool,
     pub can_crawl_under_vehicle: bool,
+    /// `StateMachine.currentState` (`None` until the action system first enters a state)
+    pub current_state: Option<ZombieState>,
+    /// ZombieIdleState.TICK_COUNT
+    pub idle_tick_count: i64,
+    pub time_since_seen_flesh: f32,
+    pub time_since_respond_to_sound: f32,
+    pub check_for_corpse_timer: f32,
+    pub allow_repath_delay: f32,
+    pub bonus_spot_time: f32,
+    pub movex: f32,
+    pub movey: f32,
+    pub on_floor: bool,
+    pub path: PathFindBehavior2,
 }
 
 impl IsoZombie {
@@ -145,6 +189,17 @@ impl IsoZombie {
             crawling: false,
             inactive: false,
             can_crawl_under_vehicle: true,
+            current_state: None,
+            idle_tick_count: 0,
+            time_since_seen_flesh: 100000.0,
+            time_since_respond_to_sound: 1000000.0,
+            check_for_corpse_timer: 10000.0,
+            allow_repath_delay: 0.0,
+            bonus_spot_time: 0.0,
+            movex: 0.0,
+            movey: 0.0,
+            on_floor: false,
+            path: PathFindBehavior2::default(),
         };
         z.init_sprite_parts_zombie(world);
         for t in &mut z.tint {
@@ -348,6 +403,182 @@ impl IsoZombie {
         };
         self.can_crawl_under_vehicle = world.rand.next(100) < chance;
     }
+}
+
+impl IsoZombie {
+    /// zombie.iso.IsoMovingObject.setX/setY/setZ of a zombie put on a square (the square's own moving-object list and
+    /// the cell's object list are the caller's).
+    pub fn place(&mut self, x: f32, y: f32, z: f32) {
+        self.character.moving.x = x;
+        self.character.moving.y = y;
+        self.character.moving.z = z;
+    }
+
+    /// One `preupdate(); update(); postupdate();` of the zombie in the world's update loop, for a zombie with no
+    /// target standing on a loaded square, alone on it, in a dedicated server's world with no player, no sound and no
+    /// corpse. The order is the measured one: `update` first (the state machine has no state on the first tick), the
+    /// action system's first state entry in `postupdate`.
+    ///
+    /// `squares` answers `IsoCell.getGridSquare`.
+    pub fn tick(&mut self, world: &mut ZombieWorld, squares: &dyn GetSquare) -> Result<(), String> {
+        self.update(world, squares)?;
+        self.postupdate(world)
+    }
+
+    /// zombie.characters.IsoZombie.update -> updateInternal, the path of an idle zombie without a target. `Err` where
+    /// the original would take a path this port does not have (corpse search, sheet rope, inactivity phase).
+    ///
+    /// NOT PORTED here (UNKNOWN beyond what the oracle shows for one zombie in an empty world): `ensureOnTile`,
+    /// `tryThump(null)`, `separate` and `ZombieGroupManager.update` (a lone zombie), `RespondToSound` (a no-op under
+    /// `GameServer.server`), `OnZombieUpdate` Lua handlers, `checkZombieEntersPlayerBuilding`, the farming-plant and
+    /// campfire checks of the square, the emitter, `doDeferredMovement` and `updateMovementStatistics`.
+    pub fn update(
+        &mut self,
+        world: &mut ZombieWorld,
+        squares: &dyn GetSquare,
+    ) -> Result<(), String> {
+        let mult = world.multiplier;
+        let thirty = world.thirty_fps_multiplier();
+        // updateActiveState: makeInactive(isZombieInactivityPhase())
+        if zombie_inactivity_phase(&world.lore)? != self.inactive {
+            return Err(
+                "IsoZombie.makeInactive: the zombie's activity phase changed (not ported)".into(),
+            );
+        }
+        // `this.bonusSpotTime = PZMath.clamp(this.bonusSpotTime - GameTime.instance.getMultiplier(), 0.0F, Float.MAX_VALUE)`
+        self.bonus_spot_time = pz_math::clamp(self.bonus_spot_time - mult, 0.0, f32::MAX);
+        self.time_since_seen_flesh =
+            pz_math::clamp(self.time_since_seen_flesh + mult, 0.0, f32::MAX);
+        // super.update() = IsoGameCharacter.updateInternal: the state timer, then StateMachine.update
+        self.character.moving.state_event_delay_timer -= thirty;
+        if self.current_state == Some(ZombieState::Idle) {
+            self.idle_execute(world, squares);
+        }
+        // the zombie is in ZombieIdleState (or has none yet): not one of the states that skip the rest
+        if self.current_state.is_some() && self.current_state != Some(ZombieState::Idle) {
+            return Err("IsoZombie.update: a state other than idle is not ported".into());
+        }
+        self.damage_sheet_rope(world, squares)?;
+        self.allow_repath_delay = pz_math::clamp(self.allow_repath_delay - mult, 0.0, f32::MAX);
+        self.time_since_respond_to_sound += thirty;
+        self.update_search_for_corpse(thirty)
+    }
+
+    /// zombie.characters.IsoZombie.damageSheetRope: `Rand.Next(30) == 0` then the square's climb-sheet flags.
+    fn damage_sheet_rope(
+        &mut self,
+        world: &mut ZombieWorld,
+        squares: &dyn GetSquare,
+    ) -> Result<(), String> {
+        if world.rand.next(30) == 0 {
+            let m = &self.character.moving;
+            let sq = squares.get_grid_square(
+                pz_math::fastfloor(m.x),
+                pz_math::fastfloor(m.y),
+                pz_math::fastfloor(m.z),
+            );
+            if let Some(sq) = sq {
+                if [
+                    IsoFlagType::climbSheetN,
+                    IsoFlagType::climbSheetE,
+                    IsoFlagType::climbSheetS,
+                    IsoFlagType::climbSheetW,
+                ]
+                .iter()
+                .any(|f| sq.has(*f))
+                {
+                    return Err(
+                        "IsoZombie.damageSheetRope: a sheet rope on the square (not ported)".into(),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// zombie.characters.IsoZombie.updateSearchForCorpse for a zombie with no target, no body to eat and no dead body
+    /// anywhere (`!crawling && target == null && eatBodyTarget == null`, `bodyToEat == null`): the timer counts down by
+    /// `getThirtyFPSMultiplier()`; when it runs out the original scans 20 x 20 squares for a corpse, which is not ported.
+    fn update_search_for_corpse(&mut self, thirty: f32) -> Result<(), String> {
+        if self.crawling {
+            self.check_for_corpse_timer = 10000.0;
+            return Ok(());
+        }
+        self.check_for_corpse_timer -= thirty;
+        if self.check_for_corpse_timer <= 0.0 {
+            return Err("IsoZombie.updateSearchForCorpse: the corpse scan is not ported".into());
+        }
+        Ok(())
+    }
+
+    /// zombie.characters.IsoGameCharacter.postupdate -> the action system: the zombie's action group starts in "idle",
+    /// which `registerAIState` maps to ZombieIdleState, so the first postupdate enters it. Later postupdates changed
+    /// nothing the oracle prints (the state stays idle: AnimSets transitions out of "idle" are not ported, and the
+    /// original, run headless, never left it).
+    pub fn postupdate(&mut self, world: &mut ZombieWorld) -> Result<(), String> {
+        if self.current_state.is_none() {
+            self.current_state = Some(ZombieState::Idle);
+            self.idle_enter(world);
+            // The advanced animator creates the live node of the idle animation, and AnimLayer.startLiveNodeTracks draws
+            // `randomAlpha = Rand.Next(0.0F, 1.0F)`. MEASURED ONLY: which node an AnimSet picks (conditions on the
+            // zombie's animation variables) is not ported; for the zombie's idle state the node has no ragdoll start
+            // range (`Rand.Next(min, max)` with min == max draws nothing).
+            world.rand.next_float(0.0, 1.0);
+        }
+        Ok(())
+    }
+
+    /// zombie.ai.states.ZombieIdleState.enter
+    fn idle_enter(&mut self, world: &mut ZombieWorld) {
+        self.movex = 0.0;
+        self.movey = 0.0;
+        self.character.moving.state_event_delay_timer = pick_random_wander_interval(world);
+        self.idle_tick_count = 0;
+    }
+
+    /// zombie.ai.states.ZombieIdleState.execute, without `Core.lastStand`, a target, a useless or indoor zombie.
+    fn idle_execute(&mut self, world: &mut ZombieWorld, squares: &dyn GetSquare) {
+        self.movex = 0.0;
+        self.movey = 0.0;
+        // `if (!zombie.isReanimatedForGrappleOnly()) zombie.setOnFloor(zombie.crawling)`
+        self.on_floor = self.crawling;
+        // (tickCount == 2 sets the audio parameter ParameterZombieState.Idle: not modelled)
+        self.idle_tick_count += 1;
+        if self.character.moving.state_event_delay_timer <= 0.0 {
+            self.character.moving.state_event_delay_timer = pick_random_wander_interval(world);
+            let (px, py, pz) = (
+                self.character.moving.x,
+                self.character.moving.y,
+                self.character.moving.z,
+            );
+            let (sx, sy, sz) = (
+                pz_math::fastfloor(px),
+                pz_math::fastfloor(py),
+                pz_math::fastfloor(pz),
+            );
+            let x = sx + world.rand.next(8) - 4;
+            let y = sy + world.rand.next(8) - 4;
+            if let Some(sq) = squares.get_grid_square(x, y, sz) {
+                // the zombie stands in its own square's movingObjects, and nothing else does
+                let own = x == sx && y == sy;
+                if sq.is_free(true, own) {
+                    // IsoGameCharacter.pathToLocation: PathFindBehavior2.pathToLocation, then pathToAux (the polygonal
+                    // map's lineClearCollide, setMoving and the bPathfind variable: NOT PORTED, UNKNOWN)
+                    self.path.path_to_location((px, py, pz), x, y, sz);
+                    self.allow_repath_delay = 200.0;
+                }
+            }
+        }
+    }
+}
+
+/// zombie.ai.states.ZombieIdleState.pickRandomWanderInterval: `Rand.Next(400, 1000)`, times 1.5 unless it is raining.
+fn pick_random_wander_interval(world: &mut ZombieWorld) -> f32 {
+    let mut interval = world.rand.next_range(400, 1000) as f32;
+    if !world.raining {
+        interval *= 1.5;
+    }
+    interval
 }
 
 /// zombie.GameTime.isZombieInactivityPhase: `!isZombieActivityPhase()`. With `ActiveOnly` "both" (1) the zombies are

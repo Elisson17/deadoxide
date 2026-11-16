@@ -7147,9 +7147,9 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
             get("ActiveOnly"),
             get("DisableFakeDead")
         );
-        if ticks != 0 {
+        if ticks != 0 && count != 1 {
             return Err(format!(
-                "{spec}: updating a zombie is not ported yet (ticks must be 0)"
+                "{spec}: a scenario with ticks makes exactly one zombie"
             ));
         }
         let mut outfit_rng = OutfitRng::default();
@@ -7160,10 +7160,13 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
             lore,
             survivors: survivors.clone(),
             survivor_id_count: 0,
+            // ZombieProbe's ENV line: the booted server's GameTime multiplier and RainManager.isRaining()
+            multiplier: 0.8,
+            raining: false,
         };
         let b = |v: bool| u8::from(v);
         for i in 0..count {
-            let z = IsoZombie::new(&mut world)?;
+            let mut z = IsoZombie::new(&mut world)?;
             let d = z
                 .character
                 .descriptor
@@ -7245,9 +7248,144 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
                 let _ = write!(sb, " {}", *v as u8);
             }
             sb.push('\n');
+            if ticks > 0 {
+                let chunks = zombie_chunks(root)?;
+                let grid = ZombieGrid::new(&chunks);
+                zombie_ticks(&mut sb, &mut z, &mut world, &grid, ticks)?;
+            }
         }
     }
     Ok(sb)
+}
+
+/// The chunks 1034..=1035 x 1458..=1459 of the real map as ZombieProbe loads them, with their squares' properties.
+fn zombie_chunks(root: &Path) -> Result<Vec<IsoChunk>, String> {
+    let mut rand = RandAbstract::new(java::Random::new(12345));
+    let alarm = AlarmSettings {
+        last_stand: false,
+        power_grid_exists: true,
+        alarm: 1,
+        alarm_decay: 1,
+    };
+    let mut world = IsoWorld::init(root, "Muldraugh, KY", &|_| false, &alarm, None, &mut rand)?;
+    let mut chunks = Vec::new();
+    {
+        let IsoWorld {
+            sprites,
+            alias,
+            tile_definitions,
+            meta_grid,
+            ..
+        } = &mut world;
+        let mut ctx = LoadContext {
+            sprites,
+            alias,
+            glass_removed_window_sprite_map: &tile_definitions.glass_removed_window_sprite_map,
+            smashed_window_sprite_map: &tile_definitions.smashed_window_sprite_map,
+            meta_grid,
+            rand: &mut rand,
+            locked_houses: 6,
+            missing_tiles: Vec::new(),
+            lotpack_cache: None,
+        };
+        for wx in 1034..=1035 {
+            for wy in 1458..=1459 {
+                *ctx.rand = RandAbstract::new(java::Random::new(12345));
+                let mut ch = IsoChunk::new(wx, wy);
+                cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut Vec::new());
+                chunks.push(ch);
+            }
+        }
+    }
+    for ch in &mut chunks {
+        for z in ch.get_min_level()..=ch.get_max_level() {
+            for i in 0..64 {
+                if let Some(sq) = ch.get_grid_square_mut(i % 8, i / 8, z) {
+                    sq.recalc_properties(&world.sprites);
+                }
+            }
+        }
+    }
+    Ok(chunks)
+}
+
+struct ZombieGrid<'a>(std::collections::HashMap<(i32, i32, i32), &'a IsoGridSquare>);
+impl<'a> ZombieGrid<'a> {
+    fn new(chunks: &'a [IsoChunk]) -> Self {
+        let mut m = std::collections::HashMap::new();
+        for ch in chunks {
+            for z in ch.get_min_level()..=ch.get_max_level() {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        if let Some(sq) = ch.get_grid_square(x, y, z) {
+                            m.insert((sq.x, sq.y, sq.z), sq);
+                        }
+                    }
+                }
+            }
+        }
+        ZombieGrid(m)
+    }
+}
+impl GetSquare for ZombieGrid<'_> {
+    fn get_grid_square(&self, x: i32, y: i32, z: i32) -> Option<&IsoGridSquare> {
+        self.0.get(&(x, y, z)).copied()
+    }
+}
+
+/// ZombieProbe.tickPhase for the port: the zombie stands at (8280.5, 11670.5, 0), alone, and is updated `ticks` times.
+fn zombie_ticks(
+    sb: &mut String,
+    z: &mut zomboid_engine::zombie::characters::iso_zombie::IsoZombie,
+    world: &mut zomboid_engine::zombie::characters::iso_zombie::ZombieWorld,
+    squares: &ZombieGrid,
+    ticks: i32,
+) -> Result<(), String> {
+    use zomboid_engine::java::float_to_string as fl;
+    z.place(8280.5, 11670.5, 0.0);
+    let _ = writeln!(
+        sb,
+        "ENV raining={} multiplier={} thirty={}",
+        world.raining,
+        fl(world.multiplier),
+        fl(world.thirty_fps_multiplier())
+    );
+    let _ = writeln!(
+        sb,
+        "PLACED x={} y={} z={} sqMoving=1",
+        fl(z.character.moving.x),
+        fl(z.character.moving.y),
+        fl(z.character.moving.z)
+    );
+    let mut prev = world.rand.id();
+    for n in 1..=ticks {
+        z.tick(world, squares)?;
+        let draws = world.rand.id();
+        if draws - prev != 1 || n < 4 || n % 250 == 0 {
+            let m = &z.character.moving;
+            let _ = writeln!(
+                sb,
+                "TICK {n} x={} y={} z={} state={} timer={} repath={} tsf={} tsrts={} corpse={} idleTicks={} goal={} tgt={},{},{} draws={draws}",
+                fl(m.x),
+                fl(m.y),
+                fl(m.z),
+                z.current_state.map_or("null", |s| s.name()),
+                fl(m.state_event_delay_timer),
+                fl(z.allow_repath_delay),
+                fl(z.time_since_seen_flesh),
+                fl(z.time_since_respond_to_sound),
+                fl(z.check_for_corpse_timer),
+                z.idle_tick_count,
+                z.path.goal.name(),
+                fl(z.path.target_x),
+                fl(z.path.target_y),
+                fl(z.path.target_z)
+            );
+        }
+        prev = draws;
+    }
+    let _ = writeln!(sb, "END ticks={ticks} draws={}", world.rand.id());
+    Ok(())
 }
 
 fn hex(b: &[u8]) -> String {

@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.TimeZone;
 import zombie.GameTime;
+import zombie.ai.states.ZombieIdleState;
+import zombie.iso.objects.RainManager;
 import zombie.SandboxOptions;
 import zombie.characters.IsoZombie;
 import zombie.characters.SurvivorDesc;
@@ -160,16 +162,59 @@ public class ZombieProbe {
         set(RandStandard.INSTANCE, RandAbstract.class, "id", 0);
         OutfitRNG.setSeed(seed);
         int firstId = -1;
+        if (ticks > 0 && count != 1) throw new IllegalArgumentException("a scenario with ticks makes exactly one zombie");
         for (int i = 0; i < count; i++) {
             IsoZombie z = new IsoZombie(cell);
             SurvivorDesc d = z.getDescriptor();
             if (firstId < 0) firstId = d.getID();
             out.println("ZOMBIE " + i + " draws=" + g(RandStandard.INSTANCE, "id") + " outfitSeed=" + OutfitRNG.getSeed());
             dump(out, z, d, firstId);
+            if (ticks > 0) tickPhase(out, z, cell, ticks);
         }
         for (Map.Entry<String, Integer> e : saved.entrySet()) {
             setOption(g(SandboxOptions.instance.lore, Character.toLowerCase(e.getKey().charAt(0)) + e.getKey().substring(1)), e.getValue());
         }
+    }
+
+    // The zombie is put on the square (8280, 11670, 0) at (8280.5, 11670.5), alone, and the world's update loop is run for
+    // it: preupdate(), update(), postupdate() per tick, no player, no sounds, no other zombie. Printed: the environment the
+    // update reads (the server's GameTime multiplier, RainManager.isRaining()), then per tick - on the first three, every
+    // 250th, and every tick that did not draw exactly once from the global Rand (the per-tick draw is
+    // IsoZombie.damageSheetRope) - the position, the AI state, the state timer, allowRepathDelay, timeSinceSeenFlesh,
+    // timeSinceRespondToSound, checkForCorpseTimer, ZombieIdleState.TICK_COUNT, the PathFindBehavior2 goal and target, and
+    // the draw counter. The zombie is taken out of the world after.
+    static void tickPhase(PrintStream out, IsoZombie z, IsoCell cell, int ticks) throws Exception {
+        IsoGridSquare sq = cell.getGridSquare(8280, 11670, 0);
+        z.setCurrent(sq);
+        z.setMovingSquareNow();
+        z.setX(8280.5f);
+        z.setY(11670.5f);
+        z.setZ(0);
+        cell.getObjectList().add(z);
+        out.println("ENV raining=" + RainManager.isRaining() + " multiplier=" + f(GameTime.instance.getMultiplier())
+            + " thirty=" + f(GameTime.instance.getThirtyFPSMultiplier()));
+        out.println("PLACED x=" + f(z.getX()) + " y=" + f(z.getY()) + " z=" + f(z.getZ()) + " sqMoving=" + sq.getMovingObjects().size());
+        Object pfb = z.getPathFindBehavior2();
+        int prev = (Integer) g(RandStandard.INSTANCE, "id");
+        for (int n = 1; n <= ticks; n++) {
+            z.preupdate();
+            z.update();
+            z.postupdate();
+            int draws = (Integer) g(RandStandard.INSTANCE, "id");
+            if (draws - prev != 1 || n < 4 || n % 250 == 0) {
+                out.println("TICK " + n + " x=" + f(z.getX()) + " y=" + f(z.getY()) + " z=" + f(z.getZ())
+                    + " state=" + (z.getCurrentState() == null ? "null" : z.getCurrentState().getClass().getSimpleName())
+                    + " timer=" + f(z.getStateEventDelayTimer()) + " repath=" + f(g(z, "allowRepathDelay"))
+                    + " tsf=" + f(g(z, "timeSinceSeenFlesh")) + " tsrts=" + f(g(z, "timeSinceRespondToSound"))
+                    + " corpse=" + f(g(z, "checkForCorpseTimer")) + " idleTicks=" + z.get(ZombieIdleState.TICK_COUNT)
+                    + " goal=" + g(pfb, "goal") + " tgt=" + f(g(pfb, "targetX")) + "," + f(g(pfb, "targetY")) + "," + f(g(pfb, "targetZ"))
+                    + " draws=" + draws);
+            }
+            prev = draws;
+        }
+        out.println("END ticks=" + ticks + " draws=" + g(RandStandard.INSTANCE, "id"));
+        cell.getObjectList().remove(z);
+        sq.getMovingObjects().remove(z);
     }
 
     static void dump(PrintStream out, IsoZombie z, SurvivorDesc d, int firstId) throws Exception {

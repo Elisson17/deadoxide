@@ -283,6 +283,15 @@ fn zombie_matches_original() {
             "8:30:0:Memory=3,CrawlUnderVehicle=3,Sight=1,Hearing=3",
             "9:30:0:Memory=4,CrawlUnderVehicle=4,Sight=3,Hearing=1",
             "10:30:0:CrawlUnderVehicle=6,Speed=2,Cognition=2",
+            "12345:1:9000",
+            "1:1:12000",
+            "2:1:9000:Speed=1",
+            "3:1:9000:Speed=3",
+            "4:1:6000:Speed=4",
+            "5:1:15000",
+            "6:1:9000",
+            "7:1:9000",
+            "8:1:9000",
         ],
     );
 }
