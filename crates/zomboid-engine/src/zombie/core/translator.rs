@@ -1,11 +1,13 @@
-//! zombie.core.Translator: so far the `ItemName` table, for the default language (EN) only.
+//! zombie.core.Translator: so far the `ItemName` and `Recipes` tables, for the default language (EN) only.
 use std::collections::HashMap;
 use std::path::Path;
 
-/// zombie.core.Translator, the ported part: `itemName` (full type -> display name).
+/// zombie.core.Translator, the ported part: `itemName` (full type -> display name) and `recipe` (recipe name ->
+/// display name).
 #[derive(Clone, Debug, Default)]
 pub struct Translator {
     pub item_name: HashMap<String, String>,
+    pub recipe: HashMap<String, String>,
 }
 
 /// zombie.core.Translator.formatFixer: `%%` stays, `%N` (N in 1..9) becomes `%N$s`.
@@ -164,24 +166,21 @@ impl JsonReader<'_> {
 }
 
 impl Translator {
-    /// zombie.core.Translator.loadFiles for the `ItemName` table and the language stack of EN (the server's default):
-    /// zombie.core.Translator.tryFillMapFromFile reads `media/lua/shared/Translate/EN/ItemName.json`; a missing file
-    /// is skipped, a malformed one is the original's RuntimeException. Mods are not loaded.
+    /// zombie.core.Translator.loadFiles for the `ItemName` and `Recipes` tables and the language stack of EN (the
+    /// server's default). Mods are not loaded.
     pub fn load_files(root: &Path) -> Result<Self, String> {
         let mut t = Translator::default();
-        let file = root.join("media/lua/shared/Translate/EN/ItemName.json");
-        if crate::vfs::exists(&file) {
-            let bytes = crate::vfs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
-            let text = String::from_utf8_lossy(&bytes);
-            let entries = parse_string_object(&text)
-                .map_err(|e| format!("JSON Error in: {}: {e}", file.display()))?;
-            for (k, v) in entries {
-                if !t.item_name.contains_key(&k) || !v.is_empty() {
-                    t.item_name.insert(k, format_fixer(&v));
-                }
-            }
-        }
+        try_fill_map_from_file(root, "ItemName", &mut t.item_name)?;
+        try_fill_map_from_file(root, "Recipes", &mut t.recipe)?;
         Ok(t)
+    }
+
+    /// zombie.core.Translator.getRecipeName: the table entry when it is not empty, else the name.
+    pub fn get_recipe_name(&self, name: &str) -> String {
+        match self.recipe.get(name) {
+            Some(r) if !r.is_empty() => r.clone(),
+            _ => name.to_string(),
+        }
     }
 
     /// zombie.core.Translator.getItemNameFromFullType: the table entry, else the script's display name (its full name
@@ -205,6 +204,28 @@ impl Translator {
         self.item_name.insert(full_type.to_string(), name.clone());
         Ok(name)
     }
+}
+
+/// zombie.core.Translator.tryFillMapFromFile for EN: reads `media/lua/shared/Translate/EN/<file>.json`; a missing file
+/// is skipped, a malformed one is the original's RuntimeException; an entry replaces an earlier one unless it is empty.
+fn try_fill_map_from_file(
+    root: &Path,
+    file_name: &str,
+    map: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    let file = root.join(format!("media/lua/shared/Translate/EN/{file_name}.json"));
+    if crate::vfs::exists(&file) {
+        let bytes = crate::vfs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+        let text = String::from_utf8_lossy(&bytes);
+        let entries = parse_string_object(&text)
+            .map_err(|e| format!("JSON Error in: {}: {e}", file.display()))?;
+        for (k, v) in entries {
+            if !map.contains_key(&k) || !v.is_empty() {
+                map.insert(k, format_fixer(&v));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

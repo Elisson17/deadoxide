@@ -7,6 +7,7 @@
 //!   pz-dump animalzones <game root> <save dir>   (pairs with AnimalZonesProbe.java)
 //!   pz-dump zoneoutlines <game root> <save dir> outlines   (MapZoneProbe.java ... outlines)
 //!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
+//!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -37,6 +38,7 @@ fn main() {
         Some("collide") if a.len() == 7 => collide(Path::new(&a[2]), &a[3..7]),
         Some("entitysprites") if a.len() == 3 => entitysprites(Path::new(&a[2])),
         Some("items") if a.len() == 4 => items(Path::new(&a[2]), Path::new(&a[3])),
+        Some("recipes") if a.len() == 3 => recipes(Path::new(&a[2])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
             specialcollide(Path::new(&a[2]), &a[3..], false)
@@ -1428,6 +1430,278 @@ pub fn items(root: &Path, fields: &Path) -> Result<String, String> {
             }
         }
         sb.push('\n');
+    }
+    Ok(sb)
+}
+
+/// Craft recipes (`craftRecipe` scripts), pairs with RecipesProbe.java: every loaded recipe sorted by full type, with
+/// the fields Load, InitLoadPP, OnScriptsLoaded and OnPostWorldDictionaryInit set; io lines by their index in
+/// `ioLines`.
+pub fn recipes(root: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::scripting::entity::components::crafting::craft_recipe::{
+        IoScript, RequiredSkill, LUA_CALLS,
+    };
+    use zomboid_engine::zombie::scripting::entity::components::crafting::output_script::MapperRef;
+    use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
+    /// RecipesProbe.esc: '\\', tab, LF, CR and every UTF-16 unit outside 0x20..0x7e escaped.
+    fn esc(s: Option<&str>) -> String {
+        let Some(s) = s else {
+            return "null".into();
+        };
+        let mut sb = String::new();
+        for u in s.encode_utf16() {
+            match u {
+                0x5c => sb.push_str("\\\\"),
+                0x09 => sb.push_str("\\t"),
+                0x0a => sb.push_str("\\n"),
+                0x0d => sb.push_str("\\r"),
+                0x20..=0x7e => sb.push(char::from(u as u8)),
+                _ => {
+                    let _ = write!(sb, "\\u{u:04x}");
+                }
+            }
+        }
+        sb
+    }
+    /// RecipesProbe.val of a Collection: `[a, b]`.
+    fn list<T>(v: &[T], f: impl Fn(&T) -> String) -> String {
+        let items: Vec<String> = v.iter().map(f).collect();
+        format!("[{}]", items.join(", "))
+    }
+    let strs = |v: &[String]| list(v, |s| esc(Some(s)));
+    let floats = |v: &[f32]| list(v, |f| java::float_to_string(*f));
+    let skills = |v: &Option<Vec<RequiredSkill>>| match v {
+        None => "null".to_string(),
+        Some(v) => list(v, |s| format!("{}:{}", esc(Some(s.perk)), s.level)),
+    };
+    let opt = |v: &Option<usize>| v.map_or("null".to_string(), |i| i.to_string());
+    let idx = |v: &[usize]| list(v, |i| i.to_string());
+
+    let m = ScriptManager::load(root)?;
+    for (n, e) in &m.craft_recipe_errors {
+        eprintln!("dropped {n}: {e}");
+    }
+    for e in [
+        &m.craft_recipe_scripts_loaded_error,
+        &m.craft_recipe_post_init_error,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        eprintln!("aborted: {e}");
+    }
+    let mut recipes: Vec<_> = m.craft_recipes.iter().collect();
+    recipes.sort_by(|a, b| {
+        java::string_compare_to(
+            &a.get_script_object_full_type(),
+            &b.get_script_object_full_type(),
+        )
+    });
+    let mut sb = String::new();
+    for r in recipes {
+        let ft = esc(Some(&r.get_script_object_full_type()));
+        let mut lines: Vec<String> = Vec::new();
+        lines.push(format!("name\t{}", esc(r.name.as_deref())));
+        lines.push(format!(
+            "translationName\t{}",
+            esc(r.translation_name.as_deref())
+        ));
+        lines.push(format!(
+            "enabled\t{}\tdebugOnly\t{}",
+            r.enabled, r.debug_only
+        ));
+        lines.push(format!(
+            "modId\t{}\texistsAsVanilla\t{}",
+            esc(r.mod_id.as_deref()),
+            r.exists_as_vanilla
+        ));
+        lines.push(format!("scriptVersion\t{:x}", r.script_version as u64));
+        lines.push(format!("iconName\t{}", esc(r.icon_name.as_deref())));
+        lines.push(format!("recipeGroup\t{}", esc(r.recipe_group)));
+        lines.push(format!("needToBeLearn\t{}", r.need_to_be_learn));
+        lines.push(format!("skillRequired\t{}", skills(&r.skill_required)));
+        lines.push(format!("autoLearnAny\t{}", skills(&r.auto_learn_any)));
+        lines.push(format!("autoLearnAll\t{}", skills(&r.auto_learn_all)));
+        lines.push(format!(
+            "xpAward\t{}",
+            match &r.xp_award {
+                None => "null".to_string(),
+                Some(v) => list(v, |x| format!("{}:{}", esc(Some(x.perk)), x.amount)),
+            }
+        ));
+        lines.push(format!("metaRecipe\t{}", esc(r.meta_recipe.as_deref())));
+        lines.push(format!("time\t{}", r.time));
+        lines.push(format!(
+            "loadedTimedActionScript\t{}",
+            esc(r.loaded_timed_action_script.as_deref())
+        ));
+        lines.push(format!(
+            "timedActionScript\t{}",
+            esc(r.timed_action_script.as_deref())
+        ));
+        let mut lc = String::from("luaCalls");
+        for (i, c) in LUA_CALLS.iter().enumerate() {
+            if let Some(v) = &r.lua_calls[i] {
+                let _ = write!(lc, "\t{c}={}", esc(Some(v)));
+            }
+        }
+        lines.push(lc);
+        lines.push(format!("onAddToMenu\t{}", esc(r.on_add_to_menu.as_deref())));
+        lines.push(format!("category\t{}", esc(r.category.as_deref())));
+        lines.push(format!("categoryTags\t{}", strs(&r.category_tags)));
+        lines.push(format!("animation\t{}", esc(r.animation.as_deref())));
+        lines.push(format!("tooltip\t{}", esc(r.tooltip.as_deref())));
+        lines.push(format!(
+            "allowBatchCraft\t{}\tcanWalk\t{}",
+            r.allow_batch_craft, r.can_walk
+        ));
+        lines.push(format!("researchSkillLevel\t{}", r.research_skill_level));
+        lines.push(format!(
+            "researchAll\t{}\tresearchAny\t{}",
+            list(&r.research_all, |p| esc(Some(p))),
+            list(&r.research_any, |p| esc(Some(p)))
+        ));
+        lines.push(format!(
+            "inputs\t{}\toutputs\t{}",
+            idx(&r.inputs),
+            idx(&r.outputs)
+        ));
+        for (i, s) in r.io_lines.iter().enumerate() {
+            let mut l = format!("io\t{i}");
+            match s {
+                IoScript::Input(s) => {
+                    let mut tags: Vec<String> = s
+                        .item_tags
+                        .iter()
+                        .map(|t| t.as_ref().map_or("null".to_string(), |t| t.to_string()))
+                        .collect();
+                    tags.sort_by(|a, b| java::string_compare_to(a, b));
+                    let _ = write!(
+                        l,
+                        "\tin\t{}\tline\t{}\tamount\t{}\t{}\tamounts\t{}\t{}\tloadedItems\t{}\tloadedFluids\t{}\tloadedEnergies\t{}\titemTags\t{}\tcategories\t{}\tany\t{}\t{}\t{}\tapplyMode\t{}\tfluidMode\t{}\tapplyOnTick\t{}\tshapedIndex\t{}\tflags\t{}\tcreateTo\t{}\tconsumeFrom\t{}\tparent\t{}",
+                        s.r#type.name(),
+                        esc(Some(&s.original_line)),
+                        java::float_to_string(s.amount),
+                        java::float_to_string(s.maxamount),
+                        floats(&s.amounts),
+                        floats(&s.maxamounts),
+                        strs(&s.loaded_items),
+                        strs(&s.loaded_fluids),
+                        strs(&s.loaded_energies),
+                        strs(&tags),
+                        strs(&s.categories),
+                        s.accepts_any_item,
+                        s.accepts_any_fluid,
+                        s.accepts_any_energy,
+                        s.item_apply_mode.name(),
+                        s.fluid_match_mode.name(),
+                        s.apply_on_tick,
+                        s.shaped_index,
+                        list(&s.flags.iter().collect::<Vec<_>>(), |f| f.name().to_string()),
+                        opt(&s.create_to_item_script),
+                        opt(&s.consume_from_item_script),
+                        opt(&s.parent_script),
+                    );
+                }
+                IoScript::Output(o) => {
+                    let mapper = match &o.output_mapper {
+                        Some(MapperRef::Recipe(n)) => r.get_output_mapper(n),
+                        Some(MapperRef::Own(m)) => Some(m),
+                        None => None,
+                    };
+                    let _ = write!(
+                        l,
+                        "\tout\t{}\tline\t{}\tamount\t{}\t{}\tchance\t{}\tloadedFluid\t{}\tloadedEnergy\t{}\tapplyMode\t{}\tfluidMode\t{}\tapplyOnTick\t{}\tshapedIndex\t{}\tflags\t{}\tcreateTo\t{}\tmapper\t{}\tresults\t{}",
+                        o.r#type.name(),
+                        esc(Some(&o.original_line)),
+                        java::float_to_string(o.amount),
+                        java::float_to_string(o.maxamount),
+                        java::float_to_string(o.chance),
+                        esc(o.loaded_fluid.as_deref()),
+                        esc(o.loaded_energy.as_deref()),
+                        o.item_apply_mode.name(),
+                        o.fluid_match_mode.name(),
+                        o.apply_on_tick,
+                        o.shaped_index,
+                        list(&o.flags.iter().collect::<Vec<_>>(), |f| f.name().to_string()),
+                        opt(&o.create_to_item_script),
+                        esc(o.mapper_name()),
+                        mapper.map_or("null".to_string(), |m| strs(&m.result_items)),
+                    );
+                }
+            }
+            lines.push(l);
+        }
+        lines.push(format!(
+            "prop1\t{}\tprop2\t{}",
+            opt(&r.prop1),
+            opt(&r.prop2)
+        ));
+        lines.push(format!(
+            "toolLeft\t{}\ttoolRight\t{}\tusesTools\t{}",
+            opt(&r.tool_left),
+            opt(&r.tool_right),
+            r.uses_tools
+        ));
+        lines.push(format!(
+            "hasOnTick\t{}\t{}",
+            r.has_on_tick_inputs, r.has_on_tick_outputs
+        ));
+        let mut mappers: Vec<_> = r.output_mappers.iter().collect();
+        mappers.sort_by(|a, b| java::string_compare_to(&a.0, &b.0));
+        for (n, m) in mappers {
+            let mut l = format!("outputMapper\t{}\tdefault\t", esc(Some(n)));
+            match &m.default_output_entree {
+                None => l.push_str("null"),
+                Some(d) => {
+                    let _ = write!(
+                        l,
+                        "{}={}",
+                        esc(Some(&d.full_type)),
+                        esc(d.result.as_deref())
+                    );
+                }
+            }
+            let entrees = list(&m.entrees, |e| {
+                format!(
+                    "{}={} <- {}={}",
+                    esc(Some(&e.full_type)),
+                    esc(e.result.as_deref()),
+                    strs(&e.pattern_full_types),
+                    strs(&e.pattern)
+                )
+            });
+            let mut map: Vec<String> = m
+                .entree_map
+                .iter()
+                .map(|(k, i)| format!("{}={i}", esc(Some(k))))
+                .collect();
+            map.sort_by(|a, b| java::string_compare_to(a, b));
+            let _ = write!(
+                l,
+                "\tentrees\t{entrees}\tentreeMap\t{}\tresults\t{}\tinputs\t{}",
+                strs(&map),
+                strs(&m.result_items),
+                idx(&m.input_scripts)
+            );
+            lines.push(l);
+        }
+        let om = &r.overlay_mapper;
+        let mut styles: Vec<String> = om
+            .style_map
+            .iter()
+            .map(|(item, style)| format!("{item}={style}"))
+            .collect();
+        styles.sort_by(|a, b| java::string_compare_to(a, b));
+        lines.push(format!(
+            "overlayMapper\tdefault\t{}\tstyles\t{}\tinput\t{}",
+            strs(&om.default_styles),
+            strs(&styles),
+            opt(&om.input_script)
+        ));
+        for line in lines {
+            let _ = writeln!(sb, "{ft}\t{line}");
+        }
     }
     Ok(sb)
 }

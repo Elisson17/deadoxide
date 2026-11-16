@@ -1,14 +1,18 @@
 //! zombie.scripting.ScriptManager: so far reading the script files into modules and loading `entity` scripts'
-//! SpriteConfig components. Items, recipes, vehicles and the other script types are collected as raw text only.
-use std::collections::HashMap;
+//! SpriteConfig components, items, models, timed actions and craft recipes. Old-style recipes, vehicles and the other
+//! script types are collected as raw text only.
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use super::entity::components::crafting::craft_recipe::{CraftRecipe, LoadContext};
 use super::item::{Item, Value};
 use super::model_script::ModelScript;
+use super::objects::timed_action_script::TimedActionScript;
 use super::script_parser::{self, Block};
 use super::sprite_config::SpriteConfigScript;
 use crate::java;
 use crate::zombie::core::translator::Translator;
+use crate::zombie::entity::components::crafting::recipe::output_mapper::Lookups;
 use crate::zombie::util::string_utils;
 
 /// zombie.scripting.entity.GameEntityScript, the ported part.
@@ -47,7 +51,58 @@ pub struct ScriptManager {
     pub translator: Translator,
     /// Items the original drops because their script failed to load: (full name, error).
     pub item_errors: Vec<(String, String)>,
+    /// Timed action scripts that loaded, per module (same order as `module_list`).
+    pub timed_actions: Vec<Vec<TimedActionScript>>,
+    /// zombie.scripting.ScriptManager.getAllCraftRecipes: the craftRecipe scripts that loaded, in the original's list
+    /// order (per module, the HashMap order of their names).
+    pub craft_recipes: Vec<CraftRecipe>,
+    /// craftRecipe scripts the original drops because a body failed to load (`RemoveLoadError`): (full type, error).
+    pub craft_recipe_errors: Vec<(String, String)>,
+    /// The exception that ended the craft recipes' OnScriptsLoaded loop (the later recipes are not processed).
+    pub craft_recipe_scripts_loaded_error: Option<String>,
+    /// The exception that ended the craft recipes' OnPostWorldDictionaryInit loop (the later recipes are not
+    /// processed).
+    pub craft_recipe_post_init_error: Option<String>,
 }
+
+/// What ScriptBucketCollection.getScript reads for one script type: `fullTypeToScriptMap` and, per module (same order
+/// as `module_list`), the names in its bucket's `scriptMap`.
+pub struct BucketIndex {
+    full_types: HashSet<String>,
+    maps: Vec<HashSet<String>>,
+}
+
+impl BucketIndex {
+    /// The index of `scripts`: (module index, script name) of every script that loaded.
+    pub fn new<'a>(
+        module_list: &[ScriptModule],
+        scripts: impl Iterator<Item = (usize, &'a str)>,
+    ) -> Self {
+        let mut index = BucketIndex {
+            full_types: HashSet::new(),
+            maps: vec![HashSet::new(); module_list.len()],
+        };
+        for (m, name) in scripts {
+            index
+                .full_types
+                .insert(format!("{}.{name}", module_list[m].name));
+            index.maps[m].insert(name.to_string());
+        }
+        index
+    }
+}
+
+/// zombie.scripting.ScriptManager.getItemName: the part after the first '.'.
+pub fn get_item_name(name: &str) -> &str {
+    match name.find('.') {
+        Some(p) => &name[p + 1..],
+        None => name,
+    }
+}
+
+/// The depth at which a lookup stops: the original recurses through module imports without a guard and would end in
+/// a StackOverflowError on an import cycle.
+const MAX_LOOKUP_DEPTH: u32 = 64;
 
 /// zombie.scripting.ScriptManager.searchFolders: every `.txt` below `fo`, as lower-case paths relative to the game
 /// root, skipping folders whose path contains "tempNotWorking".
@@ -127,11 +182,18 @@ impl ScriptManager {
         m.load_entities();
         m.load_models();
         m.load_items();
+        // ScriptManager.bucketCollectionList order: Item before CraftRecipe before TimedAction. CraftRecipe.Load only
+        // looks items up, and the timed actions are looked up after every collection loaded.
+        m.load_craft_recipes();
+        m.load_timed_actions();
         m.on_items_loaded()?;
+        m.craft_recipes_on_scripts_loaded();
         // ScriptManager.Load after loadScripts: ... ModelScript.ScriptsLoaded -> Item.resolveModelScripts.
         for i in 0..m.items.len() {
             m.resolve_model_scripts(i);
         }
+        // ScriptManager.PostWorldDictionaryInit, which the server runs once the world dictionary is set up.
+        m.craft_recipes_on_post_world_dictionary_init();
         Ok(m)
     }
 
@@ -394,6 +456,257 @@ impl ScriptManager {
             item.set("displayName", Value::Str(Some(name)));
         }
         Ok(())
+    }
+}
+
+impl ScriptManager {
+    /// zombie.scripting.ScriptManager.getModule(name, true): "Base" (and any `Base.` name) is the Base module, a module
+    /// name is that module (modules are never disabled and have no aliases here), a dotted name the module of its
+    /// prefix; anything else falls back to Base.
+    pub fn get_module(&self, name: &str) -> Option<usize> {
+        let base = || self.module_list.iter().position(|m| m.name == "Base");
+        if java::trim(name) == "Base" || name.starts_with("Base.") {
+            return base();
+        }
+        if let Some(i) = self.module_list.iter().position(|m| m.name == name) {
+            return Some(i);
+        }
+        if let Some(idx) = name.find('.') {
+            if let Some(m) = self.get_module(&name[..idx]) {
+                return Some(m);
+            }
+        }
+        base()
+    }
+
+    /// zombie.scripting.ScriptBucketCollection.getScript for a type with the CacheFullType and SeekImports flags (item,
+    /// craftRecipe, timedAction): the full type of the script found, `None` for the original's null.
+    pub fn get_script(&self, index: &BucketIndex, name: &str) -> Option<String> {
+        self.get_script_depth(index, name, 0)
+    }
+
+    fn get_script_depth(&self, index: &BucketIndex, name: &str, depth: u32) -> Option<String> {
+        if depth > MAX_LOOKUP_DEPTH {
+            return None;
+        }
+        if name.contains('.') && index.full_types.contains(name) {
+            return Some(name.to_string());
+        }
+        let module = if !name.contains('.') {
+            self.get_module("Base")
+        } else {
+            self.get_module(name)
+        }?;
+        self.bucket_get(index, module, get_item_name(name), depth + 1)
+    }
+
+    /// zombie.scripting.ScriptBucket.get: a dotted name that is not a script name of the module (`dotInName`) goes
+    /// back to the manager (`getFromManager`); else the module's own script, else the first found in an import
+    /// (`getFromModule`, which is the import's own `ScriptBucket.get`).
+    fn bucket_get(
+        &self,
+        index: &BucketIndex,
+        module: usize,
+        name: &str,
+        depth: u32,
+    ) -> Option<String> {
+        if depth > MAX_LOOKUP_DEPTH {
+            return None;
+        }
+        let map = index.maps.get(module)?;
+        if name.contains('.') && !map.contains(name) {
+            return self.get_script_depth(index, name, depth + 1);
+        }
+        if map.contains(name) {
+            return Some(format!("{}.{name}", self.module_list[module].name));
+        }
+        for import in &self.module_list[module].imports {
+            let m = self.get_module(import)?;
+            if let Some(s) = self.bucket_get(index, m, name, depth + 1) {
+                return Some(s);
+            }
+        }
+        None
+    }
+
+    /// The lookup data of the item collection (ScriptManager.getItem).
+    pub fn item_index(&self) -> BucketIndex {
+        let module_of = |name: &str| self.module_list.iter().position(|m| m.name == name);
+        BucketIndex::new(
+            &self.module_list,
+            self.items
+                .iter()
+                .filter_map(|i| Some((module_of(&i.module)?, i.name.as_str()))),
+        )
+    }
+
+    /// The lookup data of the craftRecipe collection (ScriptManager.getCraftRecipe without its fallback to the
+    /// CraftRecipe components of entities, which are not ported).
+    pub fn craft_recipe_index(&self) -> BucketIndex {
+        let module_of = |name: &str| self.module_list.iter().position(|m| m.name == name);
+        BucketIndex::new(
+            &self.module_list,
+            self.craft_recipes
+                .iter()
+                .filter_map(|r| Some((module_of(&r.module)?, r.script_object_name.as_str()))),
+        )
+    }
+
+    /// The lookup data of the timedAction collection (ScriptManager.getTimedActionScript).
+    pub fn timed_action_index(&self) -> BucketIndex {
+        BucketIndex::new(
+            &self.module_list,
+            self.timed_actions
+                .iter()
+                .enumerate()
+                .flat_map(|(m, list)| list.iter().map(move |s| (m, s.name.as_str()))),
+        )
+    }
+
+    /// ScriptBucket.LoadScripts for the timedAction buckets: every body in file order (TimedActionScript keeps
+    /// BaseScriptObject's empty `reset`, so later bodies amend); a body that throws removes the script; disabled and
+    /// debug-only scripts are left out.
+    fn load_timed_actions(&mut self) {
+        let tag = "timedAction".to_string();
+        let mut all = Vec::with_capacity(self.module_list.len());
+        for module in &self.module_list {
+            let mut loaded = Vec::new();
+            for name in module.names.get(&tag).into_iter().flatten() {
+                let mut script = TimedActionScript::new(&module.name, name);
+                let mut ok = true;
+                for body in module
+                    .bodies
+                    .get(&(tag.clone(), name.clone()))
+                    .into_iter()
+                    .flatten()
+                {
+                    if script.load(body).is_err() {
+                        ok = false;
+                        break;
+                    }
+                }
+                if ok && script.enabled && !script.debug_only {
+                    loaded.push(script);
+                }
+            }
+            all.push(loaded);
+        }
+        self.timed_actions = all;
+    }
+
+    /// ScriptBucket.CreateFromTokenPP and ScriptBucket.LoadScripts for the craftRecipe buckets, then
+    /// ScriptBucketCollection.getAllScripts. Every body found gets `InitLoadPP` and `addLoadedScriptBody`; then, in
+    /// the HashMap order of the names (`loadData.values()`), every body is loaded in file order (CraftRecipe keeps
+    /// BaseScriptObject's empty `reset`, so later bodies amend). A body that throws removes the recipe
+    /// (`RemoveLoadError`); disabled and debug-only recipes are left out (Core.debug is false); the others get their
+    /// script version. The list is, per module, the HashMap order of the names kept (`scriptMap.values()`).
+    fn load_craft_recipes(&mut self) {
+        let tag = "craftRecipe".to_string();
+        let items = self.item_index();
+        let get_item = |name: &str| self.get_script(&items, name);
+        let ctx = LoadContext {
+            translator: &self.translator,
+            get_item: &get_item,
+        };
+        let mut all = Vec::new();
+        let mut errors = Vec::new();
+        for module in &self.module_list {
+            let Some(names) = module.names.get(&tag) else {
+                continue;
+            };
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let mut kept: Vec<CraftRecipe> = Vec::new();
+            for k in java::hash_map_order(&refs) {
+                let name = &names[k];
+                let bodies = module
+                    .bodies
+                    .get(&(tag.clone(), name.clone()))
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let mut recipe = CraftRecipe::new(&module.name);
+                for body in bodies {
+                    recipe.init_load_pp(name, body);
+                }
+                let mut error = None;
+                for body in bodies {
+                    if let Err(e) = recipe.load(name, body, &ctx) {
+                        error = Some(e);
+                        break;
+                    }
+                }
+                if let Some(e) = error {
+                    errors.push((recipe.get_script_object_full_type(), e));
+                    continue;
+                }
+                if !recipe.enabled || recipe.debug_only {
+                    continue;
+                }
+                recipe.calculate_script_version();
+                kept.push(recipe);
+            }
+            let kept_names: Vec<&str> =
+                kept.iter().map(|r| r.script_object_name.as_str()).collect();
+            let order = java::hash_map_order(&kept_names);
+            let mut slots: Vec<Option<CraftRecipe>> = kept.into_iter().map(Some).collect();
+            all.extend(order.into_iter().filter_map(|i| slots[i].take()));
+        }
+        self.craft_recipes = all;
+        self.craft_recipe_errors = errors;
+    }
+
+    /// ScriptBucketCollection.OnScriptsLoaded for the craft recipes: CraftRecipe.OnScriptsLoaded on every recipe in
+    /// list order; the first exception ends the loop (ScriptManager.loadScripts catches it).
+    fn craft_recipes_on_scripts_loaded(&mut self) {
+        let timed = self.timed_action_index();
+        let mut recipes = std::mem::take(&mut self.craft_recipes);
+        let get_timed_action = |name: &str| self.get_script(&timed, name);
+        let mut error = None;
+        for r in &mut recipes {
+            if let Err(e) = r.on_scripts_loaded(&get_timed_action) {
+                error = Some(e);
+                break;
+            }
+        }
+        self.craft_recipe_scripts_loaded_error = error;
+        self.craft_recipes = recipes;
+    }
+
+    /// ScriptBucketCollection.OnPostWorldDictionaryInit for the craft recipes: CraftRecipe.OnPostWorldDictionaryInit
+    /// on every recipe in list order; the first exception ends the loop (ScriptManager.PostWorldDictionaryInit catches
+    /// it per collection). Every recipe `OutputMapper.getItem` names (ScriptManager.getCraftRecipe) has
+    /// `canBeResearched()` evaluated right away, as in the original.
+    fn craft_recipes_on_post_world_dictionary_init(&mut self) {
+        let items = self.item_index();
+        let recipes_index = self.craft_recipe_index();
+        let mut recipes = std::mem::take(&mut self.craft_recipes);
+        let by_full: HashMap<String, usize> = recipes
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.get_script_object_full_type(), i))
+            .collect();
+        let get_item = |name: &str| self.get_script(&items, name);
+        let find_recipe = |name: &str| self.get_script(&recipes_index, name);
+        let has_craft_recipe = |name: &str| find_recipe(name).is_some();
+        let lookups = Lookups {
+            get_item: &get_item,
+            has_craft_recipe: &has_craft_recipe,
+        };
+        let mut error = None;
+        for i in 0..recipes.len() {
+            let mut research = Vec::new();
+            let result = recipes[i].on_post_world_dictionary_init(&lookups, &mut research);
+            for name in research {
+                if let Some(&j) = find_recipe(&name).and_then(|f| by_full.get(&f)) {
+                    recipes[j].can_be_researched();
+                }
+            }
+            if let Err(e) = result {
+                error = Some(e);
+                break;
+            }
+        }
+        self.craft_recipe_post_init_error = error;
+        self.craft_recipes = recipes;
     }
 }
 

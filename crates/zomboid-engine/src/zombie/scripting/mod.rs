@@ -1,3 +1,4 @@
+pub mod entity;
 pub mod item;
 pub mod item_params_table;
 pub mod model_script;
