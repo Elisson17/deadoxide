@@ -81,11 +81,20 @@ impl<'a> ByteBuffer<'a> {
 }
 
 /// zombie.GameWindow.ReadString (ByteBuffer) -> GameWindow.StringUTF.load: a short byte count, then that many bytes
-/// decoded as UTF-8 with malformed input replaced (U+FFFD). A count of 0 or less is the empty string.
+/// decoded as UTF-8 with malformed input replaced (U+FFFD). A count of 0 or less is the empty string. A count past
+/// the end is `in.limit(in.position() + numBytes)` failing on the buffer's capacity (these buffers wrap exactly their
+/// bytes, so the capacity is the limit), not a `BufferUnderflowException`.
 pub fn read_string(b: &mut ByteBuffer) -> Result<String, String> {
     let n = b.get_short()?;
     if n <= 0 {
         return Ok(String::new());
+    }
+    if b.remaining() < n as usize {
+        return Err(format!(
+            "java.lang.IllegalArgumentException: newLimit > capacity: ({} > {})",
+            b.position() + n as usize,
+            b.array().len()
+        ));
     }
     Ok(String::from_utf8_lossy(b.get_bytes(n as usize)?).into_owned())
 }

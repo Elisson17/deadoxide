@@ -52,6 +52,7 @@ fn main() {
         Some("sounds") if a.len() == 5 => {
             sounds(Path::new(&a[2]), Some((Path::new(&a[3]), Path::new(&a[4]))))
         }
+        Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -4068,6 +4069,166 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
                 let _ = writeln!(sb, "{at}\tunknown command");
             }
         }
+    }
+    Ok(sb)
+}
+
+/// The global object systems of a save's `gos_*.bin` files, the ones the probe's own writer made, hand-made broken
+/// files and the writer's file cut at every length (pairs with GosProbe.java): what `SGlobalObjectSystem.load` read
+/// and what the shared `GlobalObjectLookup` says about each object.
+pub fn gos(root: &Path, save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::java::string_hash_code;
+    use zomboid_engine::java_nio::ByteBuffer;
+    use zomboid_engine::zombie::global_objects::{MetaGridBounds, SGlobalObjects};
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    let mut reg = SGlobalObjects::new(MetaGridBounds {
+        min_x: g.min_x,
+        min_y: g.min_y,
+        width: g.grid_x(),
+        height: g.grid_y(),
+    });
+    let mut sb = String::new();
+    let _ = writeln!(
+        sb,
+        "GRID {} {} {} {}",
+        g.min_x,
+        g.min_y,
+        g.grid_x(),
+        g.grid_y()
+    );
+    fn sorted_files(dir: &Path, prefix: &str) -> Result<Vec<(String, std::path::PathBuf)>, String> {
+        let mut v = Vec::new();
+        for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let e = e.map_err(|e| e.to_string())?;
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with(prefix) && n.ends_with(".bin") {
+                v.push((n, e.path()));
+            }
+        }
+        v.sort();
+        Ok(v)
+    }
+    fn list(l: &[usize]) -> String {
+        if l.is_empty() {
+            return "-".to_string();
+        }
+        l.iter().map(usize::to_string).collect::<Vec<_>>().join(",")
+    }
+    fn at(i: Option<usize>) -> i64 {
+        i.map_or(-1, |i| i as i64)
+    }
+    let dump = |sb: &mut String, reg: &SGlobalObjects, label: &str, sys: usize| {
+        let s = &reg.systems[sys];
+        let _ = writeln!(
+            sb,
+            "SYS {label} v={} n={} md={}",
+            s.loaded_world_version,
+            s.objects.len(),
+            save_dump::table(&s.mod_data)
+        );
+        for (i, o) in s.objects.iter().enumerate() {
+            let _ = writeln!(
+                sb,
+                "OBJ {label} {i} {} {} {} md={}",
+                o.x,
+                o.y,
+                o.z,
+                save_dump::table(&o.mod_data)
+            );
+            let _ = writeln!(
+                sb,
+                "AT {label} {i} {} {}",
+                at(reg.get_object_at(sys, o.x, o.y, o.z)),
+                at(reg.get_object_at(sys, o.x, o.y, o.z.wrapping_add(1)))
+            );
+            let (wx, wy) = (o.x / 8, o.y / 8);
+            let _ = writeln!(
+                sb,
+                "CHK {label} {i} {wx} {wy} {} {}",
+                u8::from(reg.has_objects_in_chunk(sys, wx, wy)),
+                list(&reg.get_objects_in_chunk(sys, wx, wy))
+            );
+            let _ = writeln!(
+                sb,
+                "ADJ {label} {i} {}",
+                list(&reg.get_objects_adjacent_to(sys, o.x, o.y, o.z))
+            );
+        }
+    };
+    let hash = |s: &str| format!("{:x}", string_hash_code(s));
+
+    // 1. the real files
+    for (n, p) in sorted_files(save, "gos_")? {
+        let name = &n[4..n.len() - 4];
+        let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let label = format!("real_{name}");
+        let sys = reg.new_system(&label)?;
+        if let Err(e) = reg.load_file(sys, Some(&data)) {
+            eprintln!("{label}: {e}");
+        }
+        dump(&mut sb, &reg, &label, sys);
+    }
+    // 3. the crafted dir (2. is the probe's writer: its file is file_craft.bin there)
+    let mut craft_bytes: Option<Vec<u8>> = None;
+    for (n, p) in sorted_files(crafted, "")? {
+        let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let base = &n[n.find('_').map_or(0, |i| i + 1)..n.len() - 4];
+        if n.starts_with("file_") {
+            if n == "file_craft.bin" {
+                craft_bytes = Some(data.clone());
+            }
+            let label = format!("f_{base}");
+            let sys = reg.new_system(&label)?;
+            if let Err(e) = reg.load_file(sys, Some(&data)) {
+                eprintln!("{label}: {e}");
+            }
+            dump(&mut sb, &reg, &label, sys);
+        } else if n.starts_with("payload_") {
+            for v in [249, 100, 25] {
+                let label = format!("p_{base}_{v}");
+                let sys = reg.new_system(&label)?;
+                let err = reg
+                    .load(sys, &mut ByteBuffer::wrap(&data), v)
+                    .err()
+                    .unwrap_or_else(|| "-".to_string());
+                let _ = writeln!(sb, "PAYLOAD {base} {v} err={err}");
+                dump(&mut sb, &reg, &label, sys);
+            }
+        }
+    }
+    let craft_bytes = craft_bytes.ok_or("no file_craft.bin in the crafted folder")?;
+    let payload = craft_bytes
+        .get(8..)
+        .ok_or("file_craft.bin is shorter than its header")?;
+    for k in 0..=payload.len() {
+        let sys = reg.new_system(&format!("t_{k}"))?;
+        let err = reg
+            .load(sys, &mut ByteBuffer::wrap(&payload[..k]), 249)
+            .err()
+            .unwrap_or_else(|| "-".to_string());
+        let s = &reg.systems[sys];
+        let mut objs = String::new();
+        for o in &s.objects {
+            let _ = write!(
+                objs,
+                "{},{},{},{};",
+                o.x,
+                o.y,
+                o.z,
+                save_dump::table(&o.mod_data)
+            );
+        }
+        let _ = writeln!(
+            sb,
+            "TR {k} err={err} v={} n={} md={} objs={}",
+            s.loaded_world_version,
+            s.objects.len(),
+            hash(&save_dump::table(&s.mod_data)),
+            hash(&objs)
+        );
     }
     Ok(sb)
 }

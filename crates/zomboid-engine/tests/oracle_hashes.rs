@@ -314,6 +314,18 @@ fn sounds_matches_original() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// The player's five `gos_*.bin` plus the files in tests/gos_crafted (the original writer's own output and hand-made
+/// broken ones), read into global object systems with the shared lookup.
+#[test]
+fn global_objects_match_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED gos: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/gos_crafted");
+    check("gos", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

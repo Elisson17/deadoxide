@@ -9,6 +9,7 @@ pub mod file_guid_table;
 pub mod game_sounds;
 pub mod game_states;
 pub mod game_time;
+pub mod global_objects;
 pub mod input;
 pub mod inventory;
 pub mod iso;

@@ -199,6 +199,10 @@ sel mods && game_case mods ModsProbe "$HERE/tests/mods_cases.txt"
 # Load bodies and GameSounds calls (tests/sounds_cases.txt); the second argument is the Rust side's scratch folder for
 # the sounds.ini those commands write (the probe writes into the server's own cache folder)
 sel sounds && server_case sounds SoundsProbe "$HERE/tests/sounds_cases.txt" "$HERE/target/oracle/pz-oracle-sounds-rust"
+# Global object systems (gos_*.bin): the player's five real files, a file the ORIGINAL writer makes and hand-made broken
+# ones; the second argument is the folder the probe (re)writes those crafted files into (tests/gos_crafted, our own
+# data, committed) for the Rust side to read
+sel gos && server_case gos GosProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/gos_crafted"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

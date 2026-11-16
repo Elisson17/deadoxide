@@ -65,23 +65,32 @@ impl KahluaTable {
     /// se.krka.kahlua.j2se.KahluaTableImpl.load (ByteBuffer, int): a count, then typed keys and values (world
     /// version 25 and later; older saves stored string keys only).
     pub fn load(b: &mut ByteBuffer, world_version: i32) -> Result<Self, String> {
-        let count = b.get_int()?;
         let mut t = KahluaTable::default();
+        t.load_into(b, world_version)?;
+        Ok(t)
+    }
+
+    /// The same read into an existing table (`this.load(input, WorldVersion)`): the table is wiped after the count
+    /// is read, and a failure part-way leaves the entries read before it (a nested table that fails is dropped
+    /// whole, since the original sets it only after it has loaded).
+    pub fn load_into(&mut self, b: &mut ByteBuffer, world_version: i32) -> Result<(), String> {
+        let count = b.get_int()?;
+        self.entries.clear();
         for _ in 0..count {
             if world_version >= 25 {
                 let key_byte = b.get()?;
                 let key = Self::load_value(b, world_version, key_byte)?;
                 let value_byte = b.get()?;
                 let value = Self::load_value(b, world_version, value_byte)?;
-                t.rawset(key, value);
+                self.rawset(key, value);
             } else {
                 let value_byte = b.get()?;
                 let key = LuaValue::String(read_string(b)?);
                 let value = Self::load_value(b, world_version, value_byte)?;
-                t.rawset(key, value);
+                self.rawset(key, value);
             }
         }
-        Ok(t)
+        Ok(())
     }
 
     /// se.krka.kahlua.j2se.KahluaTableImpl.load(DataInputStream, int): as the ByteBuffer form, but into this table
