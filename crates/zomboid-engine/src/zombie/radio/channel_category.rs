@@ -39,7 +39,7 @@ impl ChannelCategory {
         }
     }
 
-    /// zombie.radio.ChannelCategory.valueOf: the exact name, else the original's `IllegalArgumentException`.
+    /// java.lang.Enum.valueOf for ChannelCategory: the exact name, else the original's `IllegalArgumentException`.
     pub fn value_of(name: &str) -> Result<Self, String> {
         Self::ALL
             .iter()
