@@ -1,16 +1,17 @@
 {
-  "generated": "2026-11-15",
+  "generated": "2026-11-16",
   "game": "Project Zomboid 42.21.0 (Steam build 25485521)",
-  "overall": 22.3,
+  "overall": 23.3,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 237,
+    "classesTouched": 316,
     "classes": 3432,
-    "methodsCited": 1003,
+    "methodsCited": 1209,
     "methods": 46318,
-    "methodPercent": 2.17,
+    "methodPercent": 2.61,
     "oracleCases": [
       "animalzones",
+      "animsets",
       "basements",
       "chunkobjects",
       "chunksave",
@@ -19,6 +20,7 @@
       "doortoggle",
       "entitysprites",
       "fdlibm",
+      "fonts",
       "gametime",
       "items",
       "javachars",
@@ -26,6 +28,8 @@
       "losdoors",
       "lotheaders",
       "lotpack",
+      "luaboot",
+      "luaclient",
       "luacompile",
       "luaload",
       "luaos",
@@ -38,10 +42,12 @@
       "moddata",
       "outfitrandom",
       "outfits",
+      "recipes",
       "sandbox",
       "specialcollide",
       "stairs",
       "tiledefs",
+      "translator",
       "worlddictionary",
       "zoneoutlines",
       "zonetriangles"
@@ -53,17 +59,17 @@
       "name": "Reading the game's files",
       "weight": 15,
       "measured": false,
-      "score": 0.625,
+      "score": 0.6875,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 1003 of 46318 method names (2.17%) in 237 of 3432 classes; byte-identical to the original in 35 oracle cases (animalzones, basements, chunkobjects, chunksave, clothingitems, collide, doortoggle, entitysprites, fdlibm, gametime, items, javachars, los, losdoors, lotheaders, lotpack, luacompile, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapzone, metagrid, moddata, outfitrandom, outfits, sandbox, specialcollide, stairs, tiledefs, worlddictionary, zoneoutlines, zonetriangles)",
-        "format families read: 10 of 16",
+        "direct port from decompiled Java: 1209 of 46318 method names (2.61%) in 316 of 3432 classes; byte-identical to the original in 41 oracle cases (animalzones, animsets, basements, chunkobjects, chunksave, clothingitems, collide, doortoggle, entitysprites, fdlibm, fonts, gametime, items, javachars, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapzone, metagrid, moddata, outfitrandom, outfits, recipes, sandbox, specialcollide, stairs, tiledefs, translator, worlddictionary, zoneoutlines, zonetriangles)",
+        "format families read: 11 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",
         "Muldraugh map zones: 37389",
-        "not read: 3D models and animations, FMOD sound banks, fonts (.fnt), recipe and vehicle scripts, UI layout and UI textures, mod loading"
+        "not read: 3D models and animations, FMOD sound banks, recipe and vehicle scripts, UI layout and UI textures, mod loading"
       ],
-      "percent": 62.5
+      "percent": 68.8
     },
     {
       "id": "lua",
