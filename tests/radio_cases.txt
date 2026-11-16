@@ -233,6 +233,45 @@ seed 348
 radiosave save_none_case.txt
 init 100
 state
+# a loaded game with months and nights behind it: the days come from the file when it loads, else from the options
+sandbox 5
+nights 9
+seed 350
+radiosave save_bad_days.txt
+init 100
+state
+seed 351
+radiosave save_bad_chan.txt
+init 100
+state
+seed 352
+radiosave save_days_noeq.txt
+init 100
+state
+seed 353
+radiosave save_bad_loop.txt
+init 100
+state
+seed 354
+radiosave save_crlf.txt
+init 100
+state
+seed 355
+radiosave save_neg_days.txt
+init 100
+state
+seed 356
+radiosave none
+init 100
+state
+seed 357
+radiosave @real
+dynamic saved 100400
+init 100
+state
+dynamic reset
+sandbox 1
+nights 0
 # the file is read again for a world that already has a day count
 sandbox 5
 nights 9
@@ -257,8 +296,8 @@ updatescripts 0 0
 updatescripts 0 30
 updatescripts 5 59
 updatescripts 12 0
-updatescripts 23 45 after_day
-updatescripts 0 0
+updatescripts 23 45
+updatescripts 0 0 after_day
 updatescripts 1 0
 state
 # a game that starts with a few months of history: the scripts stop at day 1, the file says so
