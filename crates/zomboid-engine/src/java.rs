@@ -746,6 +746,116 @@ pub fn file_parent(path: &str) -> Option<&str> {
     Some(&path[..i])
 }
 
+/// java.lang.Math.round(float): the JDK's bit-level rounding (half up), `(int) a` for NaN, infinities and
+/// magnitudes past 2^23 (saturating, NaN to 0, as Java's float-to-int cast).
+pub fn math_round_f32(a: f32) -> i32 {
+    let int_bits = a.to_bits() as i32;
+    let biased_exp = (int_bits & 0x7F80_0000) >> 23;
+    let shift = (24 - 2 + 127) - biased_exp;
+    if shift & -32 == 0 {
+        let mut r = (int_bits & 0x007F_FFFF) | (0x007F_FFFF + 1);
+        if int_bits < 0 {
+            r = -r;
+        }
+        ((r >> shift) + 1) >> 1
+    } else {
+        a as i32
+    }
+}
+
+/// java.lang.String.split("\\s+"): pieces between runs of `[ \t\n\x0B\f\r]`, trailing empty pieces dropped; a
+/// leading separator gives a leading empty piece; a string without a separator (also "") is one piece.
+pub fn split_whitespace_regex(s: &str) -> Vec<&str> {
+    let ws = |c: char| matches!(c, ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r');
+    if !s.contains(ws) {
+        return vec![s];
+    }
+    let mut parts: Vec<&str> = Vec::new();
+    let mut start = 0;
+    let mut chars = s.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if ws(c) {
+            parts.push(&s[start..i]);
+            let mut end = i + c.len_utf8();
+            while let Some(&(j, d)) = chars.peek() {
+                if !ws(d) {
+                    break;
+                }
+                end = j + d.len_utf8();
+                chars.next();
+            }
+            start = end;
+        }
+    }
+    parts.push(&s[start..]);
+    while parts.last() == Some(&"") {
+        parts.pop();
+    }
+    parts
+}
+
+/// java.lang.String.indexOf(String): the UTF-16 index of the first occurrence, -1 when absent.
+pub fn string_index_of(s: &str, needle: &str) -> i32 {
+    match s.find(needle) {
+        Some(b) => s[..b].encode_utf16().count() as i32,
+        None => -1,
+    }
+}
+
+/// java.lang.String.substring(int, int) over UTF-16 units; `Err` is the StringIndexOutOfBoundsException.
+pub fn string_substring(s: &str, begin: i32, end: i32) -> Result<String, String> {
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let len = units.len() as i32;
+    if begin < 0 || begin > end || end > len {
+        return Err(format!(
+            "java.lang.StringIndexOutOfBoundsException: begin {begin}, end {end}, length {len}"
+        ));
+    }
+    Ok(String::from_utf16_lossy(
+        &units[begin as usize..end as usize],
+    ))
+}
+
+/// java.lang.String.substring(int) over UTF-16 units; `Err` is the StringIndexOutOfBoundsException.
+pub fn string_substring_from(s: &str, begin: i32) -> Result<String, String> {
+    let len = s.encode_utf16().count() as i32;
+    string_substring(s, begin, len)
+}
+
+#[cfg(test)]
+mod jdk_string_tests {
+    use super::*;
+
+    #[test]
+    fn whitespace_split_keeps_java_rules() {
+        assert_eq!(
+            split_whitespace_regex("item 1\t [a]  x"),
+            ["item", "1", "[a]", "x"]
+        );
+        assert_eq!(split_whitespace_regex(" a b "), ["", "a", "b"]);
+        assert_eq!(split_whitespace_regex(""), [""]);
+        assert_eq!(split_whitespace_regex("   "), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn round_is_half_up_like_the_jdk() {
+        assert_eq!(math_round_f32(0.5), 1);
+        assert_eq!(math_round_f32(-0.5), 0);
+        assert_eq!(math_round_f32(1.333_333_4), 1);
+        assert_eq!(math_round_f32(0.499_999_97), 0);
+        assert_eq!(math_round_f32(f32::NAN), 0);
+        assert_eq!(math_round_f32(3e10), i32::MAX);
+    }
+
+    #[test]
+    fn substring_bounds_fail_like_the_jdk() {
+        assert_eq!(string_substring("[ab]", 1, 3).as_deref(), Ok("ab"));
+        assert!(string_substring("ab", 1, -1).is_err());
+        assert_eq!(string_index_of("a:b", ":"), 1);
+        assert_eq!(string_index_of("ab", ":"), -1);
+    }
+}
+
 #[cfg(test)]
 mod crc32_tests {
     /// The CRC-32 check value of "123456789" (what `java.util.zip.CRC32` returns for it).

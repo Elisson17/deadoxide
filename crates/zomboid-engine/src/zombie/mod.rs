@@ -2,6 +2,7 @@ pub mod audio;
 pub mod basements;
 pub mod characters;
 pub mod core;
+pub mod entity;
 pub mod erosion;
 pub mod file_guid_table;
 pub mod game_states;

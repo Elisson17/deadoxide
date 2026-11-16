@@ -255,6 +255,12 @@ fn items_match_original() {
     check("items", &[list.to_str().expect("utf-8 path")]);
 }
 
+/// Every craftRecipe script after CraftRecipe.Load, OnScriptsLoaded and the ported part of OnPostWorldDictionaryInit.
+#[test]
+fn recipes_matches_original() {
+    check("recipes", &[]);
+}
+
 #[test]
 fn luacompile_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_compile_cases.txt");
