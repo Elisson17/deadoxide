@@ -559,6 +559,29 @@ impl ScriptManager {
         out
     }
 
+    /// ScriptBucketCollection.getAllScripts of the items (ScriptManager.getAllItems): per module of `moduleList`, its
+    /// bucket's `scriptMap.values()`, the HashMap the kept items were put into in `loadData` order. Indices into
+    /// `items`.
+    pub fn all_items(&self) -> Vec<usize> {
+        let index: HashMap<String, usize> = (self.items.iter().enumerate())
+            .map(|(i, item)| (item.full_name(), i))
+            .collect();
+        let mut out = Vec::with_capacity(self.items.len());
+        for module in &self.module_list {
+            let Some(names) = module.names.get("item") else {
+                continue;
+            };
+            let all: Vec<&str> = names.iter().map(String::as_str).collect();
+            let kept: Vec<(&str, usize)> = java::hash_map_order(&all)
+                .into_iter()
+                .filter_map(|i| Some((all[i], *index.get(&format!("{}.{}", module.name, all[i]))?)))
+                .collect();
+            let keys: Vec<&str> = kept.iter().map(|k| k.0).collect();
+            out.extend(java::hash_map_order(&keys).into_iter().map(|i| kept[i].1));
+        }
+        out
+    }
+
     /// Item.InitLoadPP's statics after ScriptManager.Load: `netIdToItem` gets an id per item token (each body of an
     /// item, in every module), `netItemToId` an entry per full type. (sizes)
     pub fn item_net_id_counts(&self) -> (usize, usize) {

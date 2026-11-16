@@ -8,7 +8,8 @@ use std::rc::Rc;
 use super::exposed_client::TextManagerObject;
 use super::exposed_methods::SandboxOptionsObject;
 use super::exposed_methods::{
-    hash, int_arg, npe, registry_id, ret, ret_int, ret_str, string_arg, want_args, with_this,
+    float_arg, hash, int_arg, npe, registry_id, ret, ret_int, ret_str, string_arg, want_args,
+    with_this,
 };
 use super::exposed_world::enum_arg;
 use super::exposer::{class_named, Fail, Imp, JavaEnum, JavaStatics, Ret};
@@ -478,6 +479,26 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
         }
     }
     Some(match (class, name) {
+        // ---- DummySoundBank: BaseSoundBank.instance of a client without sound; every method does nothing ----
+        ("zombie.audio.DummySoundBank", "addVoice") => |_, _, cf, n| {
+            want_args(n, true, 3)?;
+            string_arg(cf, 1)?;
+            string_arg(cf, 2)?;
+            float_arg(cf, 3)?;
+            Ok(0)
+        },
+        ("zombie.audio.DummySoundBank", "addFootstep") => |_, _, cf, n| {
+            want_args(n, true, 5)?;
+            for i in 1..=5 {
+                string_arg(cf, i)?;
+            }
+            Ok(0)
+        },
+        ("zombie.audio.DummySoundBank", "getVoice" | "getFootstep") => |_, _, cf, n| {
+            want_args(n, true, 1)?;
+            string_arg(cf, 1)?;
+            ret(cf, Object::Nil)
+        },
         // ---- TextManager: the fonts of TextManager.Init (none before it: the NullPointerException) ----
         ("zombie.ui.TextManager", "getFontFromEnum") => |s, _, cf, n| {
             want_args(n, true, 1)?;
@@ -749,7 +770,7 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
 // ---- the statics initShared and GameWindow.enter fill ----
 
 /// The registry constants of `class` (`registerBase("Id")` fields of the exposed class), as locations.
-fn registry_locations(
+pub(super) fn registry_locations(
     class: &str,
 ) -> std::collections::HashSet<crate::zombie::scripting::objects::resource_location::ResourceLocation>
 {
@@ -813,6 +834,48 @@ fn list_add(list: &Option<Rc<dyn Userdata>>, o: Object) {
     }) {
         l.0.borrow_mut().push(o);
     }
+}
+
+/// The Item objects of ScriptManager.getAllItems that `hasTag(tag)` (`itemTags.contains`: an entry the ItemTag
+/// registry does not hold is a null there, which only a null tag matches); none without a client's startup.
+pub fn items_with_tag(s: &Rc<JavaStatics>, tag: &Object) -> Vec<Object> {
+    use crate::zombie::scripting::objects::resource_location::ResourceLocation;
+    let client = s.state.client.borrow().clone();
+    let Some(shared) = client.as_ref().and_then(|c| c.shared.get()) else {
+        return Vec::new();
+    };
+    let registered = registry_locations("zombie.scripting.objects.ItemTag");
+    let want: Option<ResourceLocation> = match tag {
+        Object::Userdata(u) => u
+            .as_any()
+            .downcast_ref::<super::exposer::JavaObject>()
+            .and_then(|o| ResourceLocation::of(o.id).ok()),
+        _ => None,
+    };
+    let has = |t: &ResourceLocation| match &want {
+        Some(w) => registered.contains(t) && t == w,
+        None => !registered.contains(t),
+    };
+    shared
+        .all_items
+        .iter()
+        .filter(|i| shared.scripts.items[**i].tags.iter().any(has))
+        .map(|i| item_object(s, *i))
+        .collect()
+}
+
+/// BaseSoundBank.instance: GameWindow.mainThreadInit's `new DummySoundBank()` (Core.soundDisabled) in a client
+/// whose startup ran, else null.
+pub fn base_sound_bank(s: &Rc<JavaStatics>) -> Object {
+    if s.state.client.borrow().is_none() {
+        return Object::Nil;
+    }
+    s.singleton("zombie.audio.BaseSoundBank", || {
+        Object::Userdata(Rc::new(super::exposer::JavaObject {
+            class: class_named("zombie.audio.DummySoundBank"),
+            id: "",
+        }))
+    })
 }
 
 /// zombie.GameWindow.initShared on the Lua state of a client whose startup ran: the port's initShared

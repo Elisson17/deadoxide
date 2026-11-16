@@ -51,6 +51,8 @@ pub struct Shared {
     pub item_index: BucketIndex,
     /// The index in `scripts.items` of each item's full type.
     pub item_by_full_type: HashMap<String, usize>,
+    /// ScriptManager.getAllItems (`scripts.all_items()`).
+    pub all_items: Vec<usize>,
     /// CharacterTraitDefinition.characterTraitDefinitions (ScriptManager.Load's trait scripts).
     pub traits: CharacterTraitDefinitions,
     /// CharacterProfessionDefinition.characterProfessionDefinitions (its profession scripts).
@@ -159,6 +161,7 @@ impl ClientStartup {
             &mut translator,
         );
         let item_index = scripts.item_index();
+        let all_items = scripts.all_items();
         let item_by_full_type = (scripts.items.iter().enumerate())
             .map(|(i, item)| (item.full_name(), i))
             .collect();
@@ -170,6 +173,7 @@ impl ClientStartup {
             scripts,
             item_index,
             item_by_full_type,
+            all_items,
             traits,
             professions,
         };

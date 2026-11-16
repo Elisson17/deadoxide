@@ -237,10 +237,11 @@ fn instance_of_name(o: &Object, name: &str) -> bool {
 pub fn global(name: &str) -> Option<Imp> {
     Some(match name {
         // FMODSoundBank.instance (BaseSoundBank.instance): made by GameWindow.mainThreadInit (an FMODSoundBank, a
-        // DummySoundBank with sound disabled), which this state does not run: null.
-        "getFMODSoundBank" => |_, _, cf, n| {
+        // DummySoundBank with sound disabled, as in the `-nosound` client whose startup ran); null in a state
+        // without that startup.
+        "getFMODSoundBank" | "getBaseSoundBank" => |s, _, cf, n| {
             static_args(n, 0)?;
-            ret(cf, Object::Nil)
+            ret(cf, super::exposed_game::base_sound_bank(s))
         },
         "getScriptManager" => |s, _, cf, n| {
             static_args(n, 0)?;
@@ -351,8 +352,8 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
             add_to_static_list(s, "zombie.characters.SurvivorDesc", "HairCommonColors", o)
         },
         // PerkFactory.getPerkName: `type.getName()`. A Perk's name is its id until PerkFactory.init translates
-        // it (GameWindow.initShared, not run in this state).
-        ("zombie.characters.skills.PerkFactory", "getPerkName") => |_, _, cf, n| {
+        // it (GameWindow.initShared, run only in a client's startup).
+        ("zombie.characters.skills.PerkFactory", "getPerkName") => |s, _, cf, n| {
             static_args(n, 1)?;
             let u = registry_arg(cf, 0, "zombie.characters.skills.PerkFactory$Perk", "Perk")?
                 .ok_or_else(npe)?;
@@ -361,7 +362,12 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
                 .downcast_ref::<JavaObject>()
                 .map(|o| o.id)
                 .ok_or_else(npe)?;
-            ret(cf, Object::str(id))
+            let client = s.state.client.borrow().clone();
+            let name = match client.as_ref().and_then(|c| c.shared.get()) {
+                Some(shared) => shared.perks.get_name(id).to_string(),
+                None => id.to_string(),
+            };
+            ret(cf, Object::str(&name))
         },
         // UIElement() and UIElement(KahluaTable) (a MultiLuaJavaInvoker: the table one for one argument).
         ("zombie.ui.UIElement", "new") => |_, _, cf, n| {
@@ -389,9 +395,9 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
 /// The instance methods this module owns.
 pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
-        // ScriptManager.getItemsTag: getAllItemsWithTag, the list cached per tag; with no scripts loaded every
-        // list is empty.
-        ("zombie.scripting.ScriptManager", "getItemsTag") => |_, _, cf, n| {
+        // ScriptManager.getItemsTag: getAllItemsWithTag, the list cached per tag: the items of getAllItems that
+        // `hasTag(itemTag)`; with no scripts loaded (no client startup) every list is empty.
+        ("zombie.scripting.ScriptManager", "getItemsTag") => |s, _, cf, n| {
             want_args(n, true, 1)?;
             let tag = registry_arg(cf, 1, "zombie.scripting.objects.ItemTag", "ItemTag")?
                 .map_or(Object::Nil, Object::Userdata);
@@ -405,7 +411,8 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 let list = match found {
                     Some(l) => l,
                     None => {
-                        let l = ud(Rc::new(ArrayListObject::default()));
+                        let items = super::exposed_game::items_with_tag(s, &tag);
+                        let l = ud(Rc::new(ArrayListObject(RefCell::new(items))));
                         m.tag_to_item_map.borrow_mut().push((tag, l.clone()));
                         l
                     }
