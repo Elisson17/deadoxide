@@ -362,6 +362,21 @@ fn iso_region_matches_original() {
     check("isoregion", &[&save, crafted.to_str().expect("utf-8 path")]);
 }
 
+/// `ErosionConfig.readFile`/`writeFile` over the player's real `erosion.ini` and the hand-made files of
+/// tests/erosionini_crafted.
+#[test]
+fn erosion_ini_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED erosionini: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/erosionini_crafted");
+    check(
+        "erosionini",
+        &[&save, crafted.to_str().expect("utf-8 path")],
+    );
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

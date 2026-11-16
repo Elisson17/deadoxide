@@ -54,6 +54,7 @@ fn main() {
         }
         Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
+        Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
         Some("visited") if a.len() == 5 => {
             visited(Path::new(&a[2]), Path::new(&a[4]), Path::new(&a[3]))
@@ -4669,6 +4670,106 @@ pub fn visited(root: &Path, save: &Path, cases: &Path) -> Result<String, String>
                 }
             }
         }
+    }
+    Ok(sb)
+}
+
+/// `ErosionConfig.readFile` on the save's `erosion.ini` and on every hand-made `*.ini` of the crafted dir, then
+/// `writeFile`'s text (pairs with ErosionIniProbe.java).
+pub fn erosionini(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::erosion::erosion_config::ErosionConfig;
+    /// The probe's `esc`: printable ASCII except quote and backslash stays, any other UTF-16 unit is `\uXXXX`.
+    fn esc(s: &str) -> String {
+        let mut o = String::from("\"");
+        for u in s.encode_utf16() {
+            if (0x20..0x7f).contains(&u) && u != u16::from(b'"') && u != u16::from(b'\\') {
+                o.push(char::from(u as u8));
+            } else {
+                let _ = write!(o, "\\u{u:04x}");
+            }
+        }
+        o.push('"');
+        o
+    }
+    fn one(sb: &mut String, label: &str, text: Option<&[u8]>) {
+        let mut cfg = ErosionConfig::default();
+        let ret = cfg.read_file(text);
+        let _ = writeln!(sb, "ERO {label} ret={ret}");
+        let mut fields: Vec<(String, String)> = Vec::new();
+        let bits = |f: f32| format!("{:08x}", f.to_bits());
+        for (name, a) in [
+            ("seedMain", &cfg.seeds.seed_main),
+            ("seedMoisture", &cfg.seeds.seed_moisture),
+            ("seedMinerals", &cfg.seeds.seed_minerals),
+            ("seedKudzu", &cfg.seeds.seed_kudzu),
+        ] {
+            for (i, v) in a.iter().enumerate() {
+                fields.push((format!("seeds.{name}{i}"), v.to_string()));
+            }
+        }
+        let t = &cfg.time;
+        for (n, v) in [
+            ("tickunit", t.tickunit),
+            ("ticks", t.ticks),
+            ("eticks", t.eticks),
+            ("epoch", t.epoch),
+        ] {
+            fields.push((format!("time.{n}"), v.to_string()));
+        }
+        let s = &cfg.season;
+        for (n, v) in [
+            ("lat", s.lat),
+            ("tempMax", s.temp_max),
+            ("tempMin", s.temp_min),
+            ("tempDiff", s.temp_diff),
+            ("seasonLag", s.season_lag),
+            ("seedA", s.seed_a),
+            ("seedB", s.seed_b),
+            ("seedC", s.seed_c),
+        ] {
+            fields.push((format!("season.{n}"), v.to_string()));
+        }
+        fields.push(("season.noon".into(), bits(s.noon)));
+        for (m, v) in [
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+        ]
+        .iter()
+        .zip(s.months)
+        {
+            fields.push((format!("season.{m}"), bits(v)));
+        }
+        let d = &cfg.debug;
+        fields.push(("debug.enabled".into(), d.enabled.to_string()));
+        fields.push(("debug.startday".into(), d.startday.to_string()));
+        fields.push(("debug.startmonth".into(), d.startmonth.to_string()));
+        // the probe prints each section's fields sorted by name
+        let section = |n: &str| n.split('.').next().unwrap_or("").to_string();
+        for sec in ["seeds", "time", "debug", "season"] {
+            let mut part: Vec<&(String, String)> =
+                fields.iter().filter(|(n, _)| section(n) == sec).collect();
+            part.sort_by(|a, b| a.0.cmp(&b.0));
+            for (n, v) in part {
+                let _ = writeln!(sb, "F {label} {n}={v}");
+            }
+        }
+        for (i, line) in cfg.write_file().split('\n').enumerate() {
+            let _ = writeln!(sb, "W {label} {i} {}", esc(line));
+        }
+    }
+    let mut sb = String::new();
+    one(&mut sb, "none", None);
+    let real = std::fs::read(save.join("erosion.ini")).ok();
+    one(&mut sb, "real", real.as_deref());
+    let mut files: Vec<_> = std::fs::read_dir(crafted)
+        .map_err(|e| format!("{}: {e}", crafted.display()))?
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".ini"))
+        .collect();
+    files.sort_by_key(|e| e.file_name());
+    for f in files {
+        let name = f.file_name().to_string_lossy().replace(".ini", "");
+        let data = std::fs::read(f.path()).map_err(|e| e.to_string())?;
+        one(&mut sb, &name, Some(&data));
     }
     Ok(sb)
 }

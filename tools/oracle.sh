@@ -212,6 +212,8 @@ sel visited && server_case visited VisitedProbe "$HERE/tests/visited_cases.txt" 
 # isoregiondata/datachunk_*.bin and RegionHeader.bin (the saved part of IsoRegions): IsoRegionWorker.loadSaveMap on the real folder
 # and on the scenario folders of tests/isoregion_crafted (the ORIGINAL writer's files and hand-made ones, written by the probe)
 sel isoregion && server_case isoregion IsoRegionProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/isoregion_crafted"
+# erosion.ini (ErosionConfig.readFile/writeFile): the real file and the hand-made ones of tests/erosionini_crafted
+sel erosionini && server_case erosionini ErosionIniProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/erosionini_crafted"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
