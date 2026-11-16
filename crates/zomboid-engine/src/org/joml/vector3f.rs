@@ -80,3 +80,80 @@ fn format_numbers(s: &str) -> String {
     }
     res
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Vector3f;
+
+    /// `new Vector3f(x, y, z).toString()` of the original (JOML in the game's jar), measured with an ad hoc probe
+    /// on 2026-11-16: zeros of both signs, rounding ties and carries, subnormals, NaN and infinities.
+    #[test]
+    fn to_string_matches_original() {
+        let cases: [(u32, u32, u32, &str); 10] = [
+            (
+                0x0,
+                0x80000000,
+                0x3f800000,
+                "( 0.000E+0 -0.000E+0  1.000E+0)",
+            ),
+            (
+                0x3f800000,
+                0xbf800000,
+                0x42f6e979,
+                "( 1.000E+0 -1.000E+0  1.235E+2)",
+            ),
+            (
+                0x42f6e979,
+                0x3aa1be2b,
+                0x116c2,
+                "( 1.235E+2  1.234E-3  1.000E-40)",
+            ),
+            (
+                0x116c2,
+                0x7fc00000,
+                0x7f800000,
+                "( 1.000E-40       NaN      +Inf)",
+            ),
+            (
+                0x7f800000,
+                0xff800000,
+                0x3f880000,
+                "(     +Inf      -Inf  1.062E+0)",
+            ),
+            (
+                0x3f880000,
+                0x411ffdf4,
+                0x47c34fc0,
+                "( 1.062E+0  1.000E+1  1.000E+5)",
+            ),
+            (
+                0x47c34fc0,
+                0xff7fc99e,
+                0x1,
+                "( 1.000E+5 -3.400E+38  1.401E-45)",
+            ),
+            (
+                0x1,
+                0x3f000000,
+                0x40000831,
+                "( 1.401E-45  5.000E-1  2.000E+0)",
+            ),
+            (
+                0x40000831,
+                0x4996b438,
+                0xba82f0e1,
+                "( 2.000E+0  1.235E+6 -9.990E-4)",
+            ),
+            (
+                0xba82f0e1,
+                0x6228a74c,
+                0x0,
+                "(-9.990E-4  7.778E+20  0.000E+0)",
+            ),
+        ];
+        for (x, y, z, want) in cases {
+            let v = Vector3f::new(f32::from_bits(x), f32::from_bits(y), f32::from_bits(z));
+            assert_eq!(v.java_to_string(), want);
+        }
+    }
+}
