@@ -6,6 +6,7 @@
 pub mod java;
 pub mod java_calendar;
 pub mod java_chars;
+pub mod java_collator;
 pub mod java_fdlibm;
 pub mod java_formatter;
 pub mod java_nio;

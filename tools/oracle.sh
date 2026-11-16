@@ -135,6 +135,7 @@ sel outfits && server_case outfits OutfitsProbe "$HERE/profile/Saves/Sandbox/202
 # media/fileGuidTable.xml and every clothing item file through OutfitManager.getClothingItem
 sel clothingitems && server_case clothingitems ClothingItemsProbe
 sel outfitrandom && server_case outfitrandom OutfitRandomProbe
+sel animsets && game_case animsets AnimSetsProbe
 sel luacompile && jre_case luacompile LuaCompileProbe "$HERE/tests/lua_compile_cases.txt"
 sel luavm && jre_case luavm LuaVmProbe "$HERE/tests/lua_vm_cases.txt"
 sel luastring && jre_case luastring LuaVmProbe "$HERE/tests/lua_string_cases.txt"

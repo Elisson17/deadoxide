@@ -243,6 +243,12 @@ fn outfit_random_matches_original() {
 }
 
 #[test]
+fn animsets_matches_original() {
+    // the second argument is the probe's scratch cache dir, unused by pz-dump
+    check("animsets", &["-"]);
+}
+
+#[test]
 fn items_match_original() {
     // The field list tools/gen_item_params.py hands to both sides: the table's fields minus aimingMod.
     let names: Vec<&str> = zomboid_engine::zombie::scripting::item_params_table::FIELDS

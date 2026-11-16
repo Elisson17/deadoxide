@@ -10,6 +10,7 @@
 //!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
 //!   pz-dump translator <game root> <scratch, unused> <command file>   (TranslatorProbe.java)
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
+//!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -61,6 +62,7 @@ fn main() {
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
         Some("outfitrandom") if a.len() == 3 => outfitrandom(Path::new(&a[2])),
+        Some("animsets") if a.len() == 4 => animsets(Path::new(&a[2])),
         Some("luacompile") if a.len() == 4 => luacompile(Path::new(&a[2]), Path::new(&a[3])),
         Some("luavm") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
         Some("luastring") if a.len() == 4 => luavm(Path::new(&a[2]), Path::new(&a[3])),
@@ -552,7 +554,7 @@ pub fn fonts(root: &Path) -> Result<String, String> {
     };
 
     let fs = ZomboidFileSystem::init(root)?;
-    let base = format!("{}/", fs.base());
+    let base = format!("{}/", fs.base().to_string_lossy());
     let rel = |abs: &str| -> String {
         match abs.strip_prefix(&base) {
             Some(r) => format!("$/{r}"),
@@ -4661,6 +4663,498 @@ pub fn outfitrandom(root: &Path) -> Result<String, String> {
                     item(&mut sb, r, 0);
                 }
             }
+        }
+    }
+    Ok(sb)
+}
+
+/// Every animation set of `media/AnimSets` and every action group of `media/actiongroups`, in the format of
+/// `tests/original_probe/AnimSetsProbe.java`.
+pub fn animsets(root: &Path) -> Result<String, String> {
+    use zomboid_engine::java::{float_to_string, string_compare_to};
+    use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
+    use zomboid_engine::zombie::characters::action::conditions::character_variable_condition::Value;
+    use zomboid_engine::zombie::characters::action::i_action_condition::IActionCondition;
+    use zomboid_engine::zombie::core::math::i_interpolator::IInterpolator;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_condition::AnimCondition;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_event::AnimEventKind;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_node::AnimNode;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSets;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
+    use zomboid_engine::zombie::zomboid_file_system::{list_files, ZomboidFileSystem};
+    fn q(s: Option<&str>) -> String {
+        let Some(s) = s else {
+            return "null".into();
+        };
+        let mut b = String::from("\"");
+        for c in s.encode_utf16() {
+            if (0x20..0x7f).contains(&c) && c != u16::from(b'"') && c != u16::from(b'\\') {
+                b.push(char::from(c as u8));
+            } else {
+                let _ = write!(b, "\\u{c:04x}");
+            }
+        }
+        b.push('"');
+        b
+    }
+    let f = float_to_string;
+    let b = |v: bool| u8::from(v);
+    fn e(v: Option<&str>) -> &str {
+        v.unwrap_or("null")
+    }
+    fn reference(r: Option<&AnimationVariableReference>) -> String {
+        match r {
+            None => "null".into(),
+            Some(r) => format!(
+                "({},{})",
+                q(r.sub_variable_source_name.as_deref()),
+                q(Some(&r.name))
+            ),
+        }
+    }
+    fn idx(v: Option<usize>) -> String {
+        v.map_or("null".into(), |i| i.to_string())
+    }
+    fn cond(sb: &mut String, indent: &str, tag: &str, i: usize, c: &AnimCondition) {
+        let _ = writeln!(
+            sb,
+            "{indent}{tag} {i} name={} type={} value={} f={} b={} s={} ref={}",
+            q(Some(&c.name)),
+            e(c.type_.map(|t| t.name())),
+            q(Some(&c.value)),
+            float_to_string(c.float_value),
+            u8::from(c.bool_value),
+            q(Some(&c.string_value)),
+            reference(c.variable_reference.as_ref())
+        );
+    }
+    let node = |sb: &mut String, tag: &str, n: &AnimNode| {
+        let _ = writeln!(
+            sb,
+            "  {tag} {} idle={} priority={} conditionPriority={} abstract={} parent=1",
+            q(Some(&n.name)),
+            b(n.is_idle_anim),
+            n.priority,
+            n.condition_priority,
+            b(n.is_abstract())
+        );
+        let alternates: Vec<String> = n.alternate_anims.iter().map(|s| q(Some(s))).collect();
+        let _ = writeln!(
+            sb,
+            "   anim={} alternates=[{}]",
+            q(Some(&n.anim_name)),
+            alternates.join(",")
+        );
+        let _ = writeln!(
+            sb,
+            "   grapple matching={} fwd={} yaw={} tweenIn={} behaviour={}",
+            q(Some(&n.matching_grappled_anim_node)),
+            f(n.grapple_offset_forward),
+            f(n.grapple_offset_yaw),
+            f(n.grapple_tween_in_time),
+            e(n.grappler_offset_behaviour.map(|v| v.name()))
+        );
+        let _ = writeln!(
+            sb,
+            "   ragdoll={} chance={} startMin={} startMax={} maxTime={}",
+            b(n.is_ragdoll),
+            f(n.chance_to_ragdoll),
+            f(n.ragdoll_start_time_min),
+            f(n.ragdoll_start_time_max),
+            f(n.ragdoll_max_time)
+        );
+        let _ = writeln!(
+            sb,
+            "   deferred bone={} axis={} rotation={} movement={} rotationScale={}",
+            q(Some(&n.deferred_bone_name)),
+            e(n.deferred_bone_axis.map(|v| v.name())),
+            b(n.use_defered_rotation),
+            b(n.use_deferred_movement),
+            f(n.deferred_rotation_scale)
+        );
+        let _ = writeln!(
+            sb,
+            "   looped={} blendTime={} blendOutTime={} stopOnExit={} earlyTransitionOut={}",
+            b(n.is_looped),
+            f(n.blend_time),
+            f(n.blend_out_time),
+            b(n.stop_anim_on_exit),
+            b(n.early_transition_out)
+        );
+        let _ = writeln!(
+            sb,
+            "   speedScale={} variable={} randomMin={} randomMax={} parsed={}",
+            q(Some(&n.speed_scale)),
+            q(n.speed_scale_variable.as_deref()),
+            f(n.speed_scale_random_multiplier_min),
+            f(n.speed_scale_random_multiplier_max),
+            f(n.speed_scale_f)
+        );
+        let _ = writeln!(
+            sb,
+            "   randomAdvance={} maxTorsoTwist={} scalar={} scalar2={} reverse={} sync={} trackTimeTo={}",
+            f(n.random_advance_fraction),
+            f(n.max_torso_twist),
+            q(Some(&n.scalar)),
+            q(Some(&n.scalar2)),
+            b(n.is_anim_reverse),
+            b(n.sync_tracking_enabled),
+            q(n.track_time_to_variable.as_deref())
+        );
+        sb.push_str("   blendCurve ");
+        match n.blend_curve.as_ref().and_then(|s| s.interpolator.as_ref()) {
+            None => sb.push_str("null"),
+            Some(i) => {
+                sb.push_str(i.simple_name());
+                match i {
+                    IInterpolator::Sequence(s) => {
+                        let raw: Vec<String> = s
+                            .sequence_raw
+                            .iter()
+                            .map(|p| {
+                                format!(
+                                    "{}:{}:{}",
+                                    f(p.x),
+                                    f(p.y),
+                                    e(p.lerp_type.map(|t| t.name()))
+                                )
+                            })
+                            .collect();
+                        let sorted: Vec<String> = s
+                            .sequence_entries
+                            .iter()
+                            .flatten()
+                            .map(usize::to_string)
+                            .collect();
+                        let _ = write!(
+                            sb,
+                            " n={} min={} max={} raw=[{}] sorted=[{}]",
+                            s.num_entries,
+                            f(s.min_x),
+                            f(s.max_x),
+                            raw.join(","),
+                            sorted.join(",")
+                        );
+                    }
+                    IInterpolator::Polyline(p) => {
+                        let raw: Vec<String> = p
+                            .points_raw
+                            .iter()
+                            .map(|p| format!("{}:{}", f(p.x), f(p.y)))
+                            .collect();
+                        let pts: Vec<String> = p
+                            .points
+                            .iter()
+                            .flatten()
+                            .map(|p| format!("{}:{}", f(p[0]), f(p[1])))
+                            .collect();
+                        let _ = write!(
+                            sb,
+                            " n={} min={} max={} raw=[{}] points=[{}]",
+                            p.num_points,
+                            f(p.min_x),
+                            f(p.max_x),
+                            raw.join(","),
+                            pts.join(",")
+                        );
+                    }
+                    IInterpolator::Linear(l) => {
+                        let _ = write!(sb, " y0={} y1={}", f(l.start_value), f(l.end_value));
+                    }
+                    IInterpolator::EaseInQuad(l) => {
+                        let _ = write!(sb, " y0={} y1={}", f(l.start_value), f(l.end_value));
+                    }
+                    IInterpolator::EaseOutInQuad(l) => {
+                        let _ = write!(sb, " y0={} y1={}", f(l.start_value), f(l.end_value));
+                    }
+                    IInterpolator::EaseOutQuad(l) => {
+                        let _ = write!(sb, " y0={} y1={}", f(l.start_value), f(l.end_value));
+                    }
+                    IInterpolator::One | IInterpolator::Zero => {}
+                }
+            }
+        }
+        sb.push('\n');
+        if n.blend_curve
+            .as_ref()
+            .is_some_and(|s| s.interpolator.is_none())
+        {
+            sb.push_str("   blendCurveSlot empty\n");
+        }
+        for (i, bl) in n.blends2d.iter().enumerate() {
+            let _ = writeln!(
+                sb,
+                "   blend {i} anim={} x={} y={} speed={} id={}",
+                q(Some(&bl.anim_name)),
+                f(bl.pos_x),
+                f(bl.pos_y),
+                f(bl.speed_scale),
+                q(bl.reference_id.as_deref())
+            );
+        }
+        for (i, c) in n.conditions.iter().enumerate() {
+            cond(sb, "   ", "cond", i, c);
+        }
+        for (i, ev) in n.events.iter().enumerate() {
+            let class = match ev.kind {
+                AnimEventKind::Plain => "AnimEvent",
+                AnimEventKind::SetVariable { .. } => "AnimEventSetVariable",
+                AnimEventKind::FlagWhileAlive { .. } => "AnimEventFlagWhileAlive",
+            };
+            let _ = write!(
+                sb,
+                "   event {i} {class} name={} time={} pc={} param={} parent=1",
+                q(ev.event_name.as_deref()),
+                e(ev.time.map(|t| t.name())),
+                f(ev.time_pc),
+                q(ev.parameter_value.as_deref())
+            );
+            match &ev.kind {
+                AnimEventKind::Plain => {}
+                AnimEventKind::SetVariable {
+                    variable_reference,
+                    set_variable_value,
+                } => {
+                    let _ = write!(
+                        sb,
+                        " ref={} set={}",
+                        reference(Some(variable_reference)),
+                        q(Some(set_variable_value))
+                    );
+                }
+                AnimEventKind::FlagWhileAlive {
+                    variable_reference,
+                    flag_value,
+                } => {
+                    let _ = write!(
+                        sb,
+                        " ref={} flag={}",
+                        reference(Some(variable_reference)),
+                        b(*flag_value)
+                    );
+                }
+            }
+            sb.push('\n');
+        }
+        for (i, t) in n.blend_tris.iter().enumerate() {
+            let _ = writeln!(
+                sb,
+                "   tri {i} {} {} {}",
+                idx(t.node1),
+                idx(t.node2),
+                idx(t.node3)
+            );
+        }
+        match &n.blend2d_picker {
+            None => sb.push_str("   picker null\n"),
+            Some(p) => {
+                let mut hull = p.hull.clone();
+                hull.sort_unstable();
+                let hull: Vec<String> = hull.iter().map(usize::to_string).collect();
+                let _ = writeln!(sb, "   picker tris=1 hull=[{}]", hull.join(","));
+            }
+        }
+        for (i, t) in n.transitions.iter().enumerate() {
+            let _ = writeln!(
+                sb,
+                "   trans {i} source={} target={} anim={} bone={} axis={} rotation={} movement={} rotationScale={} syncAdjust={} in={} out={} speed={} parsed={}",
+                q(t.source.as_deref()),
+                q(t.target.as_deref()),
+                q(t.anim_name.as_deref()),
+                q(t.deferred_bone_name.as_deref()),
+                e(t.deferred_bone_axis.map(|v| v.name())),
+                b(t.use_defered_rotation),
+                b(t.use_deferred_movement),
+                f(t.deferred_rotation_scale),
+                f(t.sync_adjust_time),
+                f(t.blend_in_time),
+                f(t.blend_out_time),
+                f(t.speed_scale),
+                b(t.is_parsed)
+            );
+            for (j, c) in t.conditions.iter().enumerate() {
+                cond(sb, "    ", "tcond", j, c);
+            }
+        }
+        for (i, w) in n.sub_state_bone_weights.iter().enumerate() {
+            let _ = writeln!(
+                sb,
+                "   bone {i} {} weight={} descendants={}",
+                q(w.bone_name.as_deref()),
+                f(w.weight),
+                b(w.include_descendants)
+            );
+        }
+        let _ = writeln!(sb, "   transitionOut={}", idx(n.transition_out));
+    };
+
+    let fs = ZomboidFileSystem::init(root)?;
+    let mut sb = String::new();
+    let dir_names = |dir: &Path| -> Vec<String> {
+        let mut names: Vec<String> = list_files(dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| p.is_dir())
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        names.sort_by(|a, b| string_compare_to(a, b));
+        names
+    };
+    let mut sets = AnimationSets::default();
+    for name in dir_names(&fs.base().join("media/AnimSets")) {
+        if let Err(err) = sets.get_animation_set(&fs, &name, false) {
+            let _ = writeln!(sb, "SETERROR {} {err}", q(Some(&name)));
+        }
+    }
+    let mut set_keys: Vec<&String> = sets.set_map.keys().collect();
+    set_keys.sort_by(|a, b| string_compare_to(a, b));
+    for key in set_keys {
+        let set = &sets.set_map[key];
+        let _ = writeln!(
+            sb,
+            "ANIMSET {} name={} states={}",
+            q(Some(key)),
+            q(Some(&set.name)),
+            set.states.len()
+        );
+        let mut state_keys: Vec<&String> = set.states.keys().collect();
+        state_keys.sort_by(|a, b| string_compare_to(a, b));
+        for sk in state_keys {
+            let st = &set.states[sk];
+            let _ = writeln!(
+                sb,
+                " STATE {} name={} set=1 default={} nodes={} abstract={}",
+                q(Some(sk)),
+                q(Some(&st.name)),
+                st.default_index,
+                st.nodes.len(),
+                st.abstract_nodes.len()
+            );
+            for (i, n) in st.nodes.iter().enumerate() {
+                node(&mut sb, &format!("NODE {i}"), n);
+            }
+            for (i, n) in st.abstract_nodes.iter().enumerate() {
+                node(&mut sb, &format!("ABSTRACT {i}"), n);
+            }
+        }
+    }
+    let base = format!("{}/", fs.base().to_string_lossy());
+    let mut failed: Vec<String> = sets
+        .asset_manager
+        .assets
+        .iter()
+        .filter(|(_, n)| n.is_none())
+        .map(|(p, _)| format!("{} failed", p.strip_prefix(&base).unwrap_or(p)))
+        .collect();
+    failed.sort_by(|a, b| string_compare_to(a, b));
+    let _ = writeln!(sb, "ASSETS {}", sets.asset_manager.assets.len());
+    for s in failed {
+        let _ = writeln!(sb, "ASSET {}", q(Some(&s)));
+    }
+    let mut groups = ActionGroups::default();
+    for name in dir_names(&fs.base().join("media/actiongroups")) {
+        groups.get_action_group(&fs, &name);
+    }
+    fn strings(v: Option<&Vec<String>>) -> String {
+        match v {
+            None => "null".into(),
+            Some(v) => {
+                let s: Vec<String> = v.iter().map(|s| q(Some(s))).collect();
+                format!("[{}]", s.join(","))
+            }
+        }
+    }
+    fn value(v: Option<&Value>) -> String {
+        match v {
+            None => "null".into(),
+            Some(Value::String(s)) => format!("s{}", q(Some(s))),
+            Some(Value::Integer(i)) => format!("i{i}"),
+            Some(Value::Float(x)) => format!("f{}", float_to_string(*x)),
+            Some(Value::Boolean(x)) => format!("b{x}"),
+            Some(Value::Lookup(r)) => format!("lookup{}", reference(Some(r))),
+        }
+    }
+    let mut group_keys: Vec<&String> = groups.action_group_map.keys().collect();
+    group_keys.sort_by(|a, b| string_compare_to(a, b));
+    for key in group_keys {
+        let g = &groups.action_group_map[key];
+        let _ = writeln!(
+            sb,
+            "ACTIONGROUP {} name={} initial={} initialState={} states={}",
+            q(Some(key)),
+            q(Some(&g.name)),
+            q(g.initial_state_name.as_deref()),
+            g.get_initial_state()
+                .map_or("null".into(), |s| q(Some(&s.name))),
+            g.states.len()
+        );
+        for (i, s) in g.states.iter().enumerate() {
+            let vars: Vec<_> = s.state_variables.get_game_variables().collect();
+            let _ = writeln!(
+                sb,
+                " ASTATE {i} {} group=1 grappler={} tags={} childTags={} vars={} transitions={}",
+                q(Some(&s.name)),
+                b(s.is_grappler_state),
+                strings(s.tags.as_ref()),
+                strings(s.child_tags.as_ref()),
+                vars.len(),
+                s.transitions.len()
+            );
+            for slot in vars {
+                let _ = writeln!(
+                    sb,
+                    "  var {} {} {} value={} readOnly={}",
+                    q(Some(&slot.key)),
+                    slot.class_name(),
+                    slot.type_name(),
+                    q(slot.get_value_string().as_deref()),
+                    b(slot.read_only)
+                );
+            }
+            for (j, t) in s.transitions.iter().enumerate() {
+                let _ = writeln!(
+                    sb,
+                    "  atrans {j} to={} asSubstate={} transitionOut={} forceParent={} priority={} conditions={}",
+                    q(t.transition_to.as_deref()),
+                    b(t.as_substate),
+                    b(t.transition_out),
+                    b(t.force_parent),
+                    t.condition_priority,
+                    t.conditions.len()
+                );
+                for c in &t.conditions {
+                    sb.push_str("    acond ");
+                    match c {
+                        IActionCondition::CharacterVariable(cv) => {
+                            let _ = write!(
+                                sb,
+                                "CharacterVariableCondition op={} lhs={} rhs={}",
+                                e(cv.op.map(|o| o.name())),
+                                value(cv.lhs_value.as_ref()),
+                                value(cv.rhs_value.as_ref())
+                            );
+                        }
+                        IActionCondition::EventOccurred(n) => {
+                            let _ = write!(sb, "EventOccurred {}", q(Some(n)));
+                        }
+                        IActionCondition::EventNotOccurred(n) => {
+                            let _ = write!(sb, "EventNotOccurred {}", q(Some(n)));
+                        }
+                        IActionCondition::LuaCall => sb.push_str("LuaCall"),
+                    }
+                    sb.push('\n');
+                }
+            }
+        }
+        let mut lookup: Vec<(&String, &usize)> = g.state_lookup.iter().collect();
+        lookup.sort_by(|a, b| string_compare_to(a.0, b.0));
+        for (k, i) in lookup {
+            let _ = writeln!(sb, " LOOKUP {} {i}", q(Some(k)));
+        }
+        let mut names: Vec<(&i32, &String)> = g.state_name_lookup.iter().collect();
+        names.sort_by_key(|(h, _)| **h);
+        for (h, n) in names {
+            let _ = writeln!(sb, " NAMELOOKUP {h} {}", q(Some(n)));
         }
     }
     Ok(sb)

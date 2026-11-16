@@ -189,6 +189,108 @@ pub fn hash_map_order(keys_in_insertion_order: &[&str]) -> Vec<usize> {
     order
 }
 
+/// java.util.HashMap<String, V> filled by `put` only (no removals): `get`, `len`, and iteration in Java's order (see
+/// `hash_map_order`; a `put` over an existing key keeps its position).
+#[derive(Clone, Debug)]
+pub struct JavaHashMap<V> {
+    keys: Vec<String>,
+    values: Vec<V>,
+}
+
+impl<V> Default for JavaHashMap<V> {
+    fn default() -> Self {
+        JavaHashMap {
+            keys: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+}
+
+impl<V> JavaHashMap<V> {
+    /// java.util.HashMap.put: the previous value of the key, replaced in place.
+    pub fn put(&mut self, key: String, value: V) -> Option<V> {
+        match self.keys.iter().position(|k| *k == key) {
+            Some(i) => Some(std::mem::replace(&mut self.values[i], value)),
+            None => {
+                self.keys.push(key);
+                self.values.push(value);
+                None
+            }
+        }
+    }
+
+    /// java.util.HashMap.get
+    pub fn get(&self, key: &str) -> Option<&V> {
+        self.keys
+            .iter()
+            .position(|k| k == key)
+            .map(|i| &self.values[i])
+    }
+
+    /// java.util.HashMap.size
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// java.util.HashMap.isEmpty
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    /// java.util.HashMap.values(), in the map's iteration order.
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
+        hash_map_order(&keys)
+            .into_iter()
+            .map(move |i| &self.values[i])
+    }
+}
+
+/// java.util.List.sort / Arrays.sort(T[], Comparator) for fewer than 32 elements: java.util.TimSort's short path
+/// (`countRunAndMakeAscending`, then `binarySort`), as written, so an inconsistent comparator gives the original's
+/// order. `Err` for 32 or more elements (the merging path is not ported).
+pub fn list_sort<T>(
+    a: &mut [T],
+    mut c: impl FnMut(&T, &T) -> std::cmp::Ordering,
+) -> Result<(), String> {
+    use std::cmp::Ordering::Less;
+    let hi = a.len();
+    if hi < 2 {
+        return Ok(());
+    }
+    if hi >= 32 {
+        return Err("TimSort of 32 or more elements is not ported".into());
+    }
+    // countRunAndMakeAscending
+    let mut run_hi = 2usize;
+    if c(&a[1], &a[0]) == Less {
+        while run_hi < hi && c(&a[run_hi], &a[run_hi - 1]) == Less {
+            run_hi += 1;
+        }
+        a[..run_hi].reverse();
+    } else {
+        while run_hi < hi && c(&a[run_hi], &a[run_hi - 1]) != Less {
+            run_hi += 1;
+        }
+    }
+    // binarySort
+    let mut start = run_hi;
+    while start < hi {
+        let (mut left, mut right) = (0usize, start);
+        while left < right {
+            let mid = (left + right) >> 1;
+            if c(&a[start], &a[mid]) == Less {
+                right = mid;
+            } else {
+                left = mid + 1;
+            }
+        }
+        a[left..=start].rotate_right(1);
+        start += 1;
+    }
+    Ok(())
+}
+
 /// java.util.zip.CRC32 over `data` (the IEEE polynomial, reflected, as `getValue()` returns it).
 pub fn crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
