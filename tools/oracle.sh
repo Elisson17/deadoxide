@@ -129,6 +129,10 @@ sel zonetriangles && server_case zonetriangles MapZoneProbe "$HERE/profile/Saves
 sel animalzones && server_case animalzones AnimalZonesProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the save's map_t.bin (GameTime.load with ClimateManager.load) as a single-player game reads it
 sel gametime && server_case gametime GameTimeProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
+# the original ClimateManager (with ClimateValues, ClimateForecaster, WeatherPeriod, ThunderStorm) stepped over simulated days
+# inside the booted dedicated server; scenarios seed:year:month:day:hour:days (a summer week; spring storms with running thunder
+# clouds; a winter blizzard; a tropical storm)
+sel climate && server_case climate ClimateProbe 1984:1993:6:8:9.0:6 12:1995:2:10:6.0:4 8:1995:0:10:6.0:4 8:1995:5:5:6.0:5
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

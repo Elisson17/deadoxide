@@ -214,6 +214,20 @@ fn game_time_matches_original() {
 }
 
 #[test]
+fn climate_matches_original() {
+    // ClimateProbe's scenarios (the probe's first argument, its scratch dir, is not passed to pz-dump)
+    check(
+        "climate",
+        &[
+            "1984:1993:6:8:9.0:6",
+            "12:1995:2:10:6.0:4",
+            "8:1995:0:10:6.0:4",
+            "8:1995:5:5:6.0:5",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");

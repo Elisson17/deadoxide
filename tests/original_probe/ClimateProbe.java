@@ -39,7 +39,8 @@ import zombie.network.GameServer;
 //    ErosionMain.mainTimer and ClimateManager.updateEveryTenMins), then ClimateManager.update().
 // The server stays a server (GameServer.server true): its climate is the authoritative one. Printed: the set-up, the
 // colours the Lua set, the 40 forecasts after init and after each day change, and at every climate tick (each game
-// minute) every climate float, colour and bool, the internal state, the weather period and the thunder clouds.
+// minute) every climate float, colour and bool, the internal state, the weather period, the thunder clouds and (on a
+// change) the thunder event the server would send (TE: x y strike/lightning/rumble).
 // Floats with Float.toString, doubles with Double.toString.
 // Args: <scratch dir> <scenario>...
 public class ClimateProbe {
@@ -189,6 +190,7 @@ public class ClimateProbe {
         int minutesMod = (int) ((gt.getTimeOfDay() - (int) gt.getTimeOfDay()) * 60.0F) / 10;
         double lastStart = Double.NaN;
         boolean lastRunning = false;
+        String[] lastEvent = {"0 0 000"};
         long ticks = (long) days * 108000L;
         for (long t = 1; t <= ticks; t++) {
             float last = gt.getTimeOfDay();
@@ -272,6 +274,12 @@ public class ClimateProbe {
                     + d(g(c, "duration")) + " " + f(g(c, "strength")) + " " + f(g(c, "angle")) + " " + f(g(c, "radius")) + " "
                     + f(g(c, "eventFrequency")) + " " + f(g(c, "thunderRatio")) + " " + f(g(c, "percentageOffset")) + " timer=" + st.elapsed + ","
                     + st.duration + "," + b(st.finished) + "," + st.ticks + " strike=" + g(ts, "strikeRadius"));
+            }
+            Object ne = g(ts, "networkThunderEvent");
+            String te = g(ne, "eventX") + " " + g(ne, "eventY") + " " + b(g(ne, "doStrike")) + b(g(ne, "doLightning")) + b(g(ne, "doRumble"));
+            if (!te.equals(lastEvent[0])) {
+                lastEvent[0] = te;
+                out.println("TE " + te);
             }
             if ((Boolean) g(cm, "tickIsDayChange")) forecasts(out, cm);
         }

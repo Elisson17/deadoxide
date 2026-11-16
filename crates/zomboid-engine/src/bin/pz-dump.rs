@@ -5461,6 +5461,7 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
             ((gt.time_of_day - gt.time_of_day as i32 as f32) * 60.0) as i32 / 10;
         let mut last_start = f64::NAN;
         let mut last_running = false;
+        let mut last_event = "0 0 000".to_string();
         let ticks = days * 108_000;
         for t in 1..=ticks {
             if gt.update_clock(&mut minutes_mod) {
@@ -5629,6 +5630,19 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
                     st.ticks,
                     ts.strike_radius
                 );
+            }
+            let ne = &ts.network_thunder_event;
+            let te = format!(
+                "{} {} {}{}{}",
+                ne.event_x,
+                ne.event_y,
+                b(ne.do_strike),
+                b(ne.do_lightning),
+                b(ne.do_rumble)
+            );
+            if te != last_event {
+                let _ = writeln!(sb, "TE {te}");
+                last_event = te;
             }
             if cm.tick_is_day_change {
                 forecasts(&mut sb, &cm);
