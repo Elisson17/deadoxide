@@ -51,6 +51,12 @@ fn tiledefs_match_original() {
 }
 
 #[test]
+fn fonts_matches_original() {
+    // the second argument is the probe's scratch cache dir, unused by pz-dump
+    check("fonts", &["-"]);
+}
+
+#[test]
 fn lotheaders_match_original() {
     check("lotheaders", &["Muldraugh, KY"]);
 }

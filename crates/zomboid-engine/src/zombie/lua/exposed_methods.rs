@@ -101,26 +101,9 @@ impl CoreObject {
         }
     }
 
-    /// zombie.core.Core.getOptionFontSizeReal: size 6 ("automatic") picks 1..5 from the screen height
-    /// (`getScreenHeight()` is Core.height), any other size is itself.
+    /// zombie.core.Core.getOptionFontSizeReal, with `getScreenHeight()` = Core.height.
     pub fn get_option_font_size_real(&self) -> i32 {
-        let mut size = self.option_font_size;
-        if size == 6 {
-            let scale =
-                crate::zombie::core::math::pz_math::floor((CORE_HEIGHT - 1080) as f32 / 132.0)
-                    as i32
-                    + 1;
-            let scale_clamp = crate::zombie::core::math::pz_math::clamp_i32(scale, 0, 10);
-            match scale_clamp {
-                0 => size = 1,
-                1 => size = 2,
-                2 | 3 => size = 3,
-                4..=6 => size = 4,
-                7..=10 => size = 5,
-                _ => {}
-            }
-        }
-        size
+        crate::zombie::core::core::get_option_font_size_real(self.option_font_size, CORE_HEIGHT)
     }
 
     /// zombie.core.Core.getOptionControllerButtonStyleString

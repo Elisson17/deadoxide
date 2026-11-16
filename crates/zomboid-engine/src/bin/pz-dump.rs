@@ -1,5 +1,6 @@
 //! Dumps engine state in the exact text format of the Java probes in `tests/original_probe`, for byte-for-byte diffs.
 //!   pz-dump tiledefs <game root>                  (pairs with TileDefsProbe.java)
+//!   pz-dump fonts <game root> <scratch>           (pairs with FontsProbe.java)
 //!   pz-dump lotheaders <game root> <map folder>   (pairs with LotHeadersProbe.java)
 //!   pz-dump lotpack <game root> <map folder> x1 y1 x2 y2   (pairs with LotPackProbe.java)
 //!   pz-dump mapmeta <game root> <save dir>    (pairs with MapMetaProbe.java)
@@ -30,6 +31,7 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     let r = match a.get(1).map(String::as_str) {
         Some("tiledefs") if a.len() == 3 => tiledefs(Path::new(&a[2])),
+        Some("fonts") if a.len() == 4 => fonts(Path::new(&a[2])),
         Some("lotheaders") if a.len() == 4 => lotheaders(Path::new(&a[2]), &a[3]),
         Some("lotpack") if a.len() == 8 => lotpack(Path::new(&a[2]), &a[3], &a[4..8]),
         Some("metagrid") if a.len() == 8 => metagrid(Path::new(&a[2]), &a[3], &a[4..8]),
@@ -421,6 +423,439 @@ pub fn tiledefs(root: &Path) -> Result<String, String> {
         );
     }
     eprintln!("PROBE sprites={} intMap={}", names.len(), sm.int_map.len());
+    Ok(sb)
+}
+
+/// `pz-dump fonts <root> <scratch>` (pairs with FontsProbe.java): every `.fnt` under `media/fonts` and in `media/`
+/// through the ported `AngelCodeFont`, then the `TextManager` tables for every language, font size option and dyslexic
+/// flag. The scratch argument is the probe's cache folder, unused here.
+pub fn fonts(root: &Path) -> Result<String, String> {
+    use std::rc::Rc;
+    use zomboid_engine::zombie::core::core::get_option_font_size_real;
+    use zomboid_engine::zombie::core::fonts::angel_code_font::AngelCodeFont;
+    use zomboid_engine::zombie::ui::fonts_file;
+    use zomboid_engine::zombie::ui::text_manager::{FontRef, TextManager};
+    use zomboid_engine::zombie::ui::ui_font::UIFont;
+    use zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem;
+
+    const LONG: &str = "This is a long sentence that should wrap across several lines when the width is small enough, with averyveryverylongwordthatcannotfitonasingleline inside.";
+    const SAMPLES: [&str; 19] = [
+        "",
+        "Hello, World!",
+        "The quick brown fox jumps over the lazy dog. 0123456789",
+        "Line one\nLine two\n\nfourth line",
+        "\n",
+        "AV AW Ta To Wa Yo ff fi LT",
+        "  two  spaces  ",
+        "Tab\there\u{0}nul",
+        "a\r\nb\rc",
+        "\u{dc}ber na\u{ef}ve caf\u{e9} \u{e0}\u{e9}\u{ee}\u{f5}\u{fc} \u{df} \u{a9}\u{ae}\u{20ac}\u{2122}",
+        "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}, \u{43c}\u{438}\u{440}! \u{401}\u{451}",
+        "\u{4f60}\u{597d}\u{4e16}\u{754c}\u{ff0c}\u{6d4b}\u{8bd5}\u{3002}",
+        "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}\u{3001}\u{30ab}\u{30bf}\u{30ab}\u{30ca}\u{6f22}\u{5b57}",
+        "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694} \u{d55c}\u{ad6d}\u{c5b4}",
+        "\u{e2a}\u{e27}\u{e31}\u{e2a}\u{e14}\u{e35}\u{e04}\u{e23}\u{e31}\u{e1a} \u{e01}\u{e48}\u{e33}",
+        "\u{1}\u{7f}\u{fffd}\u{ffff}\u{1f600}",
+        "<RGB:1,0,0> Red <LINE> <SIZE:large> [img=music] <IMAGE:media/ui/x.png>",
+        "Za\u{17c}\u{f3}\u{142}\u{107} g\u{119}\u{15b}l\u{105} ja\u{17a}\u{144}",
+        LONG,
+    ];
+    const INIT_SAMPLES: [usize; 6] = [0, 1, 3, 10, 11, 15];
+    const CJK4: &str = "\u{4f60}\u{597d}\u{4e16}\u{754c}\u{4f60}\u{597d}\u{4e16}\u{754c}\u{4f60}\u{597d}\u{4e16}\u{754c}\u{4f60}\u{597d}\u{4e16}\u{754c}";
+    const WRAPS: [(&str, i32, i32, &str); 16] = [
+        (LONG, 200, -1, ""),
+        (LONG, 50, -1, ""),
+        (LONG, 50, 2, "..."),
+        (LONG, 120, 3, "\u{2026}"),
+        (
+            "first line\r\nsecond line is longer than the first\nthird",
+            80,
+            -1,
+            "",
+        ),
+        ("", 100, -1, ""),
+        ("   ", 0, -1, ""),
+        ("short", 1000, 1, "..."),
+        (CJK4, 60, -1, ""),
+        ("word  double  spaces here", 40, -1, ""),
+        ("\n\nlead", 100, -1, ""),
+        ("trail\n\n", 100, -1, ""),
+        (" x", -1, -1, ""),
+        (LONG, 90, 2, "a much longer suffix than the room"),
+        (
+            "Supercalifragilisticexpialidociousandsomemore end",
+            60,
+            -1,
+            "",
+        ),
+        ("Antidisestablishmentarianism\r\n\r\nx", 25, 4, "~"),
+    ];
+    const WRAP_FONTS: [UIFont; 5] = [
+        UIFont::Small,
+        UIFont::Medium,
+        UIFont::Large,
+        UIFont::Code,
+        UIFont::Dialogue,
+    ];
+    const HEIGHTS: [i32; 29] = [
+        0, 720, 1079, 1080, 1211, 1212, 1343, 1344, 1475, 1476, 1607, 1608, 1739, 1740, 1871, 1872,
+        2003, 2004, 2135, 2136, 2267, 2268, 2399, 2400, 2531, 2532, 3000, 4320, -5000,
+    ];
+    let u16s = |s: &str| -> Vec<u16> { s.encode_utf16().collect() };
+    let esc16 = |s: &[u16]| -> String {
+        let mut b = String::new();
+        for &c in s {
+            if (0x20..0x7f).contains(&c) && c != u16::from(b'\\') {
+                b.push(c as u8 as char);
+            } else {
+                let _ = write!(b, "\\u{c:04x}");
+            }
+        }
+        b
+    };
+    let esc = |s: Option<&str>| -> String {
+        match s {
+            None => "null".into(),
+            Some(s) => esc16(&u16s(s)),
+        }
+    };
+    // FontsProbe.exc: the simple name of the exception's class.
+    let exc = |e: &str| -> String {
+        let class = e.split(':').next().unwrap_or(e);
+        format!("E:{}", class.rsplit('.').next().unwrap_or(class))
+    };
+    let walk = |dir: &Path| -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            out.push(d.clone());
+            if d.is_dir() {
+                if let Ok(rd) = std::fs::read_dir(&d) {
+                    for e in rd.flatten() {
+                        stack.push(e.path());
+                    }
+                }
+            }
+        }
+        out
+    };
+    // Files.walk(Paths.get("media/...")) as the probe sees it from the game folder: paths relative to the root.
+    let rel_to_root = |p: &Path| -> String {
+        p.strip_prefix(root)
+            .unwrap_or(p)
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
+
+    let fs = ZomboidFileSystem::init(root)?;
+    let base = format!("{}/", fs.base());
+    let rel = |abs: &str| -> String {
+        match abs.strip_prefix(&base) {
+            Some(r) => format!("$/{r}"),
+            None => abs.to_string(),
+        }
+    };
+    let mut sb = String::new();
+
+    // Part A: every font file.
+    let mut files: Vec<String> = Vec::new();
+    for p in walk(&root.join("media/fonts")) {
+        let s = rel_to_root(&p);
+        if s.ends_with(".fnt") && p.is_file() {
+            files.push(s);
+        }
+    }
+    if let Ok(rd) = std::fs::read_dir(root.join("media")) {
+        for e in rd.flatten() {
+            let s = rel_to_root(&e.path());
+            if s.ends_with(".fnt") && e.path().is_file() {
+                files.push(s);
+            }
+        }
+    }
+    files.sort_by(|a, b| java::string_compare_to(a, b));
+    let _ = writeln!(sb, "FONTS {}", files.len());
+    for path in &files {
+        let _ = writeln!(sb, "FONT {path}");
+        let f = match AngelCodeFont::new(&fs, path, None) {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = writeln!(sb, "FAIL {}", exc(&e));
+                continue;
+            }
+        };
+        let defined = f.chars.iter().flatten().count();
+        // pages: the loaded page textures; none without a renderer.
+        let _ = writeln!(
+            sb,
+            "FILE {} sdf={} lh={} chars={} defined={defined} pages=0",
+            rel(f.fnt_file.as_deref().unwrap_or("null")),
+            u8::from(f.is_sdf()),
+            f.get_line_height(),
+            f.chars.len()
+        );
+        for t in f.texture_requests() {
+            let _ = writeln!(sb, "TEX {}", esc(Some(&rel(t))));
+        }
+        for d in f.chars.iter().flatten() {
+            let _ = write!(
+                sb,
+                "C {} {} {} {} {} {} {} {} {}",
+                d.id, d.x, d.y, d.width, d.height, d.xoffset, d.yoffset, d.xadvance, d.page
+            );
+            if let (Some(second), Some(amount)) = (&d.kerning_second, &d.kerning_amount) {
+                sb.push_str(" K");
+                for (s, a) in second.iter().zip(amount) {
+                    let _ = write!(sb, " {s}:{a}");
+                }
+            }
+            sb.push('\n');
+        }
+        for (s, sample) in SAMPLES.iter().enumerate() {
+            let t = u16s(sample);
+            let _ = write!(
+                sb,
+                "M {s} {} {} {} {} {} ",
+                f.get_width(&t),
+                f.get_width_xadvance(&t, true),
+                f.get_height(&t),
+                f.get_height_ext(&t, true, false),
+                f.get_height_ext(&t, false, true)
+            );
+            match f.get_y_offset(&t) {
+                Ok(y) => {
+                    let _ = write!(sb, "{y}");
+                }
+                Err(e) => sb.push_str(&exc(&e)),
+            }
+            if t.len() >= 3 {
+                let end = t.len() as i32 - 2;
+                let _ = write!(
+                    sb,
+                    " {} {}",
+                    f.get_width_range(&t, 1, end, false)?,
+                    f.get_width_range(&t, 1, end, true)?
+                );
+            }
+            sb.push('\n');
+        }
+    }
+
+    // Part B: the TextManager tables.
+    for o in 1..=6 {
+        for h in HEIGHTS {
+            let _ = writeln!(sb, "FSR {o} {h} {}", get_option_font_size_real(o, h));
+        }
+    }
+    // Languages.init: EN, then every folder of media/lua/shared/Translate with a language.json (named after it).
+    let mut langs: Vec<String> = vec!["EN".into()];
+    if let Ok(rd) = std::fs::read_dir(root.join("media/lua/shared/Translate")) {
+        for e in rd.flatten() {
+            if e.path().is_dir() && e.path().join("language.json").exists() {
+                langs.push(e.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
+    langs.sort_by(|a, b| java::string_compare_to(a, b));
+    langs.dedup();
+    let _ = writeln!(sb, "LANG {} {}", langs.len(), langs.join(" "));
+
+    let mut names: Vec<String> = Vec::new();
+    let mut fonts_files: Vec<String> = Vec::new();
+    for p in walk(&root.join("media/fonts")) {
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if name.len() >= 9 && name.starts_with("fonts") && name.ends_with(".txt") {
+            fonts_files.push(rel_to_root(&p));
+        }
+    }
+    fonts_files.sort_by(|a, b| java::string_compare_to(a, b));
+    let mut log = Vec::new();
+    for ff in &fonts_files {
+        let mut m = std::collections::HashMap::new();
+        let ok = fonts_file::read(&fs, fs.get_string_or(ff), &mut m, &mut log);
+        let _ = writeln!(sb, "FONTSFILE {ff} {ok} {}", m.len());
+        let mut keys: Vec<&String> = m.keys().collect();
+        keys.sort_by(|a, b| java::string_compare_to(a, b));
+        for k in keys {
+            let v = &m[k];
+            let _ = writeln!(
+                sb,
+                "FF {} id={} fnt={} img={} type={}",
+                esc(Some(k)),
+                esc(Some(&v.id)),
+                esc(Some(&v.fnt)),
+                esc(v.img.as_deref()),
+                esc(v.r#type.as_deref())
+            );
+            names.push(v.fnt.clone());
+            if let Some(img) = &v.img {
+                names.push(img.clone());
+            }
+        }
+    }
+    names.sort_by(|a, b| java::string_compare_to(a, b));
+    names.dedup();
+    let size_dirs = [None, Some("1x"), Some("2x"), Some("3x"), Some("4x")];
+    for l in &langs {
+        for sd in size_dirs {
+            for n in &names {
+                let _ = writeln!(
+                    sb,
+                    "PATH {l} {} {n} {}",
+                    sd.unwrap_or("null"),
+                    TextManager::get_font_file_path(&fs, l, sd, n)
+                );
+            }
+        }
+    }
+
+    let fonts = UIFont::values();
+    let font_line = |f: &FontRef| -> String {
+        let f = f.borrow();
+        format!(
+            "{} sdf={} lh={} chars={}",
+            rel(f.fnt_file.as_deref().unwrap_or("null")),
+            u8::from(f.is_sdf()),
+            f.get_line_height(),
+            f.chars.len()
+        )
+    };
+    for l in &langs {
+        for o in 1..=5 {
+            for dys in 0..=1 {
+                let mut tm = TextManager::new();
+                let _ = write!(sb, "INIT {l} size={o} dyslexic={dys}");
+                match tm.init(&fs, l, dys == 1, get_option_font_size_real(o, 720)) {
+                    Ok(()) => sb.push_str(" ok\n"),
+                    Err(e) => {
+                        let _ = writeln!(sb, " {}", exc(&e));
+                    }
+                }
+                let mut distinct: Vec<FontRef> = Vec::new();
+                let mut id = |f: Option<&FontRef>| -> String {
+                    let Some(f) = f else {
+                        return "null".into();
+                    };
+                    if let Some(i) = distinct.iter().position(|d| Rc::ptr_eq(d, f)) {
+                        return format!("#{i}");
+                    }
+                    distinct.push(f.clone());
+                    format!("#{} {}", distinct.len() - 1, font_line(f))
+                };
+                for u in fonts {
+                    let _ = writeln!(
+                        sb,
+                        "U {} {}",
+                        u.name(),
+                        id(tm.enum_to_font[u.ordinal()].as_ref())
+                    );
+                }
+                for n in 0..tm.normal.len() as i32 {
+                    let f = tm.get_normal_from_font_size(n + 11)?;
+                    let _ = writeln!(sb, "N {} {}", n + 11, id(f.as_ref()));
+                }
+                let fields = [
+                    &tm.font,
+                    &tm.font2,
+                    &tm.font3,
+                    &tm.font4,
+                    &tm.main1,
+                    &tm.main2,
+                    &tm.zombiefontcredits1,
+                    &tm.zombiefontcredits2,
+                    &tm.zombienew1,
+                    &tm.zombienew2,
+                    &tm.zombienew3,
+                    &tm.zomboid_dialogue,
+                    &tm.codetext,
+                    &tm.code_small,
+                    &tm.code_medium,
+                    &tm.code_large,
+                    &tm.debug_console,
+                    &tm.intro,
+                    &tm.handwritten,
+                ];
+                sb.push_str("FIELDS");
+                for f in fields {
+                    let _ = write!(sb, " {}", id(f.as_ref()));
+                }
+                sb.push('\n');
+                let _ = writeln!(
+                    sb,
+                    "NONEN {} code={}",
+                    TextManager::is_using_non_english_fonts(&fs, l),
+                    tm.get_current_code_font().name()
+                );
+                let with_null: Vec<Option<UIFont>> =
+                    fonts.iter().map(|f| Some(*f)).chain([None]).collect();
+                for u in with_null {
+                    let name = u.map_or("null", |f| f.name());
+                    let _ = write!(sb, "H {name}");
+                    for r in [tm.get_font_height(u), tm.measure_font(u)] {
+                        match r {
+                            Ok(v) => {
+                                let _ = write!(sb, " {v}");
+                            }
+                            Err(e) => {
+                                let _ = write!(sb, " {}", exc(&e));
+                            }
+                        }
+                    }
+                    match tm.is_sdf(u) {
+                        Ok(v) => {
+                            let _ = write!(sb, " {v}");
+                        }
+                        Err(e) => {
+                            let _ = write!(sb, " {}", exc(&e));
+                        }
+                    }
+                    sb.push('\n');
+                    for s in INIT_SAMPLES {
+                        let t = u16s(SAMPLES[s]);
+                        let t = Some(t.as_slice());
+                        let _ = writeln!(
+                            sb,
+                            "MS {name} {s} {} {} {} {} {}",
+                            tm.measure_string_x(u, t)?,
+                            tm.measure_string_y(u, t)?,
+                            tm.measure_string_y_real(u, t)?,
+                            tm.measure_string_y_offset(u, t)?,
+                            tm.centre_string_y_offset(u, t)?
+                        );
+                    }
+                }
+                for u in WRAP_FONTS {
+                    for (w, (text, width, lines, suffix)) in WRAPS.iter().enumerate() {
+                        let _ = write!(sb, "WRAP {} {w} ", u.name());
+                        match tm.wrap_text_ext(Some(u), &u16s(text), *width, *lines, &u16s(suffix))
+                        {
+                            Ok(r) => sb.push_str(&esc16(&r)),
+                            Err(e) => sb.push_str(&exc(&e)),
+                        }
+                        sb.push('\n');
+                    }
+                    let r = tm.wrap_text(Some(u), &u16s(LONG), 150)?;
+                    let _ = writeln!(sb, "WRAP2 {} {}", u.name(), esc16(&r));
+                }
+            }
+        }
+    }
+    sb.push_str("ALLFONTS");
+    for u in TextManager::new().get_all_fonts() {
+        let _ = write!(sb, " {}", u.name());
+    }
+    sb.push('\n');
+    for s in ["Small", "small", "SdfCaveat", "", "Nope", "DebugConsole"] {
+        let _ = writeln!(
+            sb,
+            "FROMSTRING {} {}",
+            esc(Some(s)),
+            UIFont::from_string(s).map_or("null", |f| f.name())
+        );
+    }
     Ok(sb)
 }
 

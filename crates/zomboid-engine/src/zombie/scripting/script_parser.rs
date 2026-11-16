@@ -34,6 +34,16 @@ pub struct Block {
     pub children: Vec<Block>,
 }
 
+impl Block {
+    /// zombie.scripting.ScriptParser.Block.getValue: the first value with an '=' after its first character whose
+    /// trimmed key is `key`.
+    pub fn get_value(&self, key: &str) -> Option<&Value> {
+        self.values.iter().find(|v| {
+            v.string.find('=').is_some_and(|p| p > 0) && crate::java::trim(v.get_key()) == key
+        })
+    }
+}
+
 /// zombie.scripting.ScriptParser.readBlock. Positions are char indices, as Java's are UTF-16 units (the same for the
 /// basic-plane text of the game's scripts).
 fn read_block(s: &[char], mut start: usize, block: &mut Block) -> usize {

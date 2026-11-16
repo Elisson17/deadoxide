@@ -631,6 +631,121 @@ pub fn math_pow(x: f64, y: f64) -> f64 {
     crate::java_fdlibm::pow(x, y)
 }
 
+/// java.lang.Short.parseShort(String): `Integer.parseInt` then the range check; `None` is NumberFormatException.
+pub fn parse_short(s: &str) -> Option<i16> {
+    i16::try_from(parse_int(s)?).ok()
+}
+
+/// The lines java.io.BufferedReader.readLine returns, in order: each ends at '\n', '\r' or "\r\n" (not included);
+/// text after the last terminator is a last line, an empty rest is not.
+pub fn buffered_reader_lines(text: &str) -> Vec<&str> {
+    let b = text.as_bytes();
+    let mut lines = Vec::new();
+    let (mut start, mut i) = (0usize, 0usize);
+    while i < b.len() {
+        match b[i] {
+            b'\n' => {
+                lines.push(&text[start..i]);
+                i += 1;
+                start = i;
+            }
+            b'\r' => {
+                lines.push(&text[start..i]);
+                i += if b.get(i + 1) == Some(&b'\n') { 2 } else { 1 };
+                start = i;
+            }
+            _ => i += 1,
+        }
+    }
+    if start < b.len() {
+        lines.push(&text[start..]);
+    }
+    lines
+}
+
+/// java.util.StringTokenizer(str, delim) without returned delimiters: the maximal runs of characters outside
+/// `delim`, handed out in order by `next_token`.
+pub struct StringTokenizer<'a> {
+    tokens: std::vec::IntoIter<&'a str>,
+}
+impl<'a> StringTokenizer<'a> {
+    /// java.util.StringTokenizer.<init>(String, String)
+    pub fn new(s: &'a str, delim: &str) -> Self {
+        let tokens: Vec<&str> = s
+            .split(|c: char| delim.contains(c))
+            .filter(|t| !t.is_empty())
+            .collect();
+        StringTokenizer {
+            tokens: tokens.into_iter(),
+        }
+    }
+    /// java.util.StringTokenizer.nextToken: `Err` is NoSuchElementException.
+    pub fn next_token(&mut self) -> Result<&'a str, String> {
+        self.tokens
+            .next()
+            .ok_or_else(|| "java.util.NoSuchElementException".to_string())
+    }
+}
+
+/// java.lang.String.compareToIgnoreCase (`String.CASE_INSENSITIVE_ORDER`): UTF-16 units compared after
+/// Character.toUpperCase then Character.toLowerCase, then the lengths.
+pub fn compare_to_ignore_case(a: &str, b: &str) -> std::cmp::Ordering {
+    let fold = |u: u16| -> u16 {
+        match char::from_u32(u32::from(u)) {
+            Some(c) => {
+                let l = lower(upper(c));
+                let mut buf = [0u16; 2];
+                match l.encode_utf16(&mut buf) {
+                    [x] => *x,
+                    _ => u,
+                }
+            }
+            None => u,
+        }
+    };
+    let (a, b): (Vec<u16>, Vec<u16>) = (a.encode_utf16().collect(), b.encode_utf16().collect());
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        if x != y {
+            let (fx, fy) = (fold(x), fold(y));
+            if fx != fy {
+                return fx.cmp(&fy);
+            }
+        }
+    }
+    a.len().cmp(&b.len())
+}
+
+/// The path text of `new java.io.File(s)` on Unix (`UnixFileSystem.normalize`): repeated '/' collapsed, a trailing
+/// '/' removed (but not from "/").
+pub fn file_normalize(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_slash = false;
+    for c in s.chars() {
+        if c == '/' {
+            if prev_slash {
+                continue;
+            }
+            prev_slash = true;
+        } else {
+            prev_slash = false;
+        }
+        out.push(c);
+    }
+    if out.len() > 1 && out.ends_with('/') {
+        out.pop();
+    }
+    out
+}
+
+/// java.io.File.getParent of a normalized path: the text before the last '/', `None` (Java null) without one.
+pub fn file_parent(path: &str) -> Option<&str> {
+    let i = path.rfind('/')?;
+    if i == 0 {
+        return if path.len() > 1 { Some("/") } else { None };
+    }
+    Some(&path[..i])
+}
+
 #[cfg(test)]
 mod crc32_tests {
     /// The CRC-32 check value of "123456789" (what `java.util.zip.CRC32` returns for it).

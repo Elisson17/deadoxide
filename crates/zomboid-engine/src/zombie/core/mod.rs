@@ -1,4 +1,7 @@
 pub mod color;
+#[allow(clippy::module_inception)] // zombie.core.Core
+pub mod core;
+pub mod fonts;
 pub mod immutable_color;
 pub mod math;
 pub mod properties;

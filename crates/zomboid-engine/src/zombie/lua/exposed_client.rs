@@ -19,6 +19,7 @@ use crate::zombie::audio::music_intensity_config::MusicIntensityConfig;
 use crate::zombie::audio::music_threat_config::MusicThreatConfig;
 use crate::zombie::characters::character_input_binding_set::CharacterInputBindingSet;
 use crate::zombie::ui::text_manager::TextManager;
+use crate::zombie::ui::ui_font::UIFont;
 
 state_object!(
     MusicIntensityConfigObject,
@@ -308,17 +309,20 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
             want_self_args(n, 0)?;
             with_this!(cf, TextManagerObject, t, {
                 let font = t.0.borrow().get_current_code_font();
-                ret(cf, s.field("zombie.ui.UIFont", font))
+                ret(cf, s.field("zombie.ui.UIFont", font.name()))
             })
         },
         ("zombie.ui.TextManager", "getFontFromEnum") => |_, _, cf, n| {
             want_self_args(n, 1)?;
             let font = enum_arg(cf, 1, "zombie.ui.UIFont", "UIFont")?;
             with_this!(cf, TextManagerObject, t, {
-                let ordinal = font.as_ref().map(ordinal_of).map(|o| o as i32);
-                match t.0.borrow().get_font_from_enum(ordinal) {
+                let font = font.as_ref().map(|u| UIFont::values()[ordinal_of(u)]);
+                match t.0.borrow().get_font_from_enum(font) {
                     None => ret(cf, Object::Nil),
-                    Some(never) => match never {},
+                    // Only reachable after TextManager.Init, which the Lua state never runs.
+                    Some(_) => Err(Fail::Lua(Throwable::runtime(
+                        "not ported: an AngelCodeFont as a Lua value".to_string(),
+                    ))),
                 }
             })
         },
