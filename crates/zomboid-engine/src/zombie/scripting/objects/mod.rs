@@ -1,4 +1,5 @@
 //! Package `zombie.scripting.objects`.
+pub mod base_script_object;
 pub mod craft_recipe_group;
 pub mod craft_recipe_tag;
 pub mod item_tag;
@@ -8,3 +9,7 @@ pub mod resource_location;
 pub mod timed_action_script;
 pub mod vehicle_script;
 pub mod vehicle_template;
+pub mod xui_colors_script;
+pub mod xui_config_script;
+pub mod xui_layout_script;
+pub mod xui_skin_script;
