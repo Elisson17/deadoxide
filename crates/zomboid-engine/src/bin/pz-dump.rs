@@ -3957,6 +3957,9 @@ pub fn outfitrandom(root: &Path) -> Result<String, String> {
 /// `tests/original_probe/AnimSetsProbe.java`.
 pub fn animsets(root: &Path) -> Result<String, String> {
     use zomboid_engine::java::{float_to_string, string_compare_to};
+    use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
+    use zomboid_engine::zombie::characters::action::conditions::character_variable_condition::Value;
+    use zomboid_engine::zombie::characters::action::i_action_condition::IActionCondition;
     use zomboid_engine::zombie::core::math::i_interpolator::IInterpolator;
     use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_condition::AnimCondition;
     use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_event::AnimEventKind;
@@ -4332,6 +4335,112 @@ pub fn animsets(root: &Path) -> Result<String, String> {
     let _ = writeln!(sb, "ASSETS {}", sets.asset_manager.assets.len());
     for s in failed {
         let _ = writeln!(sb, "ASSET {}", q(Some(&s)));
+    }
+    let mut groups = ActionGroups::default();
+    for name in dir_names(&fs.base().join("media/actiongroups")) {
+        groups.get_action_group(&fs, &name);
+    }
+    fn strings(v: Option<&Vec<String>>) -> String {
+        match v {
+            None => "null".into(),
+            Some(v) => {
+                let s: Vec<String> = v.iter().map(|s| q(Some(s))).collect();
+                format!("[{}]", s.join(","))
+            }
+        }
+    }
+    fn value(v: Option<&Value>) -> String {
+        match v {
+            None => "null".into(),
+            Some(Value::String(s)) => format!("s{}", q(Some(s))),
+            Some(Value::Integer(i)) => format!("i{i}"),
+            Some(Value::Float(x)) => format!("f{}", float_to_string(*x)),
+            Some(Value::Boolean(x)) => format!("b{x}"),
+            Some(Value::Lookup(r)) => format!("lookup{}", reference(Some(r))),
+        }
+    }
+    let mut group_keys: Vec<&String> = groups.action_group_map.keys().collect();
+    group_keys.sort_by(|a, b| string_compare_to(a, b));
+    for key in group_keys {
+        let g = &groups.action_group_map[key];
+        let _ = writeln!(
+            sb,
+            "ACTIONGROUP {} name={} initial={} initialState={} states={}",
+            q(Some(key)),
+            q(Some(&g.name)),
+            q(g.initial_state_name.as_deref()),
+            g.get_initial_state()
+                .map_or("null".into(), |s| q(Some(&s.name))),
+            g.states.len()
+        );
+        for (i, s) in g.states.iter().enumerate() {
+            let vars: Vec<_> = s.state_variables.get_game_variables().collect();
+            let _ = writeln!(
+                sb,
+                " ASTATE {i} {} group=1 grappler={} tags={} childTags={} vars={} transitions={}",
+                q(Some(&s.name)),
+                b(s.is_grappler_state),
+                strings(s.tags.as_ref()),
+                strings(s.child_tags.as_ref()),
+                vars.len(),
+                s.transitions.len()
+            );
+            for slot in vars {
+                let _ = writeln!(
+                    sb,
+                    "  var {} {} {} value={} readOnly={}",
+                    q(Some(&slot.key)),
+                    slot.class_name(),
+                    slot.type_name(),
+                    q(slot.get_value_string().as_deref()),
+                    b(slot.read_only)
+                );
+            }
+            for (j, t) in s.transitions.iter().enumerate() {
+                let _ = writeln!(
+                    sb,
+                    "  atrans {j} to={} asSubstate={} transitionOut={} forceParent={} priority={} conditions={}",
+                    q(t.transition_to.as_deref()),
+                    b(t.as_substate),
+                    b(t.transition_out),
+                    b(t.force_parent),
+                    t.condition_priority,
+                    t.conditions.len()
+                );
+                for c in &t.conditions {
+                    sb.push_str("    acond ");
+                    match c {
+                        IActionCondition::CharacterVariable(cv) => {
+                            let _ = write!(
+                                sb,
+                                "CharacterVariableCondition op={} lhs={} rhs={}",
+                                e(cv.op.map(|o| o.name())),
+                                value(cv.lhs_value.as_ref()),
+                                value(cv.rhs_value.as_ref())
+                            );
+                        }
+                        IActionCondition::EventOccurred(n) => {
+                            let _ = write!(sb, "EventOccurred {}", q(Some(n)));
+                        }
+                        IActionCondition::EventNotOccurred(n) => {
+                            let _ = write!(sb, "EventNotOccurred {}", q(Some(n)));
+                        }
+                        IActionCondition::LuaCall => sb.push_str("LuaCall"),
+                    }
+                    sb.push('\n');
+                }
+            }
+        }
+        let mut lookup: Vec<(&String, &usize)> = g.state_lookup.iter().collect();
+        lookup.sort_by(|a, b| string_compare_to(a.0, b.0));
+        for (k, i) in lookup {
+            let _ = writeln!(sb, " LOOKUP {} {i}", q(Some(k)));
+        }
+        let mut names: Vec<(&i32, &String)> = g.state_name_lookup.iter().collect();
+        names.sort_by_key(|(h, _)| **h);
+        for (h, n) in names {
+            let _ = writeln!(sb, " NAMELOOKUP {h} {}", q(Some(n)));
+        }
     }
     Ok(sb)
 }

@@ -55,11 +55,6 @@ impl ZomboidFileSystem {
         Path::new(&self.base)
     }
 
-    /// zombie.ZomboidFileSystem.getFileGuidTable
-    pub fn file_guid_table(&self) -> Option<&FileGuidTable> {
-        self.file_guid_table.as_ref()
-    }
-
     /// zombie.ZomboidFileSystem.getFilePathFromGuid
     pub fn get_file_path_from_guid(&self, guid: &str) -> Option<&str> {
         self.file_guid_table.as_ref()?.get_file_path_from_guid(guid)

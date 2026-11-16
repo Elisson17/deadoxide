@@ -111,8 +111,9 @@ pub fn parse_xml_str(text: &str) -> Result<XmlElement, String> {
     Ok(root)
 }
 
-/// The document element of an XML text, normalized (`DocumentBuilder.parse`, then `Element.normalize()`).
-fn parse_document(text: &str) -> Result<XmlElement, String> {
+/// The document element of an XML text, normalized (`DocumentBuilder.parse`, then `Element.normalize()`), with no
+/// `x_include` / `x_extends` handling.
+pub fn parse_document(text: &str) -> Result<XmlElement, String> {
     let opt = roxmltree::ParsingOptions {
         allow_dtd: true,
         ..roxmltree::ParsingOptions::default()
