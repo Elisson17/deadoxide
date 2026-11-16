@@ -529,6 +529,17 @@ impl ScriptManager {
         None
     }
 
+    /// zombie.scripting.ScriptManager.FindItem(name, true): a known full type, else the item of the module's bucket
+    /// (`getModule(name)`, then `ScriptModule.getItem(getItemName(name))`; the original's retry over every module
+    /// asks the same module again). The full type of the item found.
+    pub fn find_item(&self, index: &BucketIndex, name: &str) -> Option<String> {
+        if name.contains('.') && index.full_types.contains(name) {
+            return Some(name.to_string());
+        }
+        let module = self.get_module(name)?;
+        self.bucket_get(index, module, get_item_name(name), 1)
+    }
+
     /// The lookup data of the item collection (ScriptManager.getItem).
     pub fn item_index(&self) -> BucketIndex {
         let module_of = |name: &str| self.module_list.iter().position(|m| m.name == name);

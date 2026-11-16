@@ -57,6 +57,10 @@ pub struct State {
     /// What the client's startup (GameWindow.init, initShared) left, when the host ran it before LuaManager.init;
     /// `None` for a Lua state made on its own (the translations, fonts and scripts not loaded).
     pub client: RefCell<Option<Rc<crate::zombie::game_window::ClientStartup>>>,
+    /// The Item objects handed to Lua, by item index.
+    pub items: RefCell<HashMap<usize, Rc<super::exposed_game::ItemObject>>>,
+    /// The Texture objects handed to Lua, by texture.
+    pub textures: RefCell<HashMap<usize, Rc<super::exposed_game::TextureObject>>>,
     /// The AngelCodeFont objects handed to Lua, by font.
     pub fonts: RefCell<
         Vec<(
@@ -237,9 +241,10 @@ pub fn object_to_string(o: &JavaObject) -> Option<String> {
         return ResourceLocation::of(o.id).ok().map(|l| l.to_string());
     }
     match name {
-        "zombie.input.KeybindId" | "zombie.characters.skills.PerkFactory$Perk" => {
-            Some(o.id.to_string())
-        }
+        // GameMode.toString: its id
+        "zombie.input.KeybindId"
+        | "zombie.characters.skills.PerkFactory$Perk"
+        | "zombie.core.GameMode" => Some(o.id.to_string()),
         "zombie.scripting.objects.ItemKey" => Some(format!("Base.{}", o.id)),
         _ => None,
     }
@@ -542,8 +547,8 @@ pub fn global(name: &str) -> Option<Imp> {
                 .map_err(|m| Fail::Lua(Throwable::runtime(m)))?;
             ret_str(cf, text.as_deref())
         },
-        // Texture.getSharedTexture: null without a renderer.
-        "getTexture" | "tryGetTexture" => |_, _, cf, _| {
+        // Texture.trygetTexture: null without a renderer (getTexture: exposed_game).
+        "tryGetTexture" => |_, _, cf, _| {
             string_arg(cf, 0)?;
             ret(cf, Object::Nil)
         },
@@ -717,7 +722,7 @@ fn is_enum_class(class: &str) -> bool {
 }
 
 /// The registry id of a JavaObject receiver.
-fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
+pub(super) fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
     match cf.get(0) {
         Object::Userdata(u) => u
             .as_any()

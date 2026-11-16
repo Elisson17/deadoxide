@@ -28,8 +28,8 @@ import zombie.ui.UIElementInterface;
  *                             Mouse.initCustomCursor, TileGeometryManager, TileDepthTextureAssignmentManager,
  *                             SeamManager, SeatingManager, GameInput.initControllers
  *   GameWindow.init           LoadDirBase (shared, client), then LuaBootProbe's events (ZomboidGlobals.Load,
- *                             OnLoadSoundBanks, OnGameBoot, OnGameStateEnter + TermsOfServiceState.enter's rest,
- *                             OnMainMenuEnter)
+ *                             OnLoadSoundBanks, GameWindow.enter's steps (see enter) and OnGameBoot,
+ *                             OnGameStateEnter + TermsOfServiceState.enter's rest, OnMainMenuEnter)
  * A step that throws stops the probe (exit 1): every step listed runs headless. Output: LuaLoadEnvProbe's report,
  * LuaBootProbe's lines, then the UI the scripts built:
  *   UI <list> <i> <element>    each element of UIManager's pending lists (toAdd, toRemove: UIManager.update moves
@@ -135,6 +135,29 @@ public class LuaGameProbe {
         LuaLoadEnvProbe.loadDirs(a);
     }
 
+    /** GameWindow.enter before its OnGameBoot: the tile texture packs (texture2x is on by default, so the 2x ones),
+     * their lookup and the textures it checks, TileSeamManager, VoiceManager.InitVMClient (nothing with -nosound).
+     * ModelManager.create and TileDepthTextureManager.init abort the JVM without OpenGL (exit 134), and
+     * TileDepthMapManager.init needs the latter's textures: left out. */
+    static void enter() throws Exception {
+        Core.tileScale = Core.getInstance().getOptionTexture2x() ? 2 : 1;
+        step("IsoCamera.init", () -> zombie.iso.IsoCamera.init());
+        int flags = (zombie.core.textures.TextureID.useCompression ? 4 : 0) | 64;
+        for (String p : new String[]{"Tiles2x", "Overlays2x", "JumboTrees2x", "JumboTreesBigs2x"})
+            step("LoadTexturePack " + p, () -> GameWindow.LoadTexturePack(p, flags));
+        step("LoadTexturePack Tiles2x.floor", () -> GameWindow.LoadTexturePack("Tiles2x.floor", flags & -5));
+        step("LoadTexturePack B42ChunkCaching2x", () -> GameWindow.LoadTexturePack("B42ChunkCaching2x", flags));
+        step("LoadTexturePack B42ChunkCaching2x.floor", () -> GameWindow.LoadTexturePack("B42ChunkCaching2x.floor", flags & -5));
+        step("LoadTexturePack Clock2x", () -> GameWindow.LoadTexturePack("Clock2x", flags));
+        step("setTexturePackLookup", () -> GameWindow.setTexturePackLookup());
+        step("clock textures", () -> {
+            for (int i = 0; i < 4; i++) zombie.core.textures.Texture.getSharedTexture("animated_clock_01_" + i);
+            if (zombie.core.textures.Texture.getSharedTexture("TileIndieStoneTentFrontLeft") == null) throw new RuntimeException("no tent");
+        });
+        step("TileSeamManager.init", () -> zombie.tileDepth.TileSeamManager.instance.init());
+        step("VoiceManager.InitVMClient", () -> zombie.core.raknet.VoiceManager.instance.InitVMClient());
+    }
+
     static String bits(float f) { return Integer.toHexString(Float.floatToRawIntBits(f)); }
     static String bits(double d) { return Long.toHexString(Double.doubleToRawLongBits(d)); }
     static String flag(boolean b) { return b ? "1" : "0"; }
@@ -181,7 +204,7 @@ public class LuaGameProbe {
         PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, "UTF-8");
         System.setOut(System.err);
         init(a);
-        zombie.gameStates.TermsOfServiceState tos = LuaBootProbe.events();
+        zombie.gameStates.TermsOfServiceState tos = LuaBootProbe.events(LuaGameProbe::enter);
         LuaLoadEnvProbe.report();
         LuaBootProbe.report(tos);
         ui("toAdd");

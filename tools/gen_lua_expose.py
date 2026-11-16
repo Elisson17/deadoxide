@@ -53,7 +53,7 @@ zombie.SandboxOptions$EnumSandboxOption zombie.SandboxOptions$IntegerSandboxOpti
 zombie.SandboxOptions$StringSandboxOption zombie.network.ServerOptions$BooleanServerOption
 zombie.network.ServerOptions$DoubleServerOption zombie.network.ServerOptions$EnumServerOption
 zombie.network.ServerOptions$IntegerServerOption zombie.network.ServerOptions$StringServerOption
-zombie.network.ServerOptions$TextServerOption
+zombie.network.ServerOptions$TextServerOption zombie.characters.Capability
 """.split()
 
 

@@ -5920,6 +5920,13 @@ fn luaboot_events(
     if stop == "OnLoadSoundBanks" {
         return Ok((sb, tos));
     }
+    // GameWindow.enter's steps before OnGameBoot, in a client whose startup ran (LuaGameProbe.enter)
+    let client = lm.statics.state.client.borrow().clone();
+    if let Some(client) = client {
+        client
+            .enter()
+            .map_err(zomboid_engine::se::krka::kahlua::vm::object::Throwable::runtime)?;
+    }
     fire(lm, "OnGameBoot", &[])?;
     if stop == "OnGameBoot" {
         return Ok((sb, tos));

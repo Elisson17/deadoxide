@@ -53,7 +53,7 @@ public class LuaBootProbe {
         PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, "UTF-8");
         System.setOut(System.err);
         LuaLoadEnvProbe.load(a);
-        zombie.gameStates.TermsOfServiceState tos = events();
+        zombie.gameStates.TermsOfServiceState tos = events(null);
         LuaLoadEnvProbe.report();
         report(tos);
         out.print(LuaLoadEnvProbe.sb);
@@ -61,8 +61,11 @@ public class LuaBootProbe {
         Runtime.getRuntime().halt(0);
     }
 
-    /** ZomboidGlobals.Load and the boot events, after LoadDirBase; returns the TermsOfServiceState handed out. */
-    static zombie.gameStates.TermsOfServiceState events() throws Exception {
+    interface Hook { void run() throws Exception; }
+
+    /** ZomboidGlobals.Load and the boot events, after LoadDirBase, with `enter` (GameWindow.enter's steps before its
+     * OnGameBoot; null for none) before OnGameBoot; returns the TermsOfServiceState handed out. */
+    static zombie.gameStates.TermsOfServiceState events(Hook enter) throws Exception {
         // a debugging aid (pz-dump reads the same variable): LUABOOT_STOP=<event> stops after that event,
         // LUABOOT_STOP=load before ZomboidGlobals.Load
         String stop = System.getenv("LUABOOT_STOP");
@@ -71,6 +74,7 @@ public class LuaBootProbe {
         zombie.ZomboidGlobals.Load();
         fire("OnLoadSoundBanks");
         if ("OnLoadSoundBanks".equals(stop)) return tos;
+        if (enter != null) enter.run();
         fire("OnGameBoot");
         if ("OnGameBoot".equals(stop)) return tos;
         fire("OnGameStateEnter", tos);

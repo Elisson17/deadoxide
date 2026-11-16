@@ -5,12 +5,14 @@
 //! cursor, tile geometry, seams, seating, controllers) has nothing to port here. The list, with what cannot run
 //! without a window, is in docs/COMPATIBILITY.md.
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
 
 use super::core::core::get_option_font_size_real;
+use super::core::textures::texture::Textures;
 use super::core::translator::Translator;
 use super::lua::exposed_methods::CORE_HEIGHT;
-use super::scripting::script_manager::ScriptManager;
+use super::scripting::script_manager::{BucketIndex, ScriptManager};
 use super::ui::text_manager::TextManager;
 use super::zomboid_file_system::ZomboidFileSystem;
 
@@ -24,6 +26,12 @@ pub struct ClientStartup {
     pub text_manager: RefCell<Option<TextManager>>,
     /// ScriptManager.instance after `Load()` (the ported part).
     pub scripts: ScriptManager,
+    /// The item collection's lookup data (`scripts.item_index()`).
+    pub item_index: BucketIndex,
+    /// The index in `scripts.items` of each item's full type.
+    pub item_by_full_type: HashMap<String, usize>,
+    /// Texture's and GameWindow's texture statics (the packs' index, the shared table).
+    pub textures: RefCell<Textures>,
 }
 
 /// Core's options the startup reads, at their defaults (no options.ini on a fresh cache folder).
@@ -66,12 +74,70 @@ impl ClientStartup {
         translator.language = None;
         init_fonts(&fs, &mut tm, &mut translator)?;
         translator.load_files().map_err(|e| e.to_string())?;
+        // initShared
+        let mut textures = Textures::new(root);
+        for p in [
+            "UI",
+            "UI2",
+            "IconsMoveables",
+            "RadioIcons",
+            "ApComUI",
+            "Mechanics",
+            "WeatherFx",
+        ] {
+            textures.load_texture_pack(&fs, p);
+        }
+        textures.set_texture_pack_lookup();
         let scripts = ScriptManager::load(root)?;
+        let item_index = scripts.item_index();
+        let item_by_full_type = (scripts.items.iter().enumerate())
+            .map(|(i, item)| (item.full_name(), i))
+            .collect();
         Ok(ClientStartup {
             fs,
             translator: RefCell::new(translator),
             text_manager: RefCell::new(Some(tm)),
             scripts,
+            item_index,
+            item_by_full_type,
+            textures: RefCell::new(textures),
         })
+    }
+
+    /// zombie.GameWindow.enter before its OnGameBoot, the part the Lua state sees: the tile texture packs (Core's
+    /// texture2x option is on by default: the 2x ones) and their lookup. The original then checks that
+    /// `TileIndieStoneTentFrontLeft` exists (a RuntimeException otherwise; `Err` here).
+    pub fn enter(&self) -> Result<(), String> {
+        let mut t = self.textures.borrow_mut();
+        for p in [
+            "Tiles2x",
+            "Overlays2x",
+            "JumboTrees2x",
+            "JumboTreesBigs2x",
+            "Tiles2x.floor",
+            "B42ChunkCaching2x",
+            "B42ChunkCaching2x.floor",
+            "Clock2x",
+        ] {
+            t.load_texture_pack(&self.fs, p);
+        }
+        t.set_texture_pack_lookup();
+        for i in 0..4 {
+            t.get_shared_texture(&self.fs, Some(&format!("animated_clock_01_{i}")));
+        }
+        if t.get_shared_texture(&self.fs, Some("TileIndieStoneTentFrontLeft"))
+            .is_none()
+        {
+            return Err("Rebuild Tiles.pack with \"1 Include This in .pack\" as individual images not tilesheets".into());
+        }
+        Ok(())
+    }
+}
+
+impl ClientStartup {
+    /// ScriptManager.FindItem(name): the index of the item in `scripts.items`.
+    pub fn find_item(&self, name: &str) -> Option<usize> {
+        let full = self.scripts.find_item(&self.item_index, name)?;
+        self.item_by_full_type.get(&full).copied()
     }
 }
