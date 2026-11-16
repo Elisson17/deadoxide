@@ -177,6 +177,24 @@ public class LootProbe {
         return ItemPickerJava.rooms.get(room);
     }
 
+    /** The ITEM lines of a container's items (a bag's contents follow it, path `n.m`). */
+    static void itemLines(String prefix, zombie.inventory.ItemContainer c) {
+        int n = 0;
+        for (zombie.inventory.InventoryItem i : c.getItems()) {
+            String path = prefix.isEmpty() ? String.valueOf(n) : prefix + "." + n;
+            n++;
+            StringBuilder b = new StringBuilder("ITEM " + path + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
+                    + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
+            if (i instanceof zombie.inventory.types.InventoryContainer ic) {
+                b.append(" cap=" + ic.getCapacity() + " icap=" + ic.getItemContainer().getCapacity() + " red=" + ic.getWeightReduction()
+                        + " nin=" + ic.getItemContainer().getItems().size() + " cw=" + fbits(ic.getContentsWeight()) + " uw=" + fbits(ic.getUnequippedWeight())
+                        + " exp=" + (ic.getItemContainer().isExplored() ? 1 : 0));
+            }
+            out.println(b);
+            if (i instanceof zombie.inventory.types.InventoryContainer ic) itemLines(path, ic.getItemContainer());
+        }
+    }
+
     /** One scenario `seed:room:container:times[:capacity[:mode[:building]]]`: `times` containers of that type, each
      * filled by ItemPickerJava.fillContainer from one seeded generator. The container sits on a square (an IsoGridSquare
      * made without a cell) in an IsoRoom named `room` of an IsoBuilding with the rooms `building` (`+` separated, default
@@ -243,10 +261,7 @@ public class LootProbe {
             StringBuilder b = new StringBuilder("FILL " + t + " draws=" + ((draws() - before + 10000) % 10000) + " n=" + c.getItems().size() + err);
             for (zombie.inventory.InventoryItem i : c.getItems()) b.append(' ').append(i.getFullType());
             out.println(b);
-            int n = 0;
-            for (zombie.inventory.InventoryItem i : c.getItems())
-                out.println("ITEM " + (n++) + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
-                        + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
+            itemLines("", c);
         }
         out.println("END " + spec + " rand=" + draws());
     }

@@ -8498,6 +8498,10 @@ fn loot_scenario(
             roller.fill_container(&mut c)
         };
         let draws = (roller.rand.id() - before + 10000) % 10000;
+        // a state the lines cannot print exactly (a bag whose weight rests on a fluid amount) is as unported as a
+        // fill that stopped
+        let mut lines = String::new();
+        let res = res.and_then(|()| roller.item_lines("", &c, &mut lines));
         match res {
             Ok(()) => {
                 let _ = write!(out, "FILL {t} draws={draws} n={}", c.items.len());
@@ -8514,21 +8518,7 @@ fn loot_scenario(
             let _ = write!(out, " {}", i.full_type);
         }
         out.push('\n');
-        for (n, i) in c.items.iter().enumerate() {
-            let weight = roller.item_actual_weight(i)?;
-            let sharp = roller.item_sharpness(i)?;
-            let uses = roller.item_current_uses(i)?;
-            let _ = writeln!(
-                out,
-                "ITEM {n} {} id={} uses={} cond={} weight={:x} sharp={:x}",
-                i.full_type,
-                i.id,
-                uses,
-                i.condition,
-                weight.to_bits(),
-                sharp.to_bits()
-            );
-        }
+        out.push_str(&lines);
     }
     let _ = writeln!(out, "END {spec} rand={}", roller.rand.id());
     Ok(())
