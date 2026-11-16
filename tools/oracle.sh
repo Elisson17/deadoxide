@@ -95,6 +95,28 @@ game_measure() {
     || { tail -5 target/oracle/$name.err; echo "FAIL $name (game probe)"; fail=1; return; }
   echo "MEASURED $name: target/oracle/$name.txt ($(wc -l <target/oracle/$name.txt | tr -d ' ') lines)"
 }
+# ai_case <name> <ProbeClass> [args...]: the probe calls the game's NATIVE assimp (libjassimp through jassimp.Jassimp). The
+# x86-64 slice of the library is the reference (the arm64 slice contracts multiply-add and differs in the last bit of
+# some rotation keys): on an arm64 Mac the x86-64 JRE of the game bundle runs the probe under Rosetta (PZ_JRE_X86).
+PZ_JRE_X86=${PZ_JRE_X86:-"$HOME/Library/Application Support/Steam/steamapps/common/ProjectZomboid/Project Zomboid.app/Contents/PlugIns/jre-x86_64/Contents/Home/bin/java"}
+ai_case() {
+  name=$1; probe=$2; shift 2
+  [ -d "$PZ_NATIVES" ] || { echo "FAIL $name: no natives in $PZ_NATIVES (set PZ_NATIVES)"; fail=1; return; }
+  [ -x "$PZ_JRE_X86" ] || { echo "FAIL $name: no x86-64 JRE at $PZ_JRE_X86 (set PZ_JRE_X86)"; fail=1; return; }
+  javac -nowarn --release 25 -encoding UTF-8 -cp "$ROOT/projectzomboid.jar" -sourcepath tests/original_probe -d target/original-probe-jre "tests/original_probe/$probe.java" 2>target/oracle/$name.javac \
+    || { cat target/oracle/$name.javac; echo "FAIL $name (javac)"; fail=1; return; }
+  if [ "$(uname -m)" = arm64 ]; then run_x86() { arch -x86_64 "$PZ_JRE_X86" "$@"; }; else run_x86() { "$PZ_JRE_X86" "$@"; }; fi
+  (cd "$ROOT" && run_x86 --enable-native-access=ALL-UNNAMED -Djava.awt.headless=true -Djava.library.path="$PZ_NATIVES" -Xmx4g -cp "$HERE/target/original-probe-jre:projectzomboid.jar" "$probe" "$@" >"$HERE/target/oracle/$name.java.txt" 2>"$HERE/target/oracle/$name.java.err") \
+    || { tail -5 target/oracle/$name.java.err; echo "FAIL $name (assimp probe)"; fail=1; return; }
+  ./target/release/pz-dump "$name" "$ROOT" "$@" >target/oracle/$name.rust.txt 2>target/oracle/$name.rust.err \
+    || { tail -5 target/oracle/$name.rust.err; echo "FAIL $name (pz-dump)"; fail=1; return; }
+  if cmp -s target/oracle/$name.java.txt target/oracle/$name.rust.txt; then
+    shasum -a 256 target/oracle/$name.java.txt | cut -d' ' -f1 >tests/golden/engine/$name.sha256
+    echo "OK   $name: $(wc -l <target/oracle/$name.java.txt | tr -d ' ') lines identical"
+  else
+    echo "FAIL $name: first differences:"; diff target/oracle/$name.java.txt target/oracle/$name.rust.txt | head -6; fail=1
+  fi
+}
 want=${1:-all}
 sel() { [ "$want" = all ] || [ "$want" = "$1" ]; }
 sel tiledefs && run_case tiledefs TileDefsProbe
@@ -222,6 +244,9 @@ sel radio && server_case radio RadioProbe "$HERE/tests/radio_cases.txt" "$HERE/t
 # ModelLoader.loadTxt (pure Java) in several (static, reverse, skinnedTo) combinations: format, vertex floats, element
 # indices, bones, matrices, clips, keyframes and the per-bone tables, section digests (full dumps: TxtModelsProbe full <file>)
 sel txtmodels && run_case txtmodels TxtModelsProbe
+# every .x of media/models_X and media/anims_X imported by the native assimp with NO post-processing step, as an aiScene
+# (meshes, bones, nodes, animation channels): the port of XFileImporter (the game's own steps follow in xmodelscene/animscene)
+sel xscene && ai_case xscene AiSceneProbe none x media/models_X media/anims_X
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

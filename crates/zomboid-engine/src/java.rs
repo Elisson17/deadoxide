@@ -806,6 +806,49 @@ pub fn split_char(s: &str, c: char) -> Vec<&str> {
     parts
 }
 
+/// Double/Float.toString choose, among the shortest decimals that read back as the value, the one closest to it and,
+/// when two are equally close (the value is exactly half way between them, e.g. 0.447265625f), the one whose last
+/// digit is even; Rust's `{:e}` rounds such a tie up. `digits`/`exp` are Rust's shortest; `a` is the value, `max_prec`
+/// enough fractional digits to print it exactly, `same` tells whether a decimal reads back as the value.
+fn java_even_tie(
+    a: f64,
+    digits: String,
+    exp: i32,
+    max_prec: usize,
+    same: impl Fn(&str) -> bool,
+) -> (String, i32) {
+    let n = digits.len();
+    if n > 17 {
+        return (digits, exp);
+    }
+    let (longer, longer_exp) = split_sci(&format!("{a:.n$e}"));
+    if longer_exp != exp || longer.len() != n + 1 || !longer.ends_with('5') {
+        return (digits, exp);
+    }
+    let (exact, exact_exp) = split_sci(&format!("{a:.max_prec$e}"));
+    if exact_exp != exp || exact[..n + 1] != longer || !exact[n + 1..].bytes().all(|b| b == b'0') {
+        return (digits, exp);
+    }
+    let trunc: u128 = longer[..n].parse().unwrap_or(0);
+    let pick = if trunc.is_multiple_of(2) {
+        trunc
+    } else {
+        trunc + 1
+    };
+    let mut text = pick.to_string();
+    let mut new_exp = exp;
+    if text.len() > n {
+        text.truncate(n);
+        new_exp += 1;
+    }
+    let candidate = format!("{}.{}e{}", &text[..1], &text[1..], new_exp);
+    if same(&candidate) {
+        (text, new_exp)
+    } else {
+        (digits, exp)
+    }
+}
+
 /// java.lang.Double.toString (JDK 19 and later, the game's JRE 25): the shortest decimal that reads back as `d`;
 /// when a single digit would do, the closest of the one- and two-digit decimals (so 2^-1074 is "4.9E-324").
 /// Plain notation for 10^-3 <= |d| < 10^7, else "d.dddE<n>".
@@ -837,6 +880,7 @@ pub fn double_to_string(d: f64) -> String {
             exp = e2;
         }
     }
+    (digits, exp) = java_even_tie(a, digits, exp, 800, |t| t.parse::<f64>().ok() == Some(a));
     java_decimal(d < 0.0, &digits, exp)
 }
 
@@ -870,6 +914,9 @@ pub fn float_to_string(f: f32) -> String {
             exp = e2;
         }
     }
+    (digits, exp) = java_even_tie(f64::from(a), digits, exp, 200, |t| {
+        t.parse::<f32>().ok() == Some(a)
+    });
     java_decimal(f < 0.0, &digits, exp)
 }
 
@@ -1161,6 +1208,18 @@ mod jdk_string_tests {
         assert_eq!(split_whitespace_regex(" a b "), ["", "a", "b"]);
         assert_eq!(split_whitespace_regex(""), [""]);
         assert_eq!(split_whitespace_regex("   "), Vec::<&str>::new());
+    }
+
+    /// Values the original printed (E59, `AiSceneProbe`): an exact tie between two shortest decimals goes to the even one.
+    #[test]
+    fn to_string_takes_the_even_digit_on_an_exact_tie() {
+        assert_eq!(float_to_string(f32::from_bits(0x3ee5_0000)), "0.44726562"); // 0.447265625
+        assert_eq!(float_to_string(f32::from_bits(0x3eb1_0000)), "0.34570312"); // 0.345703125
+        assert_eq!(float_to_string(0.97656244), "0.97656244");
+        assert_eq!(float_to_string(0.5), "0.5");
+        assert_eq!(float_to_string(1.0e10), "1.0E10");
+        assert_eq!(double_to_string(0.5), "0.5");
+        assert_eq!(double_to_string(0.1), "0.1");
     }
 
     #[test]

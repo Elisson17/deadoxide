@@ -64,6 +64,11 @@ fn main() {
             a.get(5).map(Path::new),
         ),
         Some("txtmodels") if a.len() >= 3 => models::txtmodels(Path::new(&a[2]), &a[3..]),
+        Some("aiscene" | "xscene" | "xmodelscene" | "animscene" | "fbxscene" | "glbscene")
+            if a.len() >= 3 =>
+        {
+            models::aiscene(Path::new(&a[2]), &a[3..])
+        }
         Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),

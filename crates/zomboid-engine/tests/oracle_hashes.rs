@@ -411,6 +411,12 @@ fn radio_matches_original() {
     );
 }
 
+/// assimp's X importer (E59) over every `.x` of `media/models_X` and `media/anims_X`, no post-processing step.
+#[test]
+fn xscene_matches_original() {
+    check("xscene", &["none", "x", "media/models_X", "media/anims_X"]);
+}
+
 /// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
 /// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
 #[test]

@@ -264,3 +264,284 @@ pub fn txtmodels(root: &Path, args: &[String]) -> Result<String, String> {
     }
     Ok(out)
 }
+
+use zomboid_engine::java::double_to_string;
+use zomboid_engine::native::assimp::scene::{Mat4, Node, Scene};
+
+fn mat4(m: &Mat4) -> String {
+    m.to_array()
+        .iter()
+        .map(|v| f(*v))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn walk(n: &Node, depth: usize, lines: &mut Vec<String>) {
+    lines.push(format!(
+        "{depth} {} meshes=[{}] transform={}",
+        n.name,
+        n.meshes
+            .iter()
+            .map(|m| m.to_string())
+            .collect::<Vec<_>>()
+            .join(", "),
+        mat4(&n.transformation)
+    ));
+    for c in &n.children {
+        walk(c, depth + 1, lines);
+    }
+}
+
+/// `AiSceneProbe.dumpScene`.
+fn dump_scene(out: &mut String, full: bool, sc: &Scene) {
+    let _ = writeln!(
+        out,
+        "scene meshes={} materials={} animations={} cameras=0 lights=0",
+        sc.meshes.len(),
+        sc.materials.len(),
+        sc.animations.len()
+    );
+    for (i, m) in sc.meshes.iter().enumerate() {
+        let mut ptypes = Vec::new();
+        for (bit, name) in [
+            (1u32, "POINT"),
+            (2, "LINE"),
+            (4, "TRIANGLE"),
+            (8, "POLYGON"),
+        ] {
+            if m.primitive_types & bit != 0 {
+                ptypes.push(name);
+            }
+        }
+        let has_normals = !m.normals.is_empty();
+        let has_tangents = !m.tangents.is_empty() && !m.bitangents.is_empty();
+        let mut h = format!(
+            "mesh {i} name={} material={} vertices={} faces={} ptypes=[{}] bones={} normals={} tangents={}",
+            m.name,
+            m.material_index,
+            m.vertices.len(),
+            m.faces.len(),
+            ptypes.join(", "),
+            m.bones.len(),
+            has_normals,
+            has_tangents
+        );
+        for u in 0..8 {
+            if !m.texture_coords[u].is_empty() {
+                let _ = write!(h, " uv{u}={}", m.num_uv_components[u]);
+            }
+        }
+        for u in 0..8 {
+            if !m.colors[u].is_empty() {
+                let _ = write!(h, " color{u}");
+            }
+        }
+        out.push_str(&h);
+        out.push('\n');
+        let l: Vec<String> = m
+            .vertices
+            .iter()
+            .map(|v| format!("{} {} {}", f(v.x), f(v.y), f(v.z)))
+            .collect();
+        section(out, full, "positions", &l);
+        if has_normals {
+            let l: Vec<String> = m
+                .normals
+                .iter()
+                .map(|v| format!("{} {} {}", f(v.x), f(v.y), f(v.z)))
+                .collect();
+            section(out, full, "normals", &l);
+        }
+        if has_tangents {
+            let l: Vec<String> = (0..m.vertices.len())
+                .map(|v| {
+                    let (t, b) = (&m.tangents[v], &m.bitangents[v]);
+                    format!(
+                        "{} {} {} {} {} {}",
+                        f(t.x),
+                        f(t.y),
+                        f(t.z),
+                        f(b.x),
+                        f(b.y),
+                        f(b.z)
+                    )
+                })
+                .collect();
+            section(out, full, "tangents", &l);
+        }
+        for u in 0..8 {
+            if m.texture_coords[u].is_empty() {
+                continue;
+            }
+            let l: Vec<String> = m.texture_coords[u]
+                .iter()
+                .map(|v| {
+                    if m.num_uv_components[u] == 3 {
+                        format!("{} {} {}", f(v.x), f(v.y), f(v.z))
+                    } else {
+                        format!("{} {}", f(v.x), f(v.y))
+                    }
+                })
+                .collect();
+            section(out, full, &format!("uv{u}"), &l);
+        }
+        for u in 0..8 {
+            if m.colors[u].is_empty() {
+                continue;
+            }
+            let l: Vec<String> = m.colors[u]
+                .iter()
+                .map(|c| format!("{} {} {} {}", f(c[0]), f(c[1]), f(c[2]), f(c[3])))
+                .collect();
+            section(out, full, &format!("colors{u}"), &l);
+        }
+        let l: Vec<String> = m
+            .faces
+            .iter()
+            .map(|face| {
+                face.iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect();
+        section(out, full, "faces", &l);
+        let mut l = Vec::new();
+        for b in &m.bones {
+            l.push(format!(
+                "bone {} weights={} offset={}",
+                b.name,
+                b.weights.len(),
+                mat4(&b.offset_matrix)
+            ));
+            for w in &b.weights {
+                l.push(format!("{} {}", w.vertex_id, f(w.weight)));
+            }
+        }
+        section(out, full, "bones", &l);
+    }
+    let mut nodes = Vec::new();
+    if let Some(root) = &sc.root_node {
+        walk(root, 0, &mut nodes);
+    }
+    section(out, full, "nodes", &nodes);
+    for (a, an) in sc.animations.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "animation {a} name={} duration={} tps={} channels={}",
+            an.name,
+            double_to_string(an.duration),
+            double_to_string(an.ticks_per_second),
+            an.channels.len()
+        );
+        let mut l = Vec::new();
+        for c in &an.channels {
+            let behaviour = |v: i32| ["DEFAULT", "CONSTANT", "LINEAR", "REPEAT"][v as usize];
+            l.push(format!(
+                "channel {} pos={} rot={} scale={} pre={} post={}",
+                c.node_name,
+                c.position_keys.len(),
+                c.rotation_keys.len(),
+                c.scaling_keys.len(),
+                behaviour(c.pre_state),
+                behaviour(c.post_state)
+            ));
+            for k in &c.position_keys {
+                l.push(format!(
+                    "p {} {} {} {}",
+                    double_to_string(k.time),
+                    f(k.value.x),
+                    f(k.value.y),
+                    f(k.value.z)
+                ));
+            }
+            for k in &c.rotation_keys {
+                l.push(format!(
+                    "r {} {} {} {} {}",
+                    double_to_string(k.time),
+                    f(k.value.w),
+                    f(k.value.x),
+                    f(k.value.y),
+                    f(k.value.z)
+                ));
+            }
+            for k in &c.scaling_keys {
+                l.push(format!(
+                    "s {} {} {} {}",
+                    double_to_string(k.time),
+                    f(k.value.x),
+                    f(k.value.y),
+                    f(k.value.z)
+                ));
+            }
+        }
+        section(out, full, "channels", &l);
+    }
+}
+
+/// `AiSceneProbe.collect`: the files under `dir` with one of the extensions (case-insensitive), names in order,
+/// directories descended where they sort.
+fn collect(root: &Path, rel: &str, exts: &[&str], acc: &mut Vec<String>) -> Result<(), String> {
+    let Ok(rd) = std::fs::read_dir(root.join(rel)) else {
+        return Ok(());
+    };
+    let mut names: Vec<String> = rd
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .collect();
+    names.sort_by(|a, b| string_compare_to(a, b));
+    for n in names {
+        let sub = format!("{rel}/{n}");
+        if root.join(&sub).is_dir() {
+            collect(root, &sub, exts, acc)?;
+        } else {
+            let low = n.to_lowercase();
+            for e in exts {
+                if low.ends_with(&format!(".{e}")) {
+                    acc.push(sub.clone());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `AiSceneProbe.one`: the post-process steps of `spec` are applied by `native::assimp::post_process`.
+fn scene_one(out: &mut String, full: bool, root: &Path, rel: &str, spec: &str) {
+    let _ = writeln!(out, "file {rel} flags={spec}");
+    let result = std::fs::read(root.join(rel))
+        .map_err(|e| format!("java.io.IOException: {e}"))
+        .and_then(|bytes| {
+            zomboid_engine::native::assimp::import_file(rel, &bytes, spec)
+                .map_err(|e| format!("java.io.IOException: {e}"))
+        });
+    match result {
+        Ok(sc) => dump_scene(out, full, &sc),
+        Err(e) => {
+            let _ = writeln!(out, "error {e}");
+        }
+    }
+}
+
+/// Cases `xscene`, `animscene`, `fbxscene`, ... in the format of `tests/original_probe/AiSceneProbe.java`.
+/// `args`: `<flags> <extensions> <dir>...` or `full <flags> <file>...`.
+pub fn aiscene(root: &Path, args: &[String]) -> Result<String, String> {
+    let mut out = String::new();
+    if args.first().map(String::as_str) == Some("full") {
+        for rel in &args[2..] {
+            scene_one(&mut out, true, root, rel, &args[1]);
+        }
+        return Ok(out);
+    }
+    if args.len() < 3 {
+        return Err("aiscene: <flags> <extensions> <dir>...".to_string());
+    }
+    let exts: Vec<&str> = args[1].split(',').collect();
+    let mut files = Vec::new();
+    for d in &args[2..] {
+        collect(root, d, &exts, &mut files)?;
+    }
+    for rel in &files {
+        scene_one(&mut out, false, root, rel, &args[0]);
+    }
+    Ok(out)
+}
