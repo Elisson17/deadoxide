@@ -38,11 +38,13 @@ pub struct XpAward {
     pub amount: i32,
 }
 
-/// One element of `ioLines` (CraftRecipe.IOScript).
+/// One element of `ioLines` (CraftRecipe.IOScript). `Null` is the null a bare `+` line adds (its `Load` of an empty
+/// line returns null).
 #[derive(Clone, Debug, PartialEq)]
 pub enum IoScript {
     Input(InputScript),
     Output(OutputScript),
+    Null,
 }
 
 /// zombie.scripting.entity.components.crafting.CraftRecipe, with the BaseScriptObject fields it uses.
@@ -397,12 +399,14 @@ impl CraftRecipe {
                     if self.input(last).consume_from_item_script.is_some() {
                         return Err(format!("java.io.IOException: Previous input already has '-' input [{name}] line: {s}"));
                     }
-                    let mut script = InputScript::load(self, rest, true, index)?;
-                    self.input_mut(last).consume_from_item_script = script.as_ref().map(|_| index);
-                    if let Some(sc) = &mut script {
-                        sc.parent_script = Some(last);
-                    }
-                    self.push_io(script.map(IoScript::Input));
+                    let script = InputScript::load(self, rest, true, index)?;
+                    // `script.parentScript = lastInput` on the null of a bare `-` line
+                    let Some(mut script) = script else {
+                        return Err("java.lang.NullPointerException".into());
+                    };
+                    self.input_mut(last).consume_from_item_script = Some(index);
+                    script.parent_script = Some(last);
+                    self.push_io(Some(IoScript::Input(script)));
                 } else {
                     let input = InputScript::load(self, &value.string, false, index)?;
                     self.inputs.push(index);
@@ -434,26 +438,23 @@ impl CraftRecipe {
         Ok(())
     }
 
-    /// `ioLines.add(script)`. A script is null only for a blank line, which LoadIO skips before loading, so `None`
-    /// does not occur.
+    /// `ioLines.add(script)`, null included.
     fn push_io(&mut self, script: Option<IoScript>) {
-        if let Some(s) = script {
-            self.io_lines.push(s);
-        }
+        self.io_lines.push(script.unwrap_or(IoScript::Null));
     }
 
     /// The input script at `ioLines[i]`.
     pub fn input(&self, i: usize) -> &InputScript {
         match &self.io_lines[i] {
             IoScript::Input(s) => s,
-            IoScript::Output(_) => unreachable!("io line {i} is an input"),
+            _ => unreachable!("io line {i} is an input"),
         }
     }
 
     fn input_mut(&mut self, i: usize) -> &mut InputScript {
         match &mut self.io_lines[i] {
             IoScript::Input(s) => s,
-            IoScript::Output(_) => unreachable!("io line {i} is an input"),
+            _ => unreachable!("io line {i} is an input"),
         }
     }
 
@@ -673,10 +674,12 @@ impl CraftRecipe {
         Ok(())
     }
 
+    /// The resource type of `ioLines[i]`, a `+`/`-` line (never one of the nulls: those are not linked).
     fn io_type(&self, i: usize) -> ResourceType {
         match &self.io_lines[i] {
             IoScript::Input(s) => s.r#type,
             IoScript::Output(s) => s.r#type,
+            IoScript::Null => unreachable!("io line {i} is linked"),
         }
     }
 
@@ -718,7 +721,7 @@ impl CraftRecipe {
             ResourceType::Item => {
                 let mapper = match &mut self.io_lines[o] {
                     IoScript::Output(out) => out.output_mapper.clone(),
-                    IoScript::Input(_) => None,
+                    _ => None,
                 };
                 let results = match mapper {
                     None => {
@@ -822,7 +825,7 @@ impl CraftRecipe {
 
     /// zombie.scripting.entity.components.crafting.CraftRecipe.normalizeSkillLevel: clamped to 0..10.
     fn normalize_skill_level(level: i32) -> i32 {
-        level.max(0).min(10)
+        level.clamp(0, 10)
     }
 
     /// zombie.scripting.entity.components.crafting.CraftRecipe.getResearchSkillLevel(null): an unset level (-1)

@@ -1603,6 +1603,8 @@ pub fn recipes(root: &Path) -> Result<String, String> {
                         opt(&s.parent_script),
                     );
                 }
+                // the null of a bare `+` line: the probe would fail on it (none in the game's scripts)
+                IoScript::Null => l.push_str("\tnull"),
                 IoScript::Output(o) => {
                     let mapper = match &o.output_mapper {
                         Some(MapperRef::Recipe(n)) => r.get_output_mapper(n),
