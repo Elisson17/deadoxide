@@ -155,7 +155,8 @@ fn with_item(
     f: impl FnOnce(&crate::zombie::scripting::item::Item) -> Ret,
 ) -> Ret {
     let client = s.state.client.borrow().clone().ok_or_else(npe)?;
-    with_this!(cf, ItemObject, o, f(&client.scripts.items[o.0]))
+    let shared = client.shared.get().ok_or_else(npe)?;
+    with_this!(cf, ItemObject, o, f(&shared.scripts.items[o.0]))
 }
 
 /// zombie.network.ServerOptions as a Lua value, with its option objects (one per option, made on first use).
@@ -743,4 +744,195 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
         },
         _ => return None,
     })
+}
+
+// ---- the statics initShared and GameWindow.enter fill ----
+
+/// The registry constants of `class` (`registerBase("Id")` fields of the exposed class), as locations.
+fn registry_locations(
+    class: &str,
+) -> std::collections::HashSet<crate::zombie::scripting::objects::resource_location::ResourceLocation>
+{
+    use super::exposed_table::{CLASSES, JAVA_CLASSES};
+    use super::exposer::Static;
+    use crate::zombie::scripting::objects::resource_location::ResourceLocation;
+    let mut out = std::collections::HashSet::new();
+    for e in CLASSES.iter() {
+        if JAVA_CLASSES[e.class as usize].name != class {
+            continue;
+        }
+        for (_, st) in e.statics {
+            if let Static::Object(ci, id) = st {
+                if JAVA_CLASSES[*ci as usize].name == class && !id.is_empty() {
+                    if let Ok(l) = ResourceLocation::of(id) {
+                        out.insert(l);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// GameWindow.TexturePack as a Lua value (an element of `GameWindow.texturePacks`; the class is not exposed).
+pub struct TexturePackObject(pub String);
+
+static TEXTURE_PACK_CLASS: JavaClass = JavaClass {
+    name: "zombie.GameWindow$TexturePack",
+    superclass: Some(&crate::se::krka::kahlua::vm::object::classes::OBJECT),
+    interfaces: &[],
+};
+
+impl Userdata for TexturePackObject {
+    fn class(&self) -> &'static JavaClass {
+        &TEXTURE_PACK_CLASS
+    }
+    fn java_to_string(&self) -> String {
+        format!("zombie.GameWindow$TexturePack@{:x}", hash(self))
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// The ArrayList a public static field holds, as the exposer published it.
+fn static_list(s: &Rc<JavaStatics>, class: &str, field: &str) -> Option<Rc<dyn Userdata>> {
+    match s.field(class, field) {
+        Object::Userdata(u) if u.as_any().is::<super::exposed_methods::ArrayListObject>() => {
+            Some(u)
+        }
+        _ => None,
+    }
+}
+
+/// `list.add(o)` on a static ArrayList.
+fn list_add(list: &Option<Rc<dyn Userdata>>, o: Object) {
+    if let Some(l) = list.as_ref().and_then(|u| {
+        u.as_any()
+            .downcast_ref::<super::exposed_methods::ArrayListObject>()
+    }) {
+        l.0.borrow_mut().push(o);
+    }
+}
+
+/// zombie.GameWindow.initShared on the Lua state of a client whose startup ran: the port's initShared
+/// (`ClientStartup::init_shared`), with what it adds to the published statics: `GameWindow.texturePacks` (each
+/// LoadTexturePack) and `PerkFactory.PerkList` (each AddPerk, the Perks constants themselves).
+pub fn init_shared(s: &Rc<JavaStatics>) -> Result<(), String> {
+    let Some(client) = s.state.client.borrow().clone() else {
+        return Ok(());
+    };
+    let traits = registry_locations("zombie.scripting.objects.CharacterTrait");
+    let professions = registry_locations("zombie.scripting.objects.CharacterProfession");
+    let registries = crate::zombie::game_window::Registries {
+        character_trait: &|l| traits.contains(l),
+        character_profession: &|l| professions.contains(l),
+    };
+    client.init_shared(&registries)?;
+    let packs = static_list(s, "zombie.GameWindow", "texturePacks");
+    for p in crate::zombie::game_window::ClientStartup::UI_PACKS {
+        list_add(
+            &packs,
+            Object::Userdata(Rc::new(TexturePackObject(p.to_string()))),
+        );
+    }
+    let perk_list = static_list(s, "zombie.characters.skills.PerkFactory", "PerkList");
+    if let Some(shared) = client.shared.get() {
+        for p in &shared.perks.perk_list {
+            list_add(
+                &perk_list,
+                s.field("zombie.characters.skills.PerkFactory$Perks", p.id),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// zombie.GameWindow.enter's steps before OnGameBoot (`ClientStartup::enter`), with the tile packs it adds to
+/// `GameWindow.texturePacks`.
+pub fn enter(s: &Rc<JavaStatics>) -> Result<(), String> {
+    let Some(client) = s.state.client.borrow().clone() else {
+        return Ok(());
+    };
+    let packs = static_list(s, "zombie.GameWindow", "texturePacks");
+    for p in crate::zombie::game_window::ClientStartup::TILE_PACKS {
+        list_add(
+            &packs,
+            Object::Userdata(Rc::new(TexturePackObject(p.to_string()))),
+        );
+    }
+    client.enter()
+}
+
+/// A static map the startup fills, as a Lua value: its size is read from the ported state each time.
+pub struct StartupMapObject {
+    pub class: &'static JavaClass,
+    pub client: Rc<crate::zombie::game_window::ClientStartup>,
+    pub which: StartupMap,
+}
+
+/// Which static map a StartupMapObject is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartupMap {
+    /// GameWindow.texturePackTextures
+    TexturePackTextures,
+    /// CharacterTraitDefinition.characterTraitDefinitions
+    CharacterTraitDefinitions,
+    /// CharacterProfessionDefinition.characterProfessionDefinitions
+    CharacterProfessionDefinitions,
+    /// Item.netIdToItem
+    NetIdToItem,
+    /// Item.netItemToId
+    NetItemToId,
+}
+
+impl StartupMap {
+    /// The map a public static field holds, for the ones the startup fills.
+    pub fn of(owner: &str, field: &str) -> Option<StartupMap> {
+        Some(match (owner, field) {
+            ("zombie.GameWindow", "texturePackTextures") => StartupMap::TexturePackTextures,
+            ("zombie.characters.traits.CharacterTraitDefinition", "characterTraitDefinitions") => {
+                StartupMap::CharacterTraitDefinitions
+            }
+            (
+                "zombie.characters.professions.CharacterProfessionDefinition",
+                "characterProfessionDefinitions",
+            ) => StartupMap::CharacterProfessionDefinitions,
+            ("zombie.scripting.objects.Item", "netIdToItem") => StartupMap::NetIdToItem,
+            ("zombie.scripting.objects.Item", "netItemToId") => StartupMap::NetItemToId,
+            _ => return None,
+        })
+    }
+}
+
+impl StartupMapObject {
+    /// `Map.size()`
+    pub fn size(&self) -> usize {
+        let c = &self.client;
+        if self.which == StartupMap::TexturePackTextures {
+            return c.textures.borrow().texture_pack_textures.len();
+        }
+        let Some(shared) = c.shared.get() else {
+            return 0;
+        };
+        match self.which {
+            StartupMap::TexturePackTextures => 0,
+            StartupMap::CharacterTraitDefinitions => shared.traits.definitions.len(),
+            StartupMap::CharacterProfessionDefinitions => shared.professions.definitions.len(),
+            StartupMap::NetIdToItem => shared.scripts.item_net_id_counts().0,
+            StartupMap::NetItemToId => shared.scripts.item_net_id_counts().1,
+        }
+    }
+}
+
+impl Userdata for StartupMapObject {
+    fn class(&self) -> &'static JavaClass {
+        self.class
+    }
+    fn java_to_string(&self) -> String {
+        format!("{}@{:x}", self.class.name, hash(self))
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

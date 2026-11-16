@@ -5781,6 +5781,9 @@ fn luaload_after(
         .into_values()
         .map(|(name, v)| (name, static_collection_text(&v, &value).unwrap_or_default()))
         .collect();
+    // GameWindow.initShared, after LuaManager.init (a no-op without a client's startup)
+    zomboid_engine::zombie::lua::exposed_game::init_shared(&lm.statics)
+        .map_err(|e| format!("initShared: {e}"))?;
     for dir in dirs {
         lm.load_dir_base(dir)
             .map_err(|e| format!("LoadDirBase {dir}: {e:?}"))?;
@@ -5921,12 +5924,8 @@ fn luaboot_events(
         return Ok((sb, tos));
     }
     // GameWindow.enter's steps before OnGameBoot, in a client whose startup ran (LuaGameProbe.enter)
-    let client = lm.statics.state.client.borrow().clone();
-    if let Some(client) = client {
-        client
-            .enter()
-            .map_err(zomboid_engine::se::krka::kahlua::vm::object::Throwable::runtime)?;
-    }
+    zomboid_engine::zombie::lua::exposed_game::enter(&lm.statics)
+        .map_err(zomboid_engine::se::krka::kahlua::vm::object::Throwable::runtime)?;
     fire(lm, "OnGameBoot", &[])?;
     if stop == "OnGameBoot" {
         return Ok((sb, tos));
@@ -6085,6 +6084,12 @@ fn static_collection_text(
             l.0.borrow().iter().map(value).collect::<Vec<_>>().join(",")
         ));
     }
+    if let Some(m) = u
+        .as_any()
+        .downcast_ref::<zomboid_engine::zombie::lua::exposed_game::StartupMapObject>()
+    {
+        return Some(format!("size {}", m.size()));
+    }
     u.as_any()
         .downcast_ref::<ObservationMapObject>()
         .map(|m| format!("size {}", m.0.borrow().observation_map.len()))
@@ -6115,6 +6120,8 @@ fn luaload_static_collections(
                 if u.as_any().is::<ArrayListObject>()
                     || u.as_any()
                         .is::<zomboid_engine::zombie::lua::exposed_boot::ObservationMapObject>()
+                    || u.as_any()
+                        .is::<zomboid_engine::zombie::lua::exposed_game::StartupMapObject>()
                 {
                     let name = format!("{}.{}", c.0.name, k.java_to_string());
                     r.insert(name.encode_utf16().collect(), (name, v.clone()));

@@ -4,15 +4,19 @@
 //! see (the asset managers, DebugOptions, GameProfiler, VoiceManager.loadConfig, the texture packs' pixels, the
 //! cursor, tile geometry, seams, seating, controllers) has nothing to port here. The list, with what cannot run
 //! without a window, is in docs/COMPATIBILITY.md.
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use super::characters::professions::character_profession_definition::CharacterProfessionDefinitions;
+use super::characters::skills::perk_factory::PerkFactory;
+use super::characters::traits::character_trait_definition::CharacterTraitDefinitions;
 use super::core::core::get_option_font_size_real;
 use super::core::random::rand_abstract::RandAbstract;
 use super::core::textures::texture::Textures;
 use super::core::translator::Translator;
 use super::lua::exposed_methods::CORE_HEIGHT;
+use super::scripting::objects::resource_location::ResourceLocation;
 use super::scripting::script_manager::{BucketIndex, ScriptManager};
 use super::ui::text_manager::TextManager;
 use super::zomboid_file_system::ZomboidFileSystem;
@@ -20,23 +24,44 @@ use crate::org::uncommons::maths::random::cellular_automaton_rng::CellularAutoma
 
 /// What the startup steps leave that the Lua state reads.
 pub struct ClientStartup {
+    /// The game folder.
+    pub root: PathBuf,
     /// ZomboidFileSystem.instance after `init()`.
     pub fs: ZomboidFileSystem,
     /// Translator's statics after `loadFiles()`.
     pub translator: RefCell<Translator>,
     /// TextManager.instance after `Init()` (taken by the Lua state's TextManager object).
     pub text_manager: RefCell<Option<TextManager>>,
+    /// Texture's and GameWindow's texture statics (the packs' index, the shared table): empty until initShared.
+    pub textures: RefCell<Textures>,
+    /// What initShared leaves (unset before it runs).
+    pub shared: OnceCell<Shared>,
+    /// Rand (RandStandard.INSTANCE) and RandLua.INSTANCE, seeded again by initShared.
+    pub rand_standard: RefCell<RandAbstract<CellularAutomatonRng>>,
+    pub rand_lua: RefCell<RandAbstract<CellularAutomatonRng>>,
+}
+
+/// The statics GameWindow.initShared fills (after LuaManager.init, before LoadDirBase).
+pub struct Shared {
+    /// PerkFactory.init's perks.
+    pub perks: PerkFactory,
     /// ScriptManager.instance after `Load()` (the ported part).
     pub scripts: ScriptManager,
     /// The item collection's lookup data (`scripts.item_index()`).
     pub item_index: BucketIndex,
     /// The index in `scripts.items` of each item's full type.
     pub item_by_full_type: HashMap<String, usize>,
-    /// Texture's and GameWindow's texture statics (the packs' index, the shared table).
-    pub textures: RefCell<Textures>,
-    /// Rand (RandStandard.INSTANCE) and RandLua.INSTANCE after initShared's `init()`, with the fixed seeds.
-    pub rand_standard: RefCell<RandAbstract<CellularAutomatonRng>>,
-    pub rand_lua: RefCell<RandAbstract<CellularAutomatonRng>>,
+    /// CharacterTraitDefinition.characterTraitDefinitions (ScriptManager.Load's trait scripts).
+    pub traits: CharacterTraitDefinitions,
+    /// CharacterProfessionDefinition.characterProfessionDefinitions (its profession scripts).
+    pub professions: CharacterProfessionDefinitions,
+}
+
+/// The registry lookups ScriptManager.Load's definition scripts use: whether `Registries.CHARACTER_TRAIT` and
+/// `Registries.CHARACTER_PROFESSION` hold a location.
+pub struct Registries<'a> {
+    pub character_trait: &'a dyn Fn(&ResourceLocation) -> bool,
+    pub character_profession: &'a dyn Fn(&ResourceLocation) -> bool,
 }
 
 /// The seeds of RandStandard and RandLua: the original's come from SecureRandom (PZSeedGenerator); LuaGameProbe
@@ -65,15 +90,12 @@ fn init_fonts(
 }
 
 impl ClientStartup {
-    /// The startup in the original's order, the steps the Lua state sees:
+    /// The startup in the original's order up to LuaManager.init, the steps the Lua state sees:
     /// InitDisplay with no options.ini: `Core.setOptionLanguageName(user.language.toUpperCase())`;
     /// mainThreadInit: `ZomboidFileSystem.instance.init()`;
     /// init: `initFonts()`, the mods (none: `getModIDs` stays empty), `Languages.instance.init()`,
-    /// `Translator.language = null`, `initFonts()`, `Translator.loadFiles()`;
-    /// initShared: the UI texture packs, `ScriptManager.instance.Load()`, RandStandard/RandLua `init()` (seeded, see
-    /// RAND_STANDARD_SEED).
-    /// LuaManager.init runs between init and initShared; nothing of initShared reaches the Lua state before
-    /// LoadDirBase, so the caller makes the Lua state after this.
+    /// `Translator.language = null`, `initFonts()`, `Translator.loadFiles()`.
+    /// The caller makes the Lua state (LuaManager.init), then runs `init_shared`.
     pub fn init(root: &Path) -> Result<ClientStartup, String> {
         let mut translator = Translator::new(root);
         // InitDisplay: no options.ini, so the language option is the JVM's user.language upper-cased
@@ -85,33 +107,14 @@ impl ClientStartup {
         translator.language = None;
         init_fonts(&fs, &mut tm, &mut translator)?;
         translator.load_files().map_err(|e| e.to_string())?;
-        // initShared
-        let mut textures = Textures::new(root);
-        for p in [
-            "UI",
-            "UI2",
-            "IconsMoveables",
-            "RadioIcons",
-            "ApComUI",
-            "Mechanics",
-            "WeatherFx",
-        ] {
-            textures.load_texture_pack(&fs, p);
-        }
-        textures.set_texture_pack_lookup();
-        let scripts = ScriptManager::load(root)?;
-        let item_index = scripts.item_index();
-        let item_by_full_type = (scripts.items.iter().enumerate())
-            .map(|(i, item)| (item.full_name(), i))
-            .collect();
         Ok(ClientStartup {
+            root: root.to_path_buf(),
             fs,
             translator: RefCell::new(translator),
             text_manager: RefCell::new(Some(tm)),
-            scripts,
-            item_index,
-            item_by_full_type,
-            textures: RefCell::new(textures),
+            textures: RefCell::new(Textures::new(root)),
+            shared: OnceCell::new(),
+            // MainScreenState.main's init; drawn from only after initShared seeds them again
             rand_standard: RefCell::new(RandAbstract::new(CellularAutomatonRng::new(
                 RAND_STANDARD_SEED,
             ))),
@@ -119,21 +122,80 @@ impl ClientStartup {
         })
     }
 
+    /// The UI texture packs initShared loads (`LoadTexturePack(name, 2)`), in order.
+    pub const UI_PACKS: [&'static str; 7] = [
+        "UI",
+        "UI2",
+        "IconsMoveables",
+        "RadioIcons",
+        "ApComUI",
+        "Mechanics",
+        "WeatherFx",
+    ];
+
+    /// zombie.GameWindow.initShared, the steps the Lua state sees: the UI texture packs and their lookup,
+    /// `PerkFactory.init()`, `ScriptManager.instance.Load()` (items, the trait and profession definition scripts),
+    /// RandStandard/RandLua `init()` (seeded, see RAND_STANDARD_SEED).
+    pub fn init_shared(&self, registries: &Registries) -> Result<(), String> {
+        {
+            let mut textures = self.textures.borrow_mut();
+            for p in Self::UI_PACKS {
+                textures.load_texture_pack(&self.fs, p);
+            }
+            textures.set_texture_pack_lookup();
+        }
+        let mut translator = self.translator.borrow_mut();
+        let perks = PerkFactory::init(&mut translator)?;
+        let scripts = ScriptManager::load(&self.root)?;
+        let traits = CharacterTraitDefinitions::load(
+            &scripts.bucket_scripts("character_trait_definition"),
+            registries.character_trait,
+            &mut translator,
+        );
+        let professions = CharacterProfessionDefinitions::load(
+            &scripts.bucket_scripts("character_profession_definition"),
+            registries.character_profession,
+            registries.character_trait,
+            &mut translator,
+        );
+        let item_index = scripts.item_index();
+        let item_by_full_type = (scripts.items.iter().enumerate())
+            .map(|(i, item)| (item.full_name(), i))
+            .collect();
+        *self.rand_standard.borrow_mut() =
+            RandAbstract::new(CellularAutomatonRng::new(RAND_STANDARD_SEED));
+        *self.rand_lua.borrow_mut() = RandAbstract::new(CellularAutomatonRng::new(RAND_LUA_SEED));
+        let shared = Shared {
+            perks,
+            scripts,
+            item_index,
+            item_by_full_type,
+            traits,
+            professions,
+        };
+        self.shared
+            .set(shared)
+            .map_err(|_| "GameWindow.initShared ran twice".to_string())
+    }
+
+    /// The tile texture packs GameWindow.enter loads (texture2x: the 2x ones), in order.
+    pub const TILE_PACKS: [&'static str; 8] = [
+        "Tiles2x",
+        "Overlays2x",
+        "JumboTrees2x",
+        "JumboTreesBigs2x",
+        "Tiles2x.floor",
+        "B42ChunkCaching2x",
+        "B42ChunkCaching2x.floor",
+        "Clock2x",
+    ];
+
     /// zombie.GameWindow.enter before its OnGameBoot, the part the Lua state sees: the tile texture packs (Core's
     /// texture2x option is on by default: the 2x ones) and their lookup. The original then checks that
     /// `TileIndieStoneTentFrontLeft` exists (a RuntimeException otherwise; `Err` here).
     pub fn enter(&self) -> Result<(), String> {
         let mut t = self.textures.borrow_mut();
-        for p in [
-            "Tiles2x",
-            "Overlays2x",
-            "JumboTrees2x",
-            "JumboTreesBigs2x",
-            "Tiles2x.floor",
-            "B42ChunkCaching2x",
-            "B42ChunkCaching2x.floor",
-            "Clock2x",
-        ] {
+        for p in Self::TILE_PACKS {
             t.load_texture_pack(&self.fs, p);
         }
         t.set_texture_pack_lookup();
@@ -150,9 +212,10 @@ impl ClientStartup {
 }
 
 impl ClientStartup {
-    /// ScriptManager.FindItem(name): the index of the item in `scripts.items`.
+    /// ScriptManager.FindItem(name): the index of the item in the scripts' `items` (none before initShared).
     pub fn find_item(&self, name: &str) -> Option<usize> {
-        let full = self.scripts.find_item(&self.item_index, name)?;
-        self.item_by_full_type.get(&full).copied()
+        let shared = self.shared.get()?;
+        let full = shared.scripts.find_item(&shared.item_index, name)?;
+        shared.item_by_full_type.get(&full).copied()
     }
 }

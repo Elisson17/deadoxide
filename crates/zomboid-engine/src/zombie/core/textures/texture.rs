@@ -323,7 +323,7 @@ pub struct Textures {
     /// GameWindow.texturePacks
     texture_packs: Vec<TexturePack>,
     /// GameWindow.texturePackTextures
-    texture_pack_textures: HashMap<String, SubTexture>,
+    pub texture_pack_textures: HashMap<String, SubTexture>,
     /// Texture.s_sharedTextureTable
     shared: HashMap<String, TextureRef>,
     /// Texture.nullTextures

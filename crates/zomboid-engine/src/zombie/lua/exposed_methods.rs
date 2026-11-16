@@ -272,7 +272,18 @@ pub fn static_object(
             ud(Rc::new(super::exposed_boot::ObservationMapObject::default()))
         }
         (_, _, "java.util.ArrayList") => Object::Userdata(Rc::new(ArrayListObject::default())),
-        _ => Object::Userdata(Rc::new(JavaObject { class, id })),
+        _ => match (
+            statics.state.client.borrow().clone(),
+            super::exposed_game::StartupMap::of(owner, field),
+        ) {
+            // a map the client's startup fills: its size follows the ported state
+            (Some(client), Some(which)) => ud(Rc::new(super::exposed_game::StartupMapObject {
+                class,
+                client,
+                which,
+            })),
+            _ => Object::Userdata(Rc::new(JavaObject { class, id })),
+        },
     })
 }
 
