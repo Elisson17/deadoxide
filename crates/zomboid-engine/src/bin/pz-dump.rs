@@ -11,6 +11,7 @@
 //!   pz-dump translator <game root> <scratch, unused> <command file>   (TranslatorProbe.java)
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 //!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
+//!   pz-dump sounds <game root> [<command file> <scratch dir>]   (pairs with SoundsProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -47,6 +48,10 @@ fn main() {
         Some("vehicles") if a.len() == 3 => vehicles(Path::new(&a[2])),
         Some("xui") if a.len() == 3 => xui(Path::new(&a[2])),
         Some("mods") if a.len() == 5 => mods(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
+        Some("sounds") if a.len() == 3 => sounds(Path::new(&a[2]), None),
+        Some("sounds") if a.len() == 5 => {
+            sounds(Path::new(&a[2]), Some((Path::new(&a[3]), Path::new(&a[4]))))
+        }
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -3639,6 +3644,432 @@ pub fn mods(root: &Path, scratch: &Path, commands: &Path) -> Result<String, Stri
         }
     }
     Ok(o.sb)
+}
+
+/// zombie.GameSounds over the booted server's state, pairs with SoundsProbe.java: the `sound` scripts as
+/// ScriptManager loaded them, the registry `GameSounds.ScriptsLoaded` filled, then (with `crafted` = the command
+/// file of tests/sounds_cases.txt and a scratch folder for the `sounds.ini` those commands write) the crafted
+/// GameSoundScript.Load bodies and GameSounds calls on the emptied registry.
+pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, String> {
+    use std::collections::HashMap;
+    use zomboid_engine::zombie::audio::game_sound::{GameSound, GameSoundClip};
+    use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
+    use zomboid_engine::zombie::game_sounds::GameSounds;
+    use zomboid_engine::zombie::scripting::objects::base_script_object::{
+        BaseScriptObject, ScriptObject,
+    };
+    use zomboid_engine::zombie::scripting::objects::game_sound_script::GameSoundScript;
+    use zomboid_engine::zombie::scripting::objects::sound_timeline_script::SoundTimelineScript;
+    use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
+    use zomboid_engine::zombie::vehicles::vehicle_engine_rpm::VehicleEngineRPM;
+
+    /// SoundsProbe.esc: '\\', tab, LF, CR and every UTF-16 unit outside 0x20..0x7e escaped.
+    fn esc(s: &str) -> String {
+        let mut sb = String::new();
+        for u in s.encode_utf16() {
+            match u {
+                0x5c => sb.push_str("\\\\"),
+                0x09 => sb.push_str("\\t"),
+                0x0a => sb.push_str("\\n"),
+                0x0d => sb.push_str("\\r"),
+                0x20..=0x7e => sb.push(char::from(u as u8)),
+                _ => {
+                    let _ = write!(sb, "\\u{u:04x}");
+                }
+            }
+        }
+        sb
+    }
+    fn opt(s: &Option<String>) -> String {
+        s.as_deref().map_or("null".to_string(), esc)
+    }
+    /// SoundsProbe.unescape
+    fn unescape(s: &str) -> String {
+        let c: Vec<char> = s.chars().collect();
+        let mut sb = String::new();
+        let mut i = 0;
+        while i < c.len() {
+            if c[i] != '\\' || i + 1 >= c.len() {
+                sb.push(c[i]);
+                i += 1;
+                continue;
+            }
+            i += 1;
+            match c[i] {
+                'n' => sb.push('\n'),
+                't' => sb.push('\t'),
+                'r' => sb.push('\r'),
+                '\\' => sb.push('\\'),
+                'u' => {
+                    let hex: String = c[i + 1..i + 5].iter().collect();
+                    sb.push(
+                        u32::from_str_radix(&hex, 16)
+                            .ok()
+                            .and_then(char::from_u32)
+                            .unwrap_or('\u{fffd}'),
+                    );
+                    i += 4;
+                }
+                other => {
+                    sb.push('\\');
+                    sb.push(other);
+                }
+            }
+            i += 1;
+        }
+        sb
+    }
+    fn dump_clip(
+        sb: &mut String,
+        path: &str,
+        owner: &GameSound,
+        clip: &GameSoundClip,
+        advanced: bool,
+    ) {
+        let f = java::float_to_string;
+        let _ = writeln!(sb, "{path}\tgameSound\tsound:{}", opt(&owner.name));
+        let _ = writeln!(sb, "{path}\tevent\t{}", opt(&clip.event));
+        let _ = writeln!(sb, "{path}\teventDescription\tnull");
+        let _ = writeln!(sb, "{path}\teventDescriptionMp\tnull");
+        let _ = writeln!(sb, "{path}\tfile\t{}", opt(&clip.file));
+        let _ = writeln!(sb, "{path}\tvolume\t{}", f(clip.volume));
+        let _ = writeln!(sb, "{path}\tpitch\t{}", f(clip.pitch));
+        let _ = writeln!(sb, "{path}\tdistanceMin\t{}", f(clip.distance_min));
+        let _ = writeln!(sb, "{path}\tdistanceMax\t{}", f(clip.distance_max));
+        let _ = writeln!(sb, "{path}\treverbMaxRange\t{}", f(clip.reverb_max_range));
+        let _ = writeln!(sb, "{path}\treverbFactor\t{}", f(clip.reverb_factor));
+        let _ = writeln!(sb, "{path}\tpriority\t{}", clip.priority);
+        let _ = writeln!(sb, "{path}\tinitFlags\t{}", clip.init_flags);
+        let _ = writeln!(sb, "{path}\treloadEpoch\t{}", clip.reload_epoch);
+        let effective = f(clip.get_effective_volume(owner, advanced));
+        let _ = writeln!(
+            sb,
+            "{path}\tderived\thasMin={} hasMax={} stop={} effective={effective} effectiveMenu={effective}",
+            clip.has_min_distance(),
+            clip.has_max_distance(),
+            clip.is_stop_immediate()
+        );
+    }
+    fn dump_sound(sb: &mut String, path: &str, g: &GameSound, advanced: bool) {
+        let f = java::float_to_string;
+        let _ = writeln!(sb, "{path}\tname\t{}", opt(&g.name));
+        let _ = writeln!(sb, "{path}\tcategory\t{}", esc(&g.category));
+        let _ = writeln!(sb, "{path}\tloop\t{}", g.r#loop);
+        let _ = writeln!(sb, "{path}\tis3d\t{}", g.is_3d);
+        let _ = writeln!(sb, "{path}\tclips\tsize {}", g.clips.len());
+        for (i, clip) in g.clips.iter().enumerate() {
+            dump_clip(sb, &format!("{path}.clips[{i}]"), g, clip, advanced);
+        }
+        let _ = writeln!(sb, "{path}\tuserVolume\t{}", f(g.user_volume()));
+        let _ = writeln!(sb, "{path}\tmaster\t{}", g.master.name());
+        let _ = writeln!(
+            sb,
+            "{path}\tmaxInstancesPerEmitter\t{}",
+            g.max_instances_per_emitter
+        );
+        let _ = writeln!(sb, "{path}\treloadEpoch\t{}", g.reload_epoch);
+        let _ = writeln!(
+            sb,
+            "{path}\tderived\tmaxDistance={} master={} looped={} userVolume={}",
+            f(g.get_max_distance_of_clips()),
+            g.master.name(),
+            g.r#loop,
+            f(g.get_user_volume(advanced))
+        );
+    }
+    fn base_line(sb: &mut String, path: &str, b: &BaseScriptObject) {
+        let _ = writeln!(
+            sb,
+            "{path}\tmodule\t{}\tenabled\t{}\tdebugOnly\t{}\tscriptVersion\t{:x}\tbodies\t{}",
+            opt(&b.module),
+            b.enabled,
+            b.debug_only,
+            b.script_version,
+            b.get_loaded_script_body_count()
+        );
+    }
+    fn dump_script(sb: &mut String, path: &str, s: &GameSoundScript, advanced: bool) {
+        base_line(sb, path, &s.base);
+        dump_sound(sb, &format!("{path}.gameSound"), &s.game_sound, advanced);
+    }
+    /// SoundsProbe.dumpTimeline
+    fn dump_timeline(sb: &mut String, path: &str, t: &SoundTimelineScript) {
+        base_line(sb, path, &t.base);
+        let _ = writeln!(sb, "{path}\teventName\t{}", opt(&t.event_name));
+        let mut entries: Vec<(&String, &i32)> = t.position_by_name.iter().collect();
+        entries.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+        let _ = writeln!(sb, "{path}\tpositionByName\tsize {}", entries.len());
+        for (k, v) in entries {
+            let _ = writeln!(sb, "{path}.positionByName[{}]\t=\t{v}", esc(k));
+        }
+    }
+    /// SoundsProbe.dumpRpm
+    fn dump_rpm(sb: &mut String, path: &str, r: &VehicleEngineRPM) {
+        base_line(sb, path, &r.base);
+        let _ = writeln!(sb, "{path}\tname\t{}", opt(&r.name));
+        let _ = writeln!(sb, "{path}\trpmData\tsize {}", r.rpm_data.len());
+        for (i, d) in r.rpm_data.iter().enumerate() {
+            match d {
+                None => {
+                    let _ = writeln!(sb, "{path}.rpmData[{i}]\tnull");
+                }
+                Some(d) => {
+                    let _ = writeln!(
+                        sb,
+                        "{path}.rpmData[{i}]\tgearChange\t{}\tafterGearChange\t{}",
+                        java::float_to_string(d.gear_change),
+                        java::float_to_string(d.after_gear_change)
+                    );
+                }
+            }
+        }
+    }
+    fn position(gs: &GameSounds, index: usize) -> i64 {
+        gs.list_position(index).map_or(-1, |p| p as i64)
+    }
+    fn names(gs: &GameSounds, list: &[usize]) -> String {
+        let p: Vec<String> = list.iter().map(|&i| position(gs, i).to_string()).collect();
+        format!("[{}]", p.join(", "))
+    }
+    /// SoundsProbe.registry
+    fn registry(sb: &mut String, path: &str, gs: &GameSounds, full: bool, advanced: bool) {
+        let _ = writeln!(sb, "{path}\tsounds\tsize {}", gs.sounds.len());
+        if full {
+            for (i, &index) in gs.sounds.iter().enumerate() {
+                dump_sound(
+                    sb,
+                    &format!("{path}.sounds[{i}]"),
+                    gs.sound(index),
+                    advanced,
+                );
+            }
+        }
+        let mut keys: Vec<&String> = gs.sound_by_name.keys().collect();
+        keys.sort_by(|a, b| java::string_compare_to(a, b));
+        let _ = writeln!(sb, "{path}\tsoundByName\tsize {}", keys.len());
+        for key in keys {
+            let _ = writeln!(
+                sb,
+                "{path}.soundByName[{}]\t=\tsounds[{}]",
+                esc(key),
+                position(gs, gs.sound_by_name[key])
+            );
+        }
+        let _ = writeln!(sb, "{path}\tsoundIsPaused\t{}", gs.sound_is_paused);
+        let categories = gs.get_categories();
+        let escaped: Vec<String> = categories.iter().map(|c| esc(c)).collect();
+        let _ = writeln!(sb, "{path}\tgetCategories\t[{}]", escaped.join(", "));
+        for c in &categories {
+            let _ = writeln!(
+                sb,
+                "{path}.getSoundsInCategory[{}]\t{}",
+                esc(c),
+                names(gs, &gs.get_sounds_in_category(c))
+            );
+        }
+    }
+
+    let sm = ScriptManager::load(root)?;
+    let mut gs = sm.game_sounds.clone();
+    let mut sb = String::new();
+    let mut advanced = false;
+    let _ = writeln!(sb, "advancedSoundOptions\t{advanced}");
+    // BaseSoundBank.instance is only set by GameWindow (not by GameServer).
+    let _ = writeln!(sb, "soundBank\tnull");
+    let _ = writeln!(sb, "scripts\tsize {}", sm.sounds.len());
+    for (i, s) in sm.sounds.iter().enumerate() {
+        dump_script(&mut sb, &format!("script[{i}]"), s, advanced);
+    }
+    registry(&mut sb, "registry", &gs, true, advanced);
+    let _ = writeln!(sb, "soundTimelines\tsize {}", sm.sound_timelines.len());
+    for (i, t) in sm.sound_timelines.iter().enumerate() {
+        dump_timeline(&mut sb, &format!("timeline[{i}]"), t);
+    }
+    let _ = writeln!(
+        sb,
+        "vehicleEngineRPMs\tsize {}",
+        sm.vehicle_engine_rpms.len()
+    );
+    for (i, r) in sm.vehicle_engine_rpms.iter().enumerate() {
+        dump_rpm(&mut sb, &format!("rpm[{i}]"), r);
+    }
+    let Some((cases, scratch)) = crafted else {
+        return Ok(sb);
+    };
+    gs.reset();
+    let text =
+        String::from_utf8(std::fs::read(cases).map_err(|e| format!("{}: {e}", cases.display()))?)
+            .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(scratch).map_err(|e| format!("{}: {e}", scratch.display()))?;
+    let cache = scratch.to_str().ok_or("non-UTF-8 scratch path")?;
+    let mut scripts: HashMap<String, GameSoundScript> = HashMap::new();
+    let mut timelines: HashMap<String, SoundTimelineScript> = HashMap::new();
+    let mut rpms: HashMap<String, VehicleEngineRPM> = HashMap::new();
+    let mut n = 0;
+    for line in java::buffered_reader_lines(&text) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        n += 1;
+        let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
+        let at = format!("cmd[{n}]");
+        let _ = writeln!(sb, "{at}\t> {}", esc(line));
+        match cmd {
+            "load" => {
+                let mut a = rest.splitn(3, ' ');
+                let label = a.next().unwrap_or("");
+                let name = a.next().ok_or("load: no name")?;
+                let body = a.next().map(unescape).unwrap_or_default();
+                let script = scripts
+                    .entry(label.to_string())
+                    .or_insert_with(|| GameSoundScript::new(None));
+                if let Err(e) = script.load(name, &body, &sm.translator) {
+                    let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
+                }
+                dump_script(&mut sb, &format!("{at}.script"), script, advanced);
+            }
+            "timeline" => {
+                let mut a = rest.splitn(3, ' ');
+                let label = a.next().unwrap_or("");
+                let name = a.next().ok_or("timeline: no name")?;
+                let body = a.next().map(unescape).unwrap_or_default();
+                let t = timelines
+                    .entry(label.to_string())
+                    .or_insert_with(|| SoundTimelineScript::new(None));
+                if let Err(e) = t.load(name, &body, &sm.translator) {
+                    let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
+                }
+                dump_timeline(&mut sb, &format!("{at}.timeline"), t);
+            }
+            "timelinepos" => {
+                let a: Vec<&str> = rest.split(' ').collect();
+                let t = timelines.get(a[0]).ok_or("timelinepos: no script")?;
+                let _ = writeln!(sb, "{at}\tgetPosition\t{}", t.get_position(a[1]));
+            }
+            "timelinereset" => {
+                let t = timelines.get_mut(rest).ok_or("timelinereset: no script")?;
+                t.reset();
+                dump_timeline(&mut sb, &format!("{at}.timeline"), t);
+            }
+            "rpm" => {
+                let mut a = rest.splitn(3, ' ');
+                let label = a.next().unwrap_or("");
+                let name = a.next().ok_or("rpm: no name")?;
+                let body = a.next().map(unescape).unwrap_or_default();
+                let r = rpms
+                    .entry(label.to_string())
+                    .or_insert_with(|| VehicleEngineRPM::new(None));
+                if let Err(e) = r.load(name, &body, &sm.translator) {
+                    let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
+                }
+                dump_rpm(&mut sb, &format!("{at}.rpm"), r);
+            }
+            "rpmreset" => {
+                let r = rpms.get_mut(rest).ok_or("rpmreset: no script")?;
+                r.reset();
+                dump_rpm(&mut sb, &format!("{at}.rpm"), r);
+            }
+            "scriptreset" => match scripts.get_mut(rest) {
+                None => {
+                    let _ = writeln!(sb, "{at}\tno such script");
+                }
+                Some(s) => {
+                    s.reset();
+                    dump_script(&mut sb, &format!("{at}.script"), s, advanced);
+                }
+            },
+            "add" => {
+                match scripts.remove(rest) {
+                    None => {
+                        let _ = writeln!(sb, "{at}\tno such script");
+                    }
+                    Some(s) => {
+                        if let Err(e) = gs.add_sound(s.game_sound) {
+                            let _ = writeln!(sb, "{at}\texception\t{}", esc(&e));
+                        }
+                    }
+                }
+                registry(&mut sb, &at, &gs, false, advanced);
+            }
+            "get" | "getnull" => {
+                let name = if cmd == "getnull" { None } else { Some(rest) };
+                match gs.get_sound(name) {
+                    None => {
+                        let _ = writeln!(sb, "{at}\tresult\tnull");
+                    }
+                    Some(index) => {
+                        let _ = writeln!(sb, "{at}\tresult\tsounds[{}]", position(&gs, index));
+                        dump_sound(&mut sb, &format!("{at}.sound"), gs.sound(index), advanced);
+                    }
+                }
+                registry(&mut sb, &at, &gs, false, advanced);
+            }
+            "known" => {
+                let _ = writeln!(sb, "{at}\tisKnownSound\t{}", gs.is_known_sound(Some(rest)));
+            }
+            "knownnull" => {
+                let _ = writeln!(sb, "{at}\tisKnownSound\t{}", gs.is_known_sound(None));
+            }
+            "cat" => {
+                let _ = writeln!(
+                    sb,
+                    "{at}\tgetSoundsInCategory\t{}",
+                    names(&gs, &gs.get_sounds_in_category(rest))
+                );
+            }
+            "volume" => {
+                let a: Vec<&str> = rest.split(' ').collect();
+                let index = gs.get_sound(Some(a[0])).ok_or("volume: no sound")?;
+                gs.sound_mut(index)
+                    .set_user_volume(java::parse_float(a[1]).ok_or("volume: bad float")?);
+                let g = gs.sound(index);
+                let _ = writeln!(
+                    sb,
+                    "{at}\tuserVolume\t{}\tgetUserVolume\t{}",
+                    java::float_to_string(g.user_volume()),
+                    java::float_to_string(g.get_user_volume(advanced))
+                );
+                dump_sound(&mut sb, &format!("{at}.sound"), g, advanced);
+            }
+            "advanced" => advanced = java::equals_ignore_case(rest, "true"),
+            "rand" => {
+                let a: Vec<&str> = rest.split(' ').collect();
+                let index = gs.get_sound(Some(a[0])).ok_or("rand: no sound")?;
+                let seed: i64 = a[1].parse().map_err(|_| "rand: bad seed")?;
+                let count: i32 = a[2].parse().map_err(|_| "rand: bad count")?;
+                let mut rand = RandAbstract::new(java::Random::new(seed));
+                for _ in 0..count {
+                    match gs.sound(index).get_random_clip(&mut rand) {
+                        Ok(i) => {
+                            let _ = writeln!(sb, "{at}\tgetRandomClip\t{i}");
+                        }
+                        Err(e) => {
+                            let _ = writeln!(sb, "{at}\tgetRandomClip\texception\t{}", esc(&e));
+                        }
+                    }
+                }
+            }
+            "ini" => {
+                let file = scratch.join("sounds.ini");
+                std::fs::write(&file, unescape(rest))
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
+                gs.load_ini(cache);
+                for (i, &index) in gs.sounds.iter().enumerate() {
+                    let _ = writeln!(
+                        sb,
+                        "{at}.sounds[{i}]\tuserVolume\t{}",
+                        java::float_to_string(gs.sound(index).user_volume())
+                    );
+                }
+            }
+            "reset" => gs.reset(),
+            "state" => registry(&mut sb, &at, &gs, true, advanced),
+            _ => {
+                let _ = writeln!(sb, "{at}\tunknown command");
+            }
+        }
+    }
+    Ok(sb)
 }
 
 /// zombie.scripting.ScriptParser over crafted cases, pairs with ScriptParserProbe.java: per case the stripComments

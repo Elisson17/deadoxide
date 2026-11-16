@@ -1,10 +1,12 @@
 pub mod audio;
 pub mod basements;
 pub mod characters;
+pub mod config;
 pub mod core;
 pub mod entity;
 pub mod erosion;
 pub mod file_guid_table;
+pub mod game_sounds;
 pub mod game_states;
 pub mod game_time;
 pub mod input;

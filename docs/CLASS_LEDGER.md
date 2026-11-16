@@ -4,20 +4,20 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 339 of 3432 classes touched, 1387 of 46318 method names cited (3.0%), 965313 decompiled lines.**
+**Total: 349 of 3432 classes touched, 1424 of 46318 method names cited (3.1%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 65 | 7277 | 308 (4.2%) | 144530 |
-| zombie.core | 450 | 70 | 5920 | 181 (3.1%) | 93574 |
+| zombie.core | 450 | 70 | 5920 | 182 (3.1%) | 93574 |
 | zombie.characters | 200 | 39 | 5028 | 106 (2.1%) | 77144 |
 | zombie.network | 436 | 2 | 3229 | 2 (0.1%) | 60679 |
-| zombie.scripting | 205 | 33 | 2713 | 164 (6.0%) | 52509 |
+| zombie.scripting | 205 | 35 | 2713 | 173 (6.4%) | 52509 |
 | zombie.entity | 156 | 10 | 2517 | 14 (0.6%) | 36294 |
 | zombie.inventory | 40 | 15 | 2100 | 16 (0.8%) | 28391 |
-| zombie.vehicles | 42 | 11 | 1411 | 10 (0.7%) | 28275 |
-| zombie | 60 | 9 | 1192 | 68 (5.7%) | 22185 |
+| zombie.vehicles | 42 | 13 | 1411 | 14 (1.0%) | 28275 |
+| zombie | 60 | 10 | 1192 | 77 (6.5%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 6 | 1328 | 5 (0.4%) | 18604 |
@@ -30,7 +30,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
 | zombie.util | 70 | 7 | 520 | 20 (3.8%) | 8496 |
 | fmod | 102 | 0 | 652 | 0 (0.0%) | 7709 |
-| zombie.audio | 106 | 2 | 486 | 7 (1.4%) | 7002 |
+| zombie.audio | 106 | 4 | 486 | 16 (3.3%) | 7002 |
 | zombie.radio | 27 | 3 | 445 | 4 (0.9%) | 6029 |
 | zombie.commands | 77 | 0 | 170 | 0 (0.0%) | 4689 |
 | zombie.popman | 22 | 0 | 214 | 0 (0.0%) | 4137 |
@@ -52,7 +52,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.seating | 3 | 0 | 79 | 0 (0.0%) | 1062 |
 | zombie.characterTextures | 4 | 1 | 36 | 0 (0.0%) | 1002 |
 | zombie.vehicleSound | 19 | 0 | 107 | 0 (0.0%) | 987 |
-| zombie.config | 8 | 4 | 101 | 6 (5.9%) | 965 |
+| zombie.config | 8 | 7 | 101 | 11 (10.9%) | 965 |
 | zombie.asset | 14 | 1 | 80 | 1 (1.3%) | 819 |
 | zombie.profanity | 6 | 0 | 53 | 0 (0.0%) | 783 |
 | zombie.spnetwork | 6 | 0 | 69 | 0 (0.0%) | 706 |
@@ -104,6 +104,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | se.krka.kahlua.vm.UpValue | 3 / 5 | crates/zomboid-engine/src/se/krka/kahlua/vm/coroutine.rs |
 | zombie.FileGuidPair | 0 / 0 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.FileGuidTable | 5 / 6 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
+| zombie.GameSounds | 9 / 21 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/game_sounds.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.GameTime | 8 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.GameWindow | 1 / 47 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.Lua.Event | 4 / 6 | crates/zomboid-engine/src/zombie/lua/event.rs |
@@ -116,6 +117,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.ZomboidFileSystem | 35 / 114 | crates/zomboid-engine/src/zombie/file_guid_table.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
 | zombie.ZomboidGlobals | 1 / 2 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/zomboid_globals.rs |
 | zombie.asset.AssetManager | 1 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/anim_node_asset_manager.rs |
+| zombie.audio.GameSound | 5 / 10 | crates/zomboid-engine/src/zombie/audio/game_sound.rs |
+| zombie.audio.GameSoundClip | 4 / 16 | crates/zomboid-engine/src/zombie/audio/game_sound.rs |
 | zombie.audio.MusicIntensityConfig | 1 / 6 | crates/zomboid-engine/src/zombie/audio/music_intensity_config.rs |
 | zombie.audio.MusicThreatConfig | 6 / 9 | crates/zomboid-engine/src/zombie/audio/music_threat_config.rs |
 | zombie.basements.BasementDefinition | 0 / 0 | crates/zomboid-engine/src/zombie/basements/mod.rs |
@@ -166,8 +169,11 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.traits.ObservationFactory | 3 / 14 | crates/zomboid-engine/src/zombie/characters/traits/observation_factory.rs |
 | zombie.config.ArrayConfigOption | 1 / 22 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
 | zombie.config.BooleanConfigOption | 2 / 14 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
+| zombie.config.ConfigFile | 3 / 7 | crates/zomboid-engine/src/zombie/config/config_file.rs |
+| zombie.config.ConfigOption | 1 / 5 | crates/zomboid-engine/src/zombie/config/config_file.rs |
 | zombie.config.DoubleConfigOption | 2 / 17 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
 | zombie.config.IntegerConfigOption | 1 / 16 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
+| zombie.config.StringConfigOption | 1 / 17 | crates/zomboid-engine/src/zombie/config/config_file.rs |
 | zombie.core.Color | 2 / 58 | crates/zomboid-engine/src/zombie/core/color.rs, crates/zomboid-engine/src/zombie/core/colors.rs, crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs |
 | zombie.core.Colors | 13 / 33 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/core/colors.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-engine/src/zombie/scripting/ui/xui_lua_style.rs |
 | zombie.core.Core | 2 / 513 | crates/zomboid-engine/src/zombie/core/core.rs, crates/zomboid-engine/src/zombie/core/game_version.rs, crates/zomboid-engine/src/zombie/core/mod.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
@@ -182,7 +188,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.fonts.AngelCodeFont | 10 / 23 | crates/zomboid-engine/src/zombie/core/fonts/angel_code_font.rs |
 | zombie.core.logger.ExceptionLogger | 1 / 3 | crates/zomboid-engine/src/zombie/lua/exposer.rs |
 | zombie.core.math.IInterpolator | 0 / 0 | crates/zomboid-engine/src/zombie/core/math/i_interpolator.rs |
-| zombie.core.math.PZMath | 13 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
+| zombie.core.math.PZMath | 14 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
 | zombie.core.math.interpolators.LerpEaseInQuad | 0 / 1 | crates/zomboid-engine/src/zombie/core/math/interpolators/mod.rs |
 | zombie.core.math.interpolators.LerpEaseOutInQuad | 0 / 1 | crates/zomboid-engine/src/zombie/core/math/interpolators/mod.rs |
 | zombie.core.math.interpolators.LerpEaseOutQuad | 0 / 1 | crates/zomboid-engine/src/zombie/core/math/interpolators/mod.rs |
@@ -346,7 +352,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.savefile.PlayerDB | 0 / 33 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/characters/iso_player.rs |
 | zombie.scripting.ScriptBucket | 1 / 17 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.ScriptBucketCollection | 1 / 20 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
-| zombie.scripting.ScriptManager | 17 / 134 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/entity/components/crafting/craft_recipe.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
+| zombie.scripting.ScriptManager | 20 / 134 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/entity/components/crafting/craft_recipe.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.ScriptParser | 4 / 17 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/modding/active_mods_file.rs, crates/zomboid-engine/src/zombie/scripting/script_parser.rs, crates/zomboid-engine/tests/oracle_hashes.rs |
 | zombie.scripting.entity.GameEntityScript | 2 / 26 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.entity.components.crafting.CraftRecipe | 19 / 125 | crates/zomboid-engine/src/zombie/scripting/entity/components/crafting/craft_recipe.rs |
@@ -357,6 +363,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.scripting.objects.BaseScriptObject | 5 / 31 | crates/zomboid-engine/src/zombie/scripting/objects/base_script_object.rs |
 | zombie.scripting.objects.CraftRecipeGroup | 1 / 5 | crates/zomboid-engine/src/zombie/scripting/objects/craft_recipe_group.rs |
 | zombie.scripting.objects.CraftRecipeTag | 0 / 3 | crates/zomboid-engine/src/zombie/scripting/objects/craft_recipe_tag.rs |
+| zombie.scripting.objects.GameSoundScript | 3 / 4 | crates/zomboid-engine/src/zombie/scripting/objects/game_sound_script.rs |
 | zombie.scripting.objects.Item | 4 / 336 | crates/zomboid-engine/src/zombie/scripting/item.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.objects.ItemTag | 1 / 6 | crates/zomboid-engine/src/zombie/scripting/objects/item_tag.rs |
 | zombie.scripting.objects.ItemType | 1 / 6 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
@@ -364,6 +371,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.scripting.objects.ModelScript | 4 / 28 | crates/zomboid-engine/src/zombie/scripting/model_script.rs |
 | zombie.scripting.objects.ResourceLocation | 1 / 7 | crates/zomboid-engine/src/zombie/scripting/objects/resource_location.rs |
 | zombie.scripting.objects.ScriptModule | 2 / 50 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
+| zombie.scripting.objects.SoundTimelineScript | 3 / 5 | crates/zomboid-engine/src/zombie/scripting/objects/sound_timeline_script.rs |
 | zombie.scripting.objects.TimedActionScript | 1 / 19 | crates/zomboid-engine/src/zombie/scripting/objects/timed_action_script.rs |
 | zombie.scripting.objects.VehicleScript | 35 / 181 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/scripting/objects/vehicle_script.rs, crates/zomboid-engine/tests/oracle_hashes.rs |
 | zombie.scripting.objects.VehicleTemplate | 1 / 2 | crates/zomboid-engine/src/zombie/scripting/objects/vehicle_template.rs |
@@ -392,9 +400,11 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.vehicles.BaseVehicle | 1 / 659 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
 | zombie.vehicles.Clipper | 2 / 6 | crates/zomboid-engine/src/zombie/vehicles/clipper.rs |
 | zombie.vehicles.ClipperOffset | 0 / 0 | crates/zomboid-engine/src/zombie/vehicles/clipper_offset.rs |
+| zombie.vehicles.EngineRPMData | 1 / 2 | crates/zomboid-engine/src/zombie/vehicles/engine_rpm_data.rs |
 | zombie.vehicles.VehicleAlarm | 0 / 20 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
 | zombie.vehicles.VehicleDoor | 1 / 10 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
 | zombie.vehicles.VehicleEngine | 1 / 50 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
+| zombie.vehicles.VehicleEngineRPM | 3 / 5 | crates/zomboid-engine/src/zombie/vehicles/vehicle_engine_rpm.rs |
 | zombie.vehicles.VehicleLight | 1 / 11 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
 | zombie.vehicles.VehiclePart | 2 / 105 | crates/zomboid-engine/src/zombie/vehicles/vehicle_part.rs |
 | zombie.vehicles.VehicleParts | 1 / 38 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
@@ -414,3 +424,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.worldMap.symbols.WorldMapSymbols | 1 / 23 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
 | zombie.worldMap.symbols.WorldMapTextSymbol | 0 / 23 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
 | zombie.worldMap.symbols.WorldMapTextureSymbol | 0 / 12 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
+
+## Citations that match no decompiled class or method (fix the comment)
+
+- zombie.audio.GameSound.MasterVolume.valueOf (crates/zomboid-engine/src/zombie/audio/game_sound.rs)
