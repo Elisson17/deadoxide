@@ -4,10 +4,31 @@ use std::collections::{HashMap, HashSet};
 
 use super::inventory_item::{ItemFactory, ItemTemplate, ItemType};
 use crate::java;
+use crate::zombie::game_window::ClientStartup;
 use crate::zombie::radio::media::recorded_media::RecordedMedia;
 use crate::zombie::scripting::item::Value;
 use crate::zombie::scripting::script_manager::ScriptManager;
 use crate::zombie::world::dictionary_data::DictionaryData;
+
+/// zombie.inventory.InventoryItemFactory.getItem(itemType, true): the item script for `item_type`, or for the type
+/// without a trailing `Empty` when that script has a Durability or FluidContainer component. The index of the item
+/// in ScriptManager's items.
+pub fn get_item(startup: &ClientStartup, item_type: &str) -> Option<usize> {
+    let mut script_item = startup.find_item(item_type);
+    if script_item.is_none() && item_type.ends_with("Empty") {
+        let item_type = &item_type[..item_type.len() - 5];
+        script_item = startup.find_item(item_type);
+        if let Some(i) = script_item {
+            let item = startup.item(i)?;
+            if item.contains_component("Durability") {
+                // DebugType.Entity.debugln("Durability Component: " + itemType)
+            } else if !item.contains_component("FluidContainer") {
+                script_item = None;
+            }
+        }
+    }
+    script_item
+}
 
 /// What item creation reads from an item script.
 #[derive(Clone, Debug, PartialEq)]

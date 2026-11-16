@@ -422,3 +422,13 @@ fn luagame_matches_original() {
     );
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+#[test]
+fn loot_matches_original() {
+    // the client's startup, shared + server Lua, the distribution merge events, then ItemPickerJava.Parse and its
+    // tables (and the loot scenarios rolled over them); a fresh scratch cache dir, as luagame's
+    let scratch = std::env::temp_dir().join("pz-oracle-hashes-loot");
+    let _ = std::fs::remove_dir_all(&scratch);
+    check("loot", &[scratch.to_str().expect("utf-8 path")]);
+    let _ = std::fs::remove_dir_all(&scratch);
+}

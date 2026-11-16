@@ -59,7 +59,38 @@ pub struct Item {
     /// `itemTags`: the locations of the `Tags` entries (`ItemTag.get(ResourceLocation.of(tag))`, a null for a
     /// location the ItemTag registry does not hold), in script order.
     pub tags: Vec<ResourceLocation>,
+    /// The `component <Id> { ... }` blocks: the ids that are `ComponentType` names (GameEntityScript.LoadComponentBlock
+    /// makes a component script for each; only which components the item has is kept), in script order.
+    pub components: Vec<String>,
 }
+
+/// zombie.entity.ComponentType: the names `ComponentType.valueOf` accepts, without `Undefined` (a component block
+/// of that type is warned about and skipped).
+const COMPONENT_TYPES: [&str; 23] = [
+    "Attributes",
+    "FluidContainer",
+    "SpriteConfig",
+    "Lua",
+    "Parts",
+    "Signals",
+    "Script",
+    "UiConfig",
+    "CraftLogic",
+    "FurnaceLogic",
+    "TestComponent",
+    "MashingLogic",
+    "DryingLogic",
+    "MetaTag",
+    "Resources",
+    "CraftBench",
+    "CraftRecipe",
+    "Durability",
+    "DryingCraftLogic",
+    "ContextMenuConfig",
+    "SpriteOverlayConfig",
+    "CraftBenchSounds",
+    "WallCoveringConfig",
+];
 
 /// java.lang.Float.parseFloat for decimal text (surrounding blanks and an f/d suffix allowed).
 pub(crate) fn parse_float(s: &str) -> Option<f32> {
@@ -117,7 +148,13 @@ impl Item {
             unported: Vec::new(),
             unknown: Vec::new(),
             tags: Vec::new(),
+            components: Vec::new(),
         }
+    }
+
+    /// zombie.scripting.entity.GameEntityScript.containsComponent for the component named `id`.
+    pub fn contains_component(&self, id: &str) -> bool {
+        self.components.iter().any(|c| c == id)
     }
 
     /// `module.name`, the original's `moduleDotType`.
@@ -157,8 +194,20 @@ impl Item {
             }
         }
         for element in &block.elements {
-            let BlockElement::Value(v) = element else {
-                continue;
+            let v = match element {
+                BlockElement::Value(v) => v,
+                // Item.Load: `child.type.equalsIgnoreCase("component")` -> LoadComponentBlock(child)
+                BlockElement::Block(i) => {
+                    let child = &block.children[*i];
+                    if java::equals_ignore_case(&child.r#type, "component") {
+                        if let Some(id) = child.id.as_deref() {
+                            if COMPONENT_TYPES.contains(&id) {
+                                self.components.push(id.to_string());
+                            }
+                        }
+                    }
+                    continue;
+                }
             };
             if java::trim(&v.string).is_empty() {
                 continue;

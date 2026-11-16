@@ -334,7 +334,7 @@ pub fn singleton(statics: &Rc<JavaStatics>, class: &'static JavaClass) -> Object
 }
 
 /// SandboxOptions.instance, made on first use.
-fn sandbox_options_instance(
+pub fn sandbox_options_instance(
     statics: &Rc<JavaStatics>,
     thread: &mut KahluaThread,
 ) -> R<Rc<SandboxOptionsObject>> {
