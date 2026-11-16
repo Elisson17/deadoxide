@@ -54,6 +54,9 @@ fn main() {
         }
         Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
+        Some("visited") if a.len() == 5 => {
+            visited(Path::new(&a[2]), Path::new(&a[4]), Path::new(&a[3]))
+        }
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -4527,6 +4530,144 @@ pub fn savemeta(save: &Path, crafted: &Path) -> Result<String, String> {
         .1;
     for k in 0..=craft.len() {
         meta(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
+    }
+    Ok(sb)
+}
+
+/// The visited / known map units (`map_visited.bin`) of the ORIGINAL `WorldMapVisited`, driven by the commands of
+/// tests/visited_cases.txt (pairs with VisitedProbe.java): the real file, the setters and clearers, `save` and
+/// reading back, the current format cut short or too long, and the legacy row format.
+pub fn visited(root: &Path, save: &Path, cases: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::world_map::world_map_visited::{GridBounds, WorldMapVisited};
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    let grid = GridBounds {
+        min_x: g.min_x,
+        min_y: g.min_y,
+        max_x: g.max_x,
+        max_y: g.max_y,
+    };
+    /// `Arrays.hashCode(byte[])`, as `Integer.toHexString`.
+    fn arrays_hash(b: &[u8]) -> String {
+        let mut h: i32 = 1;
+        for &x in b {
+            h = h.wrapping_mul(31).wrapping_add(i32::from(x as i8));
+        }
+        format!("{h:x}")
+    }
+    fn unhex(s: &str) -> Result<Vec<u8>, String> {
+        (0..s.len() / 2)
+            .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|e| e.to_string()))
+            .collect()
+    }
+    fn file_text(f: &Option<Vec<u8>>) -> String {
+        f.as_ref().map_or("none".to_string(), |b| {
+            format!("{},{}", b.len(), arrays_hash(b))
+        })
+    }
+    fn dump(sb: &mut String, n: usize, v: &WorldMapVisited) {
+        let mut c = [0u64; 4];
+        for &x in &v.visited {
+            for k in 0..4 {
+                c[(i32::from(x as i8) >> (2 * k) & 3) as usize] += 1;
+            }
+        }
+        let _ = writeln!(
+            sb,
+            "DUMP {n} len={} hash={} units={},{},{},{} bounds={},{}",
+            v.visited.len(),
+            arrays_hash(&v.visited),
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            v.min_x,
+            v.min_y
+        );
+    }
+    let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    let mut sb = String::new();
+    let mut file: Option<Vec<u8>> = None;
+    let mut map_all_known = false;
+    let mut inst: Option<WorldMapVisited> = None;
+    let mut n = 0usize;
+    for line in text.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        n += 1;
+        let t: Vec<&str> = line.split(' ').collect();
+        let int = |i: usize| -> Result<i32, String> {
+            t.get(i)
+                .ok_or_else(|| format!("{line}: missing argument"))?
+                .parse::<i32>()
+                .map_err(|e| format!("{line}: {e}"))
+        };
+        match t[0] {
+            "mapallknown" => map_all_known = t[1] == "1",
+            "open" | "openhex" | "openbody" => {
+                match t[0] {
+                    "open" => match t[1] {
+                        "real" => {
+                            let p = save.join("map_visited.bin");
+                            file = Some(
+                                std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?,
+                            );
+                        }
+                        "none" => file = None,
+                        _ => {}
+                    },
+                    "openhex" => file = Some(unhex(t[1])?),
+                    _ => {
+                        let probe = WorldMapVisited::new(grid);
+                        let len = i64::from(probe.visited_length()) + i64::from(int(1)?);
+                        let pat = unhex(t[2])?;
+                        let mut b = Vec::new();
+                        for v in [249, 2, grid.min_x, grid.min_y, grid.max_x, grid.max_y, 8] {
+                            b.extend_from_slice(&i32::to_be_bytes(v));
+                        }
+                        for i in 0..len.max(0) as usize {
+                            b.push(pat[i % pat.len()]);
+                        }
+                        file = Some(b);
+                    }
+                }
+                // WorldMapVisited.getInstance: load, mark the map known if asked, save (a throw skips the rest)
+                let mut v = WorldMapVisited::new(grid);
+                if v.load(file.as_deref()).is_ok() {
+                    if map_all_known {
+                        v.set_known_in_cells(grid.min_x, grid.min_y, grid.max_x, grid.max_y);
+                    }
+                    file = Some(v.save());
+                }
+                let _ = writeln!(sb, "OPEN {n} file={}", file_text(&file));
+                dump(&mut sb, n, &v);
+                inst = Some(v);
+            }
+            "save" => {
+                let v = inst.as_ref().ok_or("save before open")?;
+                file = Some(v.save());
+                let _ = writeln!(sb, "SAVE {n} file={}", file_text(&file));
+            }
+            "dump" => dump(&mut sb, n, inst.as_ref().ok_or("dump before open")?),
+            cmd => {
+                let v = inst.as_mut().ok_or("mutator before open")?;
+                let (a, b, c, d) = (int(1)?, int(2)?, int(3)?, int(4)?);
+                match cmd {
+                    "setVisitedSquares" => v.set_visited_in_squares(a, b, c, d),
+                    "setKnownSquares" => v.set_known_in_squares(a, b, c, d),
+                    "clearVisitedSquares" => v.clear_visited_in_squares(a, b, c, d),
+                    "clearKnownSquares" => v.clear_known_in_squares(a, b, c, d),
+                    "setVisitedCells" => v.set_visited_in_cells(a, b, c, d),
+                    "setKnownCells" => v.set_known_in_cells(a, b, c, d),
+                    "clearVisitedCells" => v.clear_visited_in_cells(a, b, c, d),
+                    "clearKnownCells" => v.clear_known_in_cells(a, b, c, d),
+                    _ => return Err(format!("unknown command: {line}")),
+                }
+            }
+        }
     }
     Ok(sb)
 }

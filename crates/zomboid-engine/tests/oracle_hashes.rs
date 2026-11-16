@@ -338,6 +338,18 @@ fn save_meta_matches_original() {
     check("savemeta", &[&save, crafted.to_str().expect("utf-8 path")]);
 }
 
+/// The original `WorldMapVisited` driven by tests/visited_cases.txt: the player's real `map_visited.bin`, the setters,
+/// `save`, reading back, and hand-made files of the current and the legacy formats.
+#[test]
+fn world_map_visited_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED visited: the isolated profile's save is not present");
+        return;
+    };
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/visited_cases.txt");
+    check("visited", &[cases.to_str().expect("utf-8 path"), &save]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

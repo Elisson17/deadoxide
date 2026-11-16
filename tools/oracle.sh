@@ -206,6 +206,9 @@ sel gos && server_case gos GosProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-3
 # Small world-level files (map_worldgen.bin, map_symbols.bin, statistics.bin, metadata.bin): the real files, the ones the
 # ORIGINAL writers make, hand-made broken ones and the writer file cut at every length (tests/savemeta_crafted)
 sel savemeta && server_case savemeta SaveMetaProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/savemeta_crafted"
+# map_visited.bin (WorldMapVisited): the real file, the original's mutators and writer, and hand-made files of the current
+# and the legacy formats (tests/visited_cases.txt); args: the commands, then the save folder for the real file
+sel visited && server_case visited VisitedProbe "$HERE/tests/visited_cases.txt" "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
