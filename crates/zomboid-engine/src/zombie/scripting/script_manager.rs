@@ -1,18 +1,27 @@
 //! zombie.scripting.ScriptManager: so far reading the script files into modules and loading `entity` scripts'
-//! SpriteConfig components, items, models, vehicle templates, vehicles, timed actions and craft recipes. Old-style
-//! recipes and the other script types are collected as raw text only.
+//! SpriteConfig components, items, models, vehicle templates, vehicles, timed actions, craft recipes and the XUI
+//! scripts (with XuiManager.ParseScripts). Old-style recipes and the other script types are collected as raw text
+//! only.
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use super::entity::components::crafting::craft_recipe::{CraftRecipe, LoadContext};
 use super::item::{Item, Value};
 use super::model_script::ModelScript;
+use super::objects::base_script_object::ScriptObject;
 use super::objects::timed_action_script::TimedActionScript;
 use super::objects::vehicle_script::VehicleScript;
 use super::objects::vehicle_template::{TemplateContext, VehicleTemplate};
+use super::objects::xui_colors_script::XuiColorsScript;
+use super::objects::xui_config_script::XuiConfigScript;
+use super::objects::xui_layout_script::XuiLayoutScript;
+use super::objects::xui_skin_script::XuiSkinScript;
 use super::script_parser::{self, Block};
 use super::sprite_config::SpriteConfigScript;
+use super::ui::xui_manager::{XuiManager, XuiScripts};
+use super::ui::xui_script_type::XuiScriptType;
 use crate::java;
+use crate::zombie::core::colors::Colors;
 use crate::zombie::core::translator::Translator;
 use crate::zombie::entity::components::crafting::recipe::output_mapper::Lookups;
 use crate::zombie::util::string_utils;
@@ -78,6 +87,27 @@ pub struct ScriptManager {
     pub vehicle_errors: Vec<(String, String)>,
     /// The DebugLog lines and printed exceptions of the vehicles' and templates' loading.
     pub vehicle_log: Vec<String>,
+    /// zombie.scripting.ScriptManager.getAllXuiConfigScripts: per module, the HashMap order of the names kept.
+    pub xui_configs: Vec<XuiConfigScript>,
+    /// zombie.scripting.ScriptManager.getAllXuiLayouts
+    pub xui_layouts: Vec<XuiLayoutScript>,
+    /// zombie.scripting.ScriptManager.getAllXuiStyles
+    pub xui_styles: Vec<XuiLayoutScript>,
+    /// zombie.scripting.ScriptManager.getAllXuiDefaultStyles
+    pub xui_default_styles: Vec<XuiLayoutScript>,
+    /// zombie.scripting.ScriptManager.getAllXuiColors
+    pub xui_colors: Vec<XuiColorsScript>,
+    /// zombie.scripting.ScriptManager.getAllXuiSkinScripts
+    pub xui_skin_scripts: Vec<XuiSkinScript>,
+    /// XUI scripts the original drops because a body failed to load (`RemoveLoadError`): (full type, error).
+    pub xui_errors: Vec<(String, String)>,
+    /// zombie.scripting.ui.XuiManager's static state (with XuiLuaStyle's var registry) after ParseScripts.
+    pub xui_manager: XuiManager,
+    /// zombie.core.Colors' static tables (ParseScripts adds the xuiGlobalColors).
+    pub colors: Colors,
+    /// The exception that left XuiManager.ParseScripts. The original's ScriptManager.loadScripts catches it and then
+    /// skips the remaining PostLoadScripts and every OnScriptsLoaded; that is not modelled (none in vanilla).
+    pub xui_parse_error: Option<String>,
 }
 
 /// What ScriptBucketCollection.getScript reads for one script type: `fullTypeToScriptMap` and, per module (same order
@@ -203,8 +233,15 @@ impl ScriptManager {
         // looks items up, and the timed actions are looked up after every collection loaded.
         m.load_craft_recipes();
         m.load_timed_actions();
+        // ScriptManager.loadScripts: XuiManager.setParseOnce(true), then the six XUI collections (after TimedAction)
+        // load; the first one's PostLoadScripts runs XuiManager.ParseScripts, the other five find it parsed.
+        m.xui_manager.set_parse_once(true);
+        m.load_xui();
+        m.xui_post_load_scripts();
         m.on_items_loaded()?;
         m.craft_recipes_on_scripts_loaded();
+        // The end of ScriptManager.loadScripts.
+        m.xui_manager.set_parse_once(false);
         // ScriptManager.Load after loadScripts: ... ModelScript.ScriptsLoaded -> Item.resolveModelScripts.
         for i in 0..m.items.len() {
             m.resolve_model_scripts(i);
@@ -919,5 +956,164 @@ impl GameEntityScript {
                 .get_or_insert_with(SpriteConfigScript::default)
                 .load(block);
         }
+    }
+}
+
+impl ScriptManager {
+    /// ScriptBucket.CreateFromTokenPP and ScriptBucket.LoadScripts for the buckets of one script tag, then
+    /// ScriptBucketCollection.getAllScripts. Every body found gets `InitLoadPP` and `addLoadedScriptBody`; then, in the
+    /// HashMap order of the names, every body is loaded in file order (`reset()` before each later body with the
+    /// ResetExisting flag). A body that throws removes the script (`RemoveLoadError`); disabled and debug-only scripts
+    /// are left out (Core.debug is false); the others get their script version. The list is, per module, the HashMap
+    /// order of the names kept (`scriptMap.values()`).
+    fn load_bucket<S: ScriptObject>(
+        &self,
+        tag: &str,
+        reset_existing: bool,
+        new: impl Fn(&str) -> S,
+        errors: &mut Vec<(String, String)>,
+    ) -> Vec<S> {
+        let mut all = Vec::new();
+        for module in &self.module_list {
+            let Some(names) = module.names.get(tag) else {
+                continue;
+            };
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let mut kept: Vec<S> = Vec::new();
+            for k in java::hash_map_order(&refs) {
+                let name = &names[k];
+                let bodies = module
+                    .bodies
+                    .get(&(tag.to_string(), name.clone()))
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let mut script = new(&module.name);
+                for body in bodies {
+                    script.base_mut().init_load_pp(name, body);
+                }
+                let mut error = None;
+                for (index, body) in bodies.iter().enumerate() {
+                    if reset_existing && index >= 1 {
+                        script.reset();
+                    }
+                    if let Err(e) = script.load(name, body, &self.translator) {
+                        error = Some(e);
+                        break;
+                    }
+                }
+                if let Some(e) = error {
+                    errors.push((script.base().get_script_object_full_type(), e));
+                    continue;
+                }
+                if !script.base().enabled || script.base().debug_only {
+                    continue;
+                }
+                script.base_mut().calculate_script_version();
+                kept.push(script);
+            }
+            let kept_names: Vec<String> = kept
+                .iter()
+                .map(|s| s.base().script_object_name.clone().unwrap_or_default())
+                .collect();
+            let refs: Vec<&str> = kept_names.iter().map(String::as_str).collect();
+            let order = java::hash_map_order(&refs);
+            let mut slots: Vec<Option<S>> = kept.into_iter().map(Some).collect();
+            all.extend(order.into_iter().filter_map(|i| slots[i].take()));
+        }
+        all
+    }
+
+    /// ScriptBucketCollection.LoadScripts of the XUI collections, in bucketCollectionList order: xuiConfig,
+    /// xuiLayout, xuiStyle, xuiDefaultStyle, xuiGlobalColors (the default flags, with ResetExisting) and xuiSkin
+    /// (no ResetExisting: every body amends the skin).
+    fn load_xui(&mut self) {
+        let mut errors = Vec::new();
+        let layout = |t: XuiScriptType| move |m: &str| XuiLayoutScript::new(Some(m), t);
+        self.xui_configs = self.load_bucket(
+            "xuiConfig",
+            true,
+            |m| XuiConfigScript::new(Some(m)),
+            &mut errors,
+        );
+        self.xui_layouts = self.load_bucket(
+            "xuiLayout",
+            true,
+            layout(XuiScriptType::Layout),
+            &mut errors,
+        );
+        self.xui_styles =
+            self.load_bucket("xuiStyle", true, layout(XuiScriptType::Style), &mut errors);
+        self.xui_default_styles = self.load_bucket(
+            "xuiDefaultStyle",
+            true,
+            layout(XuiScriptType::DefaultStyle),
+            &mut errors,
+        );
+        self.xui_colors = self.load_bucket(
+            "xuiGlobalColors",
+            true,
+            |m| XuiColorsScript::new(Some(m)),
+            &mut errors,
+        );
+        self.xui_skin_scripts = self.load_bucket(
+            "xuiSkin",
+            false,
+            |m| XuiSkinScript::new(Some(m)),
+            &mut errors,
+        );
+        self.xui_errors = errors;
+    }
+
+    /// The lookup data of the xuiSkin collection (ScriptManager.getXuiSkinScript).
+    pub fn xui_skin_index(&self) -> BucketIndex {
+        let module_of = |name: &str| self.module_list.iter().position(|m| m.name == name);
+        BucketIndex::new(
+            &self.module_list,
+            self.xui_skin_scripts.iter().filter_map(|s| {
+                Some((
+                    module_of(s.base.module.as_deref()?)?,
+                    s.base.script_object_name.as_deref()?,
+                ))
+            }),
+        )
+    }
+
+    /// The PostLoadScripts of the XUI collections: XuiManager.ParseScripts (once while `parseOnce` is set).
+    fn xui_post_load_scripts(&mut self) {
+        let index = self.xui_skin_index();
+        let full_types: Vec<String> = self
+            .xui_skin_scripts
+            .iter()
+            .map(|s| s.base.get_script_object_full_type())
+            .collect();
+        let mut manager = std::mem::take(&mut self.xui_manager);
+        let mut colors = std::mem::take(&mut self.colors);
+        let mut styles = std::mem::take(&mut self.xui_styles);
+        let mut default_styles = std::mem::take(&mut self.xui_default_styles);
+        let mut layouts = std::mem::take(&mut self.xui_layouts);
+        let result = {
+            let get_skin_script = |name: &str| {
+                let full = self.get_script(&index, name)?;
+                full_types.iter().position(|f| *f == full)
+            };
+            manager.parse_scripts(
+                XuiScripts {
+                    configs: &self.xui_configs,
+                    colors: &self.xui_colors,
+                    styles: &mut styles,
+                    default_styles: &mut default_styles,
+                    layouts: &mut layouts,
+                    skins: &self.xui_skin_scripts,
+                    get_skin_script: &get_skin_script,
+                },
+                &mut colors,
+            )
+        };
+        self.xui_parse_error = result.err();
+        self.xui_manager = manager;
+        self.colors = colors;
+        self.xui_styles = styles;
+        self.xui_default_styles = default_styles;
+        self.xui_layouts = layouts;
     }
 }

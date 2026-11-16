@@ -187,6 +187,8 @@ sel items && { python3 tools/gen_item_params.py >/dev/null; server_case items It
 sel recipes && server_case recipes RecipesProbe
 # every vehicle script (VehicleScript.Load with its templates, Loaded) and vehicle template as the booted server holds it
 sel vehicles && server_case vehicles VehiclesProbe
+# the XUI scripts (xuiConfig, xuiSkin, ...) as ScriptManager loaded them, and XuiManager.ParseScripts' skins, styles, vars
+sel xui && server_case xui XuiProbe
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

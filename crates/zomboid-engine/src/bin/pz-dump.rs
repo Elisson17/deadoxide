@@ -10,6 +10,7 @@
 //!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
 //!   pz-dump translator <game root> <scratch, unused> <command file>   (TranslatorProbe.java)
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
+//!   pz-dump xui <game root>                   (pairs with XuiProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -44,6 +45,7 @@ fn main() {
         Some("items") if a.len() == 4 => items(Path::new(&a[2]), Path::new(&a[3])),
         Some("recipes") if a.len() == 3 => recipes(Path::new(&a[2])),
         Some("vehicles") if a.len() == 3 => vehicles(Path::new(&a[2])),
+        Some("xui") if a.len() == 3 => xui(Path::new(&a[2])),
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -2688,6 +2690,470 @@ pub fn vehicles(root: &Path) -> Result<String, String> {
             base(&mut sb, &p, s);
             dump(&mut sb, &p, s);
         }
+    }
+    Ok(sb)
+}
+
+/// The XUI scripts and XuiManager.ParseScripts' state, pairs with XuiProbe.java: the six XUI script lists sorted by
+/// full type, XuiLuaStyle's statics (the var registry), XuiManager's statics with every skin, and the colours of
+/// zombie.core.Colors by name.
+pub fn xui(root: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::core::color::Color;
+    use zomboid_engine::zombie::scripting::objects::base_script_object::BaseScriptObject;
+    use zomboid_engine::zombie::scripting::objects::xui_colors_script::XuiColorsScript;
+    use zomboid_engine::zombie::scripting::objects::xui_config_script::XuiConfigScript;
+    use zomboid_engine::zombie::scripting::objects::xui_layout_script::XuiLayoutScript;
+    use zomboid_engine::zombie::scripting::objects::xui_skin_script::{
+        ComponentUiScript, EntityUiScript, StyleInfoScript, XuiSkinScript,
+    };
+    use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
+    use zomboid_engine::zombie::scripting::ui::xui_lua_style::{
+        XuiLuaStyle, XuiValue, XuiVar, ALLOWED_VAR_TYPES,
+    };
+    use zomboid_engine::zombie::scripting::ui::xui_manager::{DEFAULT_SKIN_NAME, XUI_SCRIPT_TYPES};
+    use zomboid_engine::zombie::scripting::ui::xui_skin::{
+        ComponentUiStyle, EntityUiStyle, StyleInfo, XuiSkin,
+    };
+    use zomboid_engine::zombie::scripting::ui::JHashMap;
+    /// XuiProbe.esc: '\\', tab, LF, CR and every UTF-16 unit outside 0x20..0x7e escaped.
+    fn esc(s: Option<&str>) -> String {
+        let Some(s) = s else {
+            return "null".into();
+        };
+        let mut sb = String::new();
+        for u in s.encode_utf16() {
+            match u {
+                0x5c => sb.push_str("\\\\"),
+                0x09 => sb.push_str("\\t"),
+                0x0a => sb.push_str("\\n"),
+                0x0d => sb.push_str("\\r"),
+                0x20..=0x7e => sb.push(char::from(u as u8)),
+                _ => {
+                    let _ = write!(sb, "\\u{u:04x}");
+                }
+            }
+        }
+        sb
+    }
+    fn e(s: &str) -> String {
+        esc(Some(s))
+    }
+    fn o(s: &Option<String>) -> String {
+        esc(s.as_deref())
+    }
+    fn rgba(c: &Color) -> String {
+        format!(
+            "rgba({}, {}, {}, {})",
+            java::float_to_string(c.r),
+            java::float_to_string(c.g),
+            java::float_to_string(c.b),
+            java::float_to_string(c.a)
+        )
+    }
+    fn line(sb: &mut String, p: &str, f: &str, v: &str) {
+        let _ = writeln!(sb, "{p}\t{f}\t{v}");
+    }
+    fn head(sb: &mut String, p: &str, n: usize) {
+        let _ = writeln!(sb, "{p}\tsize {n}");
+    }
+    /// XuiProbe.val of a List.
+    fn list(v: &[String]) -> String {
+        let l: Vec<String> = v.iter().map(|s| e(s)).collect();
+        format!("[{}]", l.join(", "))
+    }
+    /// XuiProbe.val of a Set: sorted.
+    fn set(mut v: Vec<String>) -> String {
+        v.sort_by(|a, b| java::string_compare_to(a, b));
+        format!("[{}]", v.join(", "))
+    }
+    fn texture(t: &Option<String>) -> String {
+        t.as_ref()
+            .map_or("null".into(), |n| format!("texture:{}", e(n)))
+    }
+    fn base(sb: &mut String, p: &str, b: &BaseScriptObject) {
+        let _ = writeln!(
+            sb,
+            "{p}\tmodule\t{}\tenabled\t{}\tdebugOnly\t{}\tscriptVersion\t{:x}\tbodies\t{}",
+            o(&b.module),
+            b.enabled,
+            b.debug_only,
+            b.script_version as u64,
+            b.get_loaded_script_body_count()
+        );
+    }
+    fn value(v: Option<&XuiValue>) -> String {
+        match v {
+            None => "null".into(),
+            Some(XuiValue::Boolean(b)) => b.to_string(),
+            Some(XuiValue::Double(d)) => java::double_to_string(*d),
+            Some(XuiValue::Font(f)) => f.name().to_string(),
+            Some(XuiValue::Str(s)) => e(s),
+            Some(XuiValue::StrList(l)) => list(l),
+            Some(XuiValue::Color(c)) => rgba(c),
+        }
+    }
+    fn str_map(sb: &mut String, p: &str, m: &JHashMap<Option<String>>) {
+        head(sb, p, m.len());
+        for (k, v) in m.sorted() {
+            let _ = writeln!(sb, "{p}[{}]\t=\t{}", e(k), o(v));
+        }
+    }
+    fn color_map(sb: &mut String, p: &str, m: &JHashMap<Color>) {
+        head(sb, p, m.len());
+        for (k, v) in m.sorted() {
+            let _ = writeln!(sb, "{p}[{}]\t=\t{}", e(k), rgba(v));
+        }
+    }
+    fn var(sb: &mut String, p: &str, v: &XuiVar) {
+        line(sb, p, "class", v.class.simple_name());
+        line(sb, p, "uiOrder", &v.ui_order.to_string());
+        line(sb, p, "type", v.r#type.name());
+        line(sb, p, "parent", if v.has_parent { "owner" } else { "null" });
+        line(sb, p, "valueSet", &v.value_set.to_string());
+        line(sb, p, "autoApply", v.auto_apply.name());
+        line(sb, p, "defaultValue", &value(v.default_value.as_ref()));
+        line(sb, p, "value", &value(v.value.as_ref()));
+        line(sb, p, "luaTableKey", &e(&v.lua_table_key));
+    }
+    fn style(sb: &mut String, p: &str, s: &XuiLuaStyle) {
+        line(sb, p, "xuiLuaClass", &e(&s.xui_lua_class));
+        line(sb, p, "xuiStyleName", &e(&s.xui_style_name));
+        let skin = s
+            .xui_skin
+            .as_ref()
+            .map_or("null".into(), |n| format!("skin:{}", e(n)));
+        line(sb, p, "xuiSkin", &skin);
+        let pm = format!("{p}\tvarsMap");
+        head(sb, &pm, s.vars_map.len());
+        for (k, i) in s.vars_map.sorted() {
+            let _ = writeln!(sb, "{pm}[{}]\t=\t#{i}", e(k));
+        }
+        if s.vars.is_empty() {
+            line(sb, p, "vars", "[]");
+        } else {
+            line(sb, p, "vars", &format!("size {}", s.vars.len()));
+            for (i, v) in s.vars.iter().enumerate() {
+                var(sb, &format!("{p}\tvars[{i}]"), v);
+            }
+        }
+    }
+    fn component_script(sb: &mut String, p: &str, c: &ComponentUiScript) {
+        line(sb, p, "luaPanelClass", &o(&c.lua_panel_class));
+        line(sb, p, "xuiStyle", &o(&c.xui_style));
+        line(sb, p, "displayName", &o(&c.display_name));
+        line(sb, p, "iconPath", &o(&c.icon_path));
+        line(sb, p, "listOrderZset", &c.list_order_zset.to_string());
+        line(sb, p, "listOrderZ", &c.list_order_z.to_string());
+        line(sb, p, "enabledSet", &c.enabled_set.to_string());
+        line(sb, p, "enabled", &c.enabled.to_string());
+    }
+    fn entity_script(sb: &mut String, p: &str, u: &EntityUiScript) {
+        line(sb, p, "luaWindowClass", &o(&u.lua_window_class));
+        line(sb, p, "xuiStyle", &o(&u.xui_style));
+        line(sb, p, "luaCanOpenWindow", &o(&u.lua_can_open_window));
+        line(sb, p, "luaOpenWindow", &o(&u.lua_open_window));
+        line(sb, p, "displayName", &o(&u.display_name));
+        line(sb, p, "description", &o(&u.description));
+        line(sb, p, "buildDescription", &o(&u.build_description));
+        line(sb, p, "iconPath", &o(&u.icon_path));
+        line(sb, p, "clearComponents", &u.clear_components.to_string());
+        let pm = format!("{p}\tcomponentUiScriptMap");
+        head(sb, &pm, u.component_ui_script_map.len());
+        let mut m: Vec<_> = u.component_ui_script_map.iter().collect();
+        m.sort_by(|a, b| java::string_compare_to(a.0.name(), b.0.name()));
+        for (t, c) in m {
+            component_script(sb, &format!("{pm}[{}]", t.name()), c);
+        }
+    }
+    fn style_info_script(sb: &mut String, p: &str, s: &StyleInfoScript) {
+        str_map(
+            sb,
+            &format!("{p}\tdefaultStyleBlock"),
+            &s.default_style_block,
+        );
+        let pm = format!("{p}\tstyleBlocks");
+        head(sb, &pm, s.style_blocks.len());
+        for (k, m) in s.style_blocks.sorted() {
+            str_map(sb, &format!("{pm}[{}]", e(k)), m);
+        }
+    }
+    fn colors_script(sb: &mut String, p: &str, c: &XuiColorsScript) {
+        base(sb, p, &c.base);
+        line(sb, p, "name", &o(&c.name));
+        color_map(sb, &format!("{p}\tcolorMap"), &c.color_map);
+    }
+    fn skin_script(sb: &mut String, p: &str, s: &XuiSkinScript) {
+        base(sb, p, &s.base);
+        line(sb, p, "imports", &list(&s.imports));
+        line(sb, p, "defaultEntityUiScript", "object");
+        entity_script(
+            sb,
+            &format!("{p}\tdefaultEntityUiScript"),
+            &s.default_entity_ui_script,
+        );
+        let pm = format!("{p}\tentityUiScriptMap");
+        head(sb, &pm, s.entity_ui_script_map.len());
+        for (k, u) in s.entity_ui_script_map.sorted() {
+            entity_script(sb, &format!("{pm}[{}]", e(k)), u);
+        }
+        let pm = format!("{p}\tstyleInfoMap");
+        head(sb, &pm, s.style_info_map.len());
+        for (k, i) in s.style_info_map.sorted() {
+            style_info_script(sb, &format!("{pm}[{}]", e(k)), i);
+        }
+        line(sb, p, "colorsScript", "object");
+        colors_script(sb, &format!("{p}\tcolorsScript"), &s.colors_script);
+    }
+    fn config(sb: &mut String, p: &str, c: &XuiConfigScript) {
+        base(sb, p, &c.base);
+        let pm = format!("{p}\tvarConfigs");
+        head(sb, &pm, c.var_configs.len());
+        let mut m: Vec<_> = c.var_configs.iter().collect();
+        m.sort_by(|a, b| java::string_compare_to(a.0.name(), b.0.name()));
+        for (t, keys) in m {
+            let _ = writeln!(sb, "{pm}[{}]\t=\t{}", t.name(), list(keys));
+        }
+    }
+    fn layout(sb: &mut String, p: &str, l: &XuiLayoutScript) {
+        base(sb, p, &l.base);
+        let x = l
+            .xui_script
+            .as_ref()
+            .map_or("null".into(), |n| format!("xuiscript:{}", e(n)));
+        line(sb, p, "xuiScript", &x);
+        line(sb, p, "name", &o(&l.name));
+        let total = l.total_file.as_ref().map_or("null".into(), |t| {
+            format!(
+                "{}\t{}",
+                t.encode_utf16().count(),
+                java::string_hash_code(t)
+            )
+        });
+        line(sb, p, "totalFile", &total);
+        line(sb, p, "hasParsed", &l.has_parsed.to_string());
+        line(sb, p, "scriptType", l.script_type.name());
+        line(sb, p, "block", if l.block { "set" } else { "null" });
+    }
+    fn component_style(sb: &mut String, p: &str, c: &ComponentUiStyle) {
+        line(sb, p, "luaPanelClass", &o(&c.lua_panel_class));
+        line(sb, p, "xuiStyle", &o(&c.xui_style));
+        line(sb, p, "displayName", &o(&c.display_name));
+        line(sb, p, "icon", &texture(&c.icon));
+        line(sb, p, "listOrderZ", &c.list_order_z.to_string());
+        line(sb, p, "enabled", &c.enabled.to_string());
+    }
+    fn entity_style(sb: &mut String, p: &str, u: &EntityUiStyle) {
+        line(sb, p, "luaWindowClass", &o(&u.lua_window_class));
+        line(sb, p, "xuiStyle", &o(&u.xui_style));
+        line(sb, p, "luaCanOpenWindow", &o(&u.lua_can_open_window));
+        line(sb, p, "luaOpenWindow", &o(&u.lua_open_window));
+        let pm = format!("{p}\tcomponentUiStyleMap");
+        head(sb, &pm, u.component_ui_style_map.len());
+        let mut m: Vec<_> = u.component_ui_style_map.iter().collect();
+        m.sort_by(|a, b| java::string_compare_to(a.0.name(), b.0.name()));
+        for (t, c) in m {
+            component_style(sb, &format!("{pm}[{}]", t.name()), c);
+        }
+        line(sb, p, "displayName", &o(&u.display_name));
+        line(sb, p, "description", &o(&u.description));
+        line(sb, p, "buildDescription", &o(&u.build_description));
+        line(sb, p, "icon", &texture(&u.icon));
+    }
+    fn style_info(sb: &mut String, p: &str, s: &StyleInfo) {
+        match &s.default_style {
+            None => line(sb, p, "defaultStyle", "null"),
+            Some(d) => {
+                line(sb, p, "defaultStyle", "object");
+                style(sb, &format!("{p}\tdefaultStyle"), d);
+            }
+        }
+        let pm = format!("{p}\tstyles");
+        head(sb, &pm, s.styles.len());
+        for (k, st) in s.styles.sorted() {
+            style(sb, &format!("{pm}[{}]", e(k)), st);
+        }
+    }
+    fn skin(sb: &mut String, p: &str, s: &XuiSkin, scripts: &[XuiSkinScript]) {
+        let imports: Vec<String> = s.imports.iter().map(|n| format!("skin:{}", e(n))).collect();
+        line(sb, p, "imports", &format!("[{}]", imports.join(", ")));
+        color_map(sb, &format!("{p}\tcolorMap"), &s.color_map);
+        line(sb, p, "defaultEntityUiStyle", "object");
+        entity_style(
+            sb,
+            &format!("{p}\tdefaultEntityUiStyle"),
+            &s.default_entity_ui_style,
+        );
+        let pm = format!("{p}\tentityUiStyleMap");
+        head(sb, &pm, s.entity_ui_style_map.len());
+        for (k, u) in s.entity_ui_style_map.sorted() {
+            entity_style(sb, &format!("{pm}[{}]", e(k)), u);
+        }
+        let pm = format!("{p}\tstyles");
+        head(sb, &pm, s.styles.len());
+        for (k, i) in s.styles.sorted() {
+            style_info(sb, &format!("{pm}[{}]", e(k)), i);
+        }
+        line(sb, p, "name", &e(&s.name));
+        let script = scripts.get(s.script).map_or("null".into(), |x| {
+            format!("script:{}", e(&x.base.get_script_object_full_type()))
+        });
+        line(sb, p, "script", &script);
+        line(sb, p, "hasLoaded", &s.has_loaded.to_string());
+        line(sb, p, "invalidated", &s.invalidated.to_string());
+    }
+    fn sorted_by_full<T>(v: &[T], base: impl Fn(&T) -> &BaseScriptObject) -> Vec<(String, &T)> {
+        let mut l: Vec<(String, &T)> = v
+            .iter()
+            .map(|x| (base(x).get_script_object_full_type(), x))
+            .collect();
+        l.sort_by(|a, b| java::string_compare_to(&a.0, &b.0));
+        l
+    }
+    let m = ScriptManager::load(root)?;
+    let mut sb = String::new();
+    let l = sorted_by_full(&m.xui_configs, |x| &x.base);
+    head(&mut sb, "xuiConfig", l.len());
+    for (full, x) in l {
+        config(&mut sb, &format!("xuiConfig:{}", e(&full)), x);
+    }
+    for (tag, list) in [
+        ("xuiLayout", &m.xui_layouts),
+        ("xuiStyle", &m.xui_styles),
+        ("xuiDefaultStyle", &m.xui_default_styles),
+    ] {
+        let l = sorted_by_full(list, |x| &x.base);
+        head(&mut sb, tag, l.len());
+        for (full, x) in l {
+            layout(&mut sb, &format!("{tag}:{}", e(&full)), x);
+        }
+    }
+    let l = sorted_by_full(&m.xui_colors, |x| &x.base);
+    head(&mut sb, "xuiGlobalColors", l.len());
+    for (full, x) in l {
+        colors_script(&mut sb, &format!("xuiGlobalColors:{}", e(&full)), x);
+    }
+    let l = sorted_by_full(&m.xui_skin_scripts, |x| &x.base);
+    head(&mut sb, "xuiSkin", l.len());
+    for (full, x) in l {
+        skin_script(&mut sb, &format!("xuiSkin:{}", e(&full)), x);
+    }
+    // XuiLuaStyle's static fields
+    let x = &m.xui_manager;
+    line(
+        &mut sb,
+        "XuiLuaStyle",
+        "ALLOWED_VAR_TYPES",
+        &set(ALLOWED_VAR_TYPES
+            .iter()
+            .map(|t| t.name().to_string())
+            .collect()),
+    );
+    head(
+        &mut sb,
+        "XuiLuaStyle\tvarRegisteryMap",
+        x.var_registery_map.len(),
+    );
+    for (k, v) in x.var_registery_map.sorted() {
+        var(
+            &mut sb,
+            &format!("XuiLuaStyle\tvarRegisteryMap[{}]", e(k)),
+            v,
+        );
+    }
+    // XuiManager's static fields
+    let p = "XuiManager";
+    line(&mut sb, p, "DEFAULT_SKIN_NAME", DEFAULT_SKIN_NAME);
+    line(
+        &mut sb,
+        p,
+        "XUI_SCRIPT_TYPES",
+        &set(XUI_SCRIPT_TYPES.iter().map(|t| t.to_string()).collect()),
+    );
+    for (f, map, list) in [
+        ("layoutScriptsMap", &x.layout_scripts_map, &m.xui_layouts),
+        ("stylesScriptsMap", &x.styles_scripts_map, &m.xui_styles),
+        (
+            "defaultStylesScriptsMap",
+            &x.default_styles_scripts_map,
+            &m.xui_default_styles,
+        ),
+    ] {
+        let pm = format!("{p}\t{f}");
+        head(&mut sb, &pm, map.len());
+        for (k, i) in map.sorted() {
+            let full = list.get(*i).map_or("null".into(), |s| {
+                format!("script:{}", e(&s.base.get_script_object_full_type()))
+            });
+            let _ = writeln!(sb, "{pm}[{}]\t=\t{full}", e(k));
+        }
+    }
+    for (f, names) in [
+        ("combinedList", &x.combined_list),
+        ("xuiLayoutsList", &x.xui_layouts_list),
+        ("xuiStylesList", &x.xui_styles_list),
+        ("xuiDefaultStylesList", &x.xui_default_styles_list),
+    ] {
+        let l: Vec<String> = names
+            .iter()
+            .map(|n| format!("xuiscript:{}", e(n)))
+            .collect();
+        line(&mut sb, p, f, &format!("[{}]", l.join(", ")));
+    }
+    for (f, map) in [
+        ("xuiLayouts", &x.xui_layouts),
+        ("xuiStyles", &x.xui_styles),
+        ("xuiDefaultStyles", &x.xui_default_styles),
+    ] {
+        let pm = format!("{p}\t{f}");
+        head(&mut sb, &pm, map.len());
+        for (k, n) in map.sorted() {
+            let _ = writeln!(sb, "{pm}[{}]\t=\txuiscript:{}", e(k), e(n));
+        }
+    }
+    head(&mut sb, &format!("{p}\txuiSkins"), x.xui_skins.len());
+    for (k, s) in x.xui_skins.sorted() {
+        skin(&mut sb, &format!("skin:{}", e(k)), s, &m.xui_skin_scripts);
+    }
+    let def = x
+        .xui_default_skin
+        .as_ref()
+        .map_or("null".into(), |n| format!("skin:{}", e(n)));
+    line(&mut sb, p, "xuiDefaultSkin", &def);
+    line(&mut sb, p, "parseOnce", &x.parse_once.to_string());
+    line(&mut sb, p, "hasParsedOnce", &x.has_parsed_once.to_string());
+    let d = x.get_default_skin();
+    let _ = writeln!(
+        sb,
+        "{p}\tGetDefaultSkin\t{}\tsame\t{}",
+        d.map_or("null".into(), |s| format!("skin:{}", e(&s.name))),
+        d.is_some_and(|s| x.get_skin(Some(&s.name)).is_some_and(|t| t.name == s.name))
+    );
+    let names = m.colors.get_color_names();
+    let _ = writeln!(
+        sb,
+        "Colors\tsize {}\t{}",
+        names.len(),
+        m.colors.get_colors_count()
+    );
+    for (i, n) in names.iter().enumerate() {
+        let c = m
+            .colors
+            .get_color_by_name(n)
+            .map_or("null".into(), |c| rgba(&c));
+        let set = m
+            .colors
+            .get_color_info(n)
+            .map_or("null", |i| i.color_set.name());
+        let _ = writeln!(sb, "Colors[{i}]\t{}\t{c}\t{set}", e(n));
+    }
+    let cb = m.colors.cb_get_color_names();
+    let _ = writeln!(sb, "CB\tsize {}", cb.len());
+    for (i, n) in cb.iter().enumerate() {
+        let c = m
+            .colors
+            .cb_get_color_by_name(n)
+            .map_or("null".into(), |c| rgba(&c));
+        let _ = writeln!(sb, "CB[{i}]\t{}\t{c}", e(n));
     }
     Ok(sb)
 }

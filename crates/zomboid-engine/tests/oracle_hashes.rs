@@ -268,6 +268,13 @@ fn vehicles_matches_original() {
     check("vehicles", &[]);
 }
 
+/// The XUI scripts (xuiConfig, xuiSkin, ...) and XuiManager.ParseScripts' skins, Lua styles, var registry and
+/// colours, as the server's ScriptManager holds them.
+#[test]
+fn xui_matches_original() {
+    check("xui", &[]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {
