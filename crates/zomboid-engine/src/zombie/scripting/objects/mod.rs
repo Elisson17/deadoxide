@@ -3,5 +3,8 @@ pub mod craft_recipe_group;
 pub mod craft_recipe_tag;
 pub mod item_tag;
 pub mod item_tag_table;
+pub mod model_attachment;
 pub mod resource_location;
 pub mod timed_action_script;
+pub mod vehicle_script;
+pub mod vehicle_template;

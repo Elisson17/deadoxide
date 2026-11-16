@@ -49,6 +49,19 @@ impl KahluaTable {
         }
     }
 
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawset with a nil value: the key is removed.
+    pub fn rawset_nil(&mut self, key: &LuaValue) {
+        self.entries.retain(|(k, _)| !same_key(k, key));
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.rawget: `None` is nil.
+    pub fn rawget(&self, key: &LuaValue) -> Option<&LuaValue> {
+        self.entries
+            .iter()
+            .find(|(k, _)| same_key(k, key))
+            .map(|(_, v)| v)
+    }
+
     /// se.krka.kahlua.j2se.KahluaTableImpl.load (ByteBuffer, int): a count, then typed keys and values (world
     /// version 25 and later; older saves stored string keys only).
     pub fn load(b: &mut ByteBuffer, world_version: i32) -> Result<Self, String> {

@@ -14,6 +14,13 @@ impl Vector3f {
         Vector3f { x, y, z }
     }
 
+    /// org.joml.Vector3f.mul(float): each component times the scalar.
+    pub fn mul(&mut self, scalar: f32) {
+        self.x *= scalar;
+        self.y *= scalar;
+        self.z *= scalar;
+    }
+
     /// org.joml.Vector3f.toString: `Runtime.formatNumbers(toString(Options.NUMBER_FORMAT))`, where
     /// `toString(NumberFormat)` is "(" + x + " " + y + " " + z + ")", each through `Runtime.format(double, ...)`.
     pub fn java_to_string(&self) -> String {

@@ -1,6 +1,6 @@
 //! zombie.scripting.ScriptManager: so far reading the script files into modules and loading `entity` scripts'
-//! SpriteConfig components, items, models, timed actions and craft recipes. Old-style recipes, vehicles and the other
-//! script types are collected as raw text only.
+//! SpriteConfig components, items, models, vehicle templates, vehicles, timed actions and craft recipes. Old-style
+//! recipes and the other script types are collected as raw text only.
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -8,6 +8,8 @@ use super::entity::components::crafting::craft_recipe::{CraftRecipe, LoadContext
 use super::item::{Item, Value};
 use super::model_script::ModelScript;
 use super::objects::timed_action_script::TimedActionScript;
+use super::objects::vehicle_script::VehicleScript;
+use super::objects::vehicle_template::{TemplateContext, VehicleTemplate};
 use super::script_parser::{self, Block};
 use super::sprite_config::SpriteConfigScript;
 use crate::java;
@@ -33,6 +35,9 @@ pub struct ScriptModule {
     pub names: HashMap<String, Vec<String>>,
     /// (tag, name) -> bodies in load order (later files add bodies to an existing script)
     pub bodies: HashMap<(String, String), Vec<String>>,
+    /// (tag, name) -> index in `ScriptManager::load_file_names` of the file of the last body
+    /// (`ScriptManager.currentFileName` when the bucket last ran `InitLoadPP`).
+    pub last_file: HashMap<(String, String), usize>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -63,6 +68,16 @@ pub struct ScriptManager {
     /// The exception that ended the craft recipes' OnPostWorldDictionaryInit loop (the later recipes are not
     /// processed).
     pub craft_recipe_post_init_error: Option<String>,
+    /// zombie.scripting.ScriptManager.getAllVehicleTemplates, in module order then first-seen order of the names
+    /// (the original's HashMap order is not reproduced); their scripts as the vehicles' loading built them.
+    pub vehicle_templates: Vec<VehicleTemplate>,
+    /// zombie.scripting.ScriptManager.getAllVehicleScripts: per module, the HashMap order of the names kept.
+    pub vehicles: Vec<VehicleScript>,
+    /// Vehicle scripts the original drops: a body that threw (`RemoveLoadError`) or `Loaded` that threw (from
+    /// `onScriptLoad`, before `scriptMap.put`): (full type, error).
+    pub vehicle_errors: Vec<(String, String)>,
+    /// The DebugLog lines and printed exceptions of the vehicles' and templates' loading.
+    pub vehicle_log: Vec<String>,
 }
 
 /// What ScriptBucketCollection.getScript reads for one script type: `fullTypeToScriptMap` and, per module (same order
@@ -182,6 +197,8 @@ impl ScriptManager {
         m.load_entities();
         m.load_models();
         m.load_items();
+        // ScriptManager.bucketCollectionList order: VehicleTemplate (filled while parsing) first, Item before Vehicle.
+        m.load_vehicles();
         // ScriptManager.bucketCollectionList order: Item before CraftRecipe before TimedAction. CraftRecipe.Load only
         // looks items up, and the timed actions are looked up after every collection loaded.
         m.load_craft_recipes();
@@ -247,11 +264,37 @@ impl ScriptManager {
                     }
                     continue;
                 }
+                if tag == "template" {
+                    // ScriptBucket.Template.CreateFromTokenPP of the VehicleTemplate bucket (the first bucket):
+                    // `token.split("[{}]")[0]` without "template", trimmed and split on whitespace; "vehicle Name"
+                    // makes a template, a later one of the same name replacing it (`scriptMap.put`).
+                    let head = t
+                        .split(['{', '}'])
+                        .next()
+                        .unwrap_or("")
+                        .replace("template", "");
+                    let split = java::split_whitespace_regex(java::trim(&head));
+                    if split.len() == 2 && java::trim(split[0]) == "vehicle" {
+                        let template = VehicleTemplate::new(&module.name, java::trim(split[1]), &t);
+                        match self
+                            .vehicle_templates
+                            .iter_mut()
+                            .find(|x| x.module == template.module && x.name == template.name)
+                        {
+                            Some(x) => *x = template,
+                            None => self.vehicle_templates.push(template),
+                        }
+                    }
+                }
                 let name = token_name(&tag, &t);
                 let names = module.names.entry(tag.clone()).or_default();
                 if !names.contains(&name) {
                     names.push(name.clone());
                 }
+                module.last_file.insert(
+                    (tag.clone(), name.clone()),
+                    self.load_file_names.len().saturating_sub(1),
+                );
                 module.bodies.entry((tag, name)).or_default().push(t);
             }
         }
@@ -707,6 +750,138 @@ impl ScriptManager {
         }
         self.craft_recipe_post_init_error = error;
         self.craft_recipes = recipes;
+    }
+}
+
+impl ScriptManager {
+    /// zombie.scripting.ScriptManager.resolveItemType: a dotted type as it is, else the item of that name in
+    /// `module` (with its imports), else in the first module that has it, else "???." + the type; null for a null or
+    /// whitespace type.
+    pub fn resolve_item_type(
+        &self,
+        items: &BucketIndex,
+        module: usize,
+        item_type: &str,
+    ) -> Option<String> {
+        if string_utils::is_null_or_whitespace(Some(item_type)) {
+            return None;
+        }
+        if item_type.contains('.') {
+            return Some(item_type.to_string());
+        }
+        if let Some(full) = self.bucket_get(items, module, item_type, 0) {
+            return Some(full);
+        }
+        // Modules are never disabled here.
+        for m in 0..self.module_list.len() {
+            if let Some(full) = self.bucket_get(items, m, item_type, 0) {
+                return Some(full);
+            }
+        }
+        Some(format!("???.{item_type}"))
+    }
+
+    /// The lookup data of the vehicleTemplate collection (ScriptManager.getVehicleTemplate).
+    pub fn vehicle_template_index(&self) -> BucketIndex {
+        let module_of = |name: &str| self.module_list.iter().position(|m| m.name == name);
+        BucketIndex::new(
+            &self.module_list,
+            self.vehicle_templates
+                .iter()
+                .filter_map(|t| Some((module_of(&t.module)?, t.name.as_str()))),
+        )
+    }
+
+    /// ScriptBucket.LoadScripts for the vehicle buckets, then ScriptBucketCollection.getAllScripts. Every body found
+    /// gets `InitLoadPP` and `addLoadedScriptBody`; then, in the HashMap order of the names, every body is loaded in
+    /// file order into the same script (the Vehicle type has no ResetExisting flag). A body that throws removes the
+    /// vehicle (`RemoveLoadError`); disabled and debug-only vehicles are left out (Core.debug is false); the others
+    /// get their script version, then `onScriptLoad` runs `VehicleScript.Loaded`, and one that throws there is not
+    /// put in the map either. Templates (`template = ...`, `template! = ...`) are looked up with
+    /// ScriptManager.getVehicleTemplate and built on first use.
+    fn load_vehicles(&mut self) {
+        let tag = "vehicle".to_string();
+        let items = self.item_index();
+        let template_index = self.vehicle_template_index();
+        let mut templates = std::mem::take(&mut self.vehicle_templates);
+        let mut all = Vec::new();
+        let mut errors = Vec::new();
+        let mut log = Vec::new();
+        {
+            let full_types: Vec<String> = templates
+                .iter()
+                .map(VehicleTemplate::get_script_object_full_type)
+                .collect();
+            let get_vehicle_template = |name: &str| {
+                let full = self.get_script(&template_index, name)?;
+                full_types.iter().position(|f| *f == full)
+            };
+            let mut ctx = TemplateContext {
+                get_vehicle_template: &get_vehicle_template,
+                templates: &mut templates,
+                building: Vec::new(),
+                log: Vec::new(),
+            };
+            for (mi, module) in self.module_list.iter().enumerate() {
+                let Some(names) = module.names.get(&tag) else {
+                    continue;
+                };
+                let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+                let mut kept: Vec<VehicleScript> = Vec::new();
+                for k in java::hash_map_order(&refs) {
+                    let name = &names[k];
+                    let key = (tag.clone(), name.clone());
+                    let bodies = module
+                        .bodies
+                        .get(&key)
+                        .map(Vec::as_slice)
+                        .unwrap_or_default();
+                    let file = module
+                        .last_file
+                        .get(&key)
+                        .and_then(|i| self.load_file_names.get(*i))
+                        .map_or("", String::as_str);
+                    let mut script = VehicleScript::new(&module.name);
+                    for body in bodies {
+                        script.init_load_pp(name, file, body);
+                    }
+                    let mut error = None;
+                    for body in bodies {
+                        if let Err(e) = script.load(name, body, &mut ctx, None, 0) {
+                            error = Some(e);
+                            break;
+                        }
+                    }
+                    if let Some(e) = error {
+                        errors.push((script.get_script_object_full_type(), e));
+                        continue;
+                    }
+                    if !script.enabled || script.debug_only {
+                        continue;
+                    }
+                    script.calculate_script_version();
+                    let resolve = |t: &str| self.resolve_item_type(&items, mi, t);
+                    if let Err(e) = script.loaded(&resolve) {
+                        errors.push((script.get_script_object_full_type(), e));
+                        continue;
+                    }
+                    kept.push(script);
+                }
+                let kept_names: Vec<String> = kept
+                    .iter()
+                    .map(|v| v.script_object_name.clone().unwrap_or_default())
+                    .collect();
+                let refs: Vec<&str> = kept_names.iter().map(String::as_str).collect();
+                let order = java::hash_map_order(&refs);
+                let mut slots: Vec<Option<VehicleScript>> = kept.into_iter().map(Some).collect();
+                all.extend(order.into_iter().filter_map(|i| slots[i].take()));
+            }
+            log.append(&mut ctx.log);
+        }
+        self.vehicle_templates = templates;
+        self.vehicles = all;
+        self.vehicle_errors = errors;
+        self.vehicle_log = log;
     }
 }
 

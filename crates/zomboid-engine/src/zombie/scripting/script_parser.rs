@@ -44,20 +44,20 @@ impl Block {
     }
 }
 
-/// zombie.scripting.ScriptParser.readBlock. Positions are char indices, as Java's are UTF-16 units (the same for the
-/// basic-plane text of the game's scripts).
+/// zombie.scripting.ScriptParser.readBlock. Positions are char indices where Java's are UTF-16 units; only ASCII
+/// characters are examined, so the blocks and values are the same.
 fn read_block(s: &[char], mut start: usize, block: &mut Block) -> usize {
     let mut i = start;
     while i < s.len() {
         match s[i] {
             '{' => {
                 let header: String = s[start..i].iter().collect();
-                let header = crate::java::trim(&header);
-                // java.lang.String.split("\\s+"): a leading empty string cannot occur after trim.
-                let mut ss = header.split(char::is_whitespace).filter(|x| !x.is_empty());
+                // header.trim().split("\\s+"): Java's whitespace classes, not Unicode's (a no-break space is
+                // neither trimmed nor a separator).
+                let ss = crate::java::split_whitespace_regex(crate::java::trim(&header));
                 let mut child = Block {
-                    r#type: ss.next().unwrap_or("").to_string(),
-                    id: ss.next().map(str::to_string),
+                    r#type: ss.first().copied().unwrap_or("").to_string(),
+                    id: ss.get(1).map(|x| x.to_string()),
                     ..Block::default()
                 };
                 i = read_block(s, i + 1, &mut child);
@@ -65,8 +65,9 @@ fn read_block(s: &[char], mut start: usize, block: &mut Block) -> usize {
                 block
                     .elements
                     .push(BlockElement::Block(block.children.len() - 1));
+                // the loop's i++ still runs: the character right after the child's '}' is never examined (a ',',
+                // '{' or '}' there is kept in the text of the next value or header).
                 start = i;
-                continue;
             }
             '}' => return i + 1,
             ',' => {
