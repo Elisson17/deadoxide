@@ -8501,8 +8501,21 @@ fn loot_scenario(
         // a state the lines cannot print exactly (a bag whose weight rests on a fluid amount) is as unported as a
         // fill that stopped
         let mut lines = String::new();
-        let res = res.and_then(|()| roller.item_lines("", &c, &mut lines));
+        // an `EXC <class>` result is a Java exception the original throws too (the fill ends there, its items stay)
+        let exc = res.as_ref().err().and_then(|e| e.strip_prefix("EXC ")).map(str::to_string);
+        let res = match &exc {
+            Some(_) => roller.item_lines("", &c, &mut lines),
+            None => res.and_then(|()| roller.item_lines("", &c, &mut lines)),
+        };
         match res {
+            Ok(()) if exc.is_some() => {
+                let _ = write!(
+                    out,
+                    "FILL {t} draws={draws} n={} EXC {}",
+                    c.items.len(),
+                    exc.as_deref().unwrap_or("")
+                );
+            }
             Ok(()) => {
                 let _ = write!(out, "FILL {t} draws={draws} n={}", c.items.len());
             }

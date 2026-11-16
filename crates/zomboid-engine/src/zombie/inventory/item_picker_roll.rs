@@ -21,6 +21,7 @@ use crate::zombie::sandbox_options::{SandboxOptions, Value as SoValue};
 use crate::zombie::scripting::item::{parse_float, Item, Value};
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
+mod clothing;
 mod food;
 pub use food::FoodState;
 
@@ -1568,6 +1569,9 @@ impl<'a> LootRoller<'a> {
                             self.randomize_firearm_as_loot(script)?;
                         }
                     }
+                    // `container.Remove(spawnItem)` of a NeverEmpty bag that stayed empty is done after the item's
+                    // remaining steps (they draw nothing for a bag; a bag with `spawnWith` is not ported)
+                    let mut remove_bag = false;
                     if !is_shop && class == ItemType::Container {
                         if let Some(bags) = dist.bags.as_deref() {
                             if !has_tag(script, "BagsFillException") {
@@ -1578,7 +1582,7 @@ impl<'a> LootRoller<'a> {
                                     false,
                                 )?;
                             } else {
-                                self.fill_bag_from_containers(
+                                remove_bag = self.fill_bag_from_containers(
                                     container,
                                     idx,
                                     &type_name,
@@ -1586,7 +1590,7 @@ impl<'a> LootRoller<'a> {
                                 )?;
                             }
                         } else {
-                            self.fill_bag_from_containers(
+                            remove_bag = self.fill_bag_from_containers(
                                 container,
                                 idx,
                                 &type_name,
@@ -1619,7 +1623,24 @@ impl<'a> LootRoller<'a> {
                         self.on_create_region();
                     }
                     if class == ItemType::Clothing && (dirty_clothes || wet_clothes) {
-                        return Err(unported("Clothing.randomizeCondition of a laundry item"));
+                        if dirty_clothes {
+                            self.clothing_randomize_condition(
+                                &mut container.items[idx],
+                                0,
+                                75,
+                                1,
+                                0,
+                            )?;
+                        }
+                        if wet_clothes {
+                            self.clothing_randomize_condition(
+                                &mut container.items[idx],
+                                100,
+                                0,
+                                0,
+                                0,
+                            )?;
+                        }
                     }
                     self.reject_unported_tags(script, &full_type)?;
                     if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
@@ -1632,6 +1653,12 @@ impl<'a> LootRoller<'a> {
                     }
                     let corpse_container = false;
                     self.item_spawn_sanity_check(container, idx, !is_trash && !corpse_container)?;
+                    if remove_bag {
+                        if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty()) {
+                            return Err(unported("NeverEmpty bag with spawnWith"));
+                        }
+                        container.items.remove(idx);
+                    }
                     if dist.only_one {
                         return Ok(());
                     }
@@ -1643,16 +1670,16 @@ impl<'a> LootRoller<'a> {
 
     /// The `else if (containers.containsKey(spawnItem.getType()))` branch of `doRollItemInternal` for a bag in the
     /// root container: a fill of its own `containers` distribution one time in `fillRand` (`doItemContainer`
-    /// permitting), then its junk, then `NeverEmpty` removes an empty bag.
+    /// permitting), then its junk; true when `NeverEmpty` has the empty bag removed.
     fn fill_bag_from_containers(
         &mut self,
         container: &mut LootContainer,
         idx: usize,
         type_name: &str,
         do_item_container: bool,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let Some(dist) = self.picker.containers.get(type_name) else {
-            return Ok(());
+            return Ok(false);
         };
         if do_item_container && self.rand.next(dist.fill_rand) == 0 {
             self.roll_container_item_internal(container, &[idx], Some(dist), false)?;
@@ -1665,10 +1692,10 @@ impl<'a> LootRoller<'a> {
                 .as_ref()
                 .is_some_and(|c| c.items.is_empty());
             if has_tag(script, "NeverEmpty") && empty {
-                return Err(unported("NeverEmpty removes an empty bag"));
+                return Ok(true);
             }
         }
-        Ok(())
+        Ok(false)
     }
 
     /// The item tags whose handling in the rolls is not ported (each returns `not ported`).
@@ -1847,6 +1874,7 @@ impl<'a> LootRoller<'a> {
                 };
                 let mut path = bag.to_vec();
                 path.push(idx);
+                let mut remove_bag = false;
                 let (class, type_name, full_type, script_idx) = {
                     let it = &container_at(root, bag).items[idx];
                     (
@@ -1900,10 +1928,10 @@ impl<'a> LootRoller<'a> {
                         if !has_tag(script, "BagsFillException") {
                             self.roll_container_item_internal(root, &path, Some(bags), false)?;
                         } else {
-                            self.fill_nested_bag(root, &path, &type_name)?;
+                            remove_bag = self.fill_nested_bag(root, &path, &type_name)?;
                         }
                     } else {
-                        self.fill_nested_bag(root, &path, &type_name)?;
+                        remove_bag = self.fill_nested_bag(root, &path, &type_name)?;
                     }
                 }
                 // `if (!container.getType().equals("freezer")) setAutoAge()`: a bag's container is never a freezer;
@@ -1933,6 +1961,12 @@ impl<'a> LootRoller<'a> {
                     let target = container_at_mut(root, bag);
                     self.sanity_check_item(&mut target.items[idx], script, false)?;
                 }
+                if remove_bag {
+                    if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty()) {
+                        return Err(unported("NeverEmpty bag with spawnWith"));
+                    }
+                    container_at_mut(root, bag).items.remove(idx);
+                }
                 if dist.only_one {
                     return Ok(());
                 }
@@ -1942,15 +1976,16 @@ impl<'a> LootRoller<'a> {
     }
 
     /// The `else if (containers.containsKey(spawnItem.getType()))` branch of `rollContainerItemInternal` (no
-    /// `fillRand` chance here): the nested bag's own `containers` fill and junk, `NeverEmpty` removing an empty one.
+    /// `fillRand` chance here): the nested bag's own `containers` fill and junk; true when `NeverEmpty` has the
+    /// empty bag removed.
     fn fill_nested_bag(
         &mut self,
         root: &mut LootContainer,
         path: &[usize],
         type_name: &str,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         let Some(dist) = self.picker.containers.get(type_name) else {
-            return Ok(());
+            return Ok(false);
         };
         self.roll_container_item_internal(root, path, Some(dist), false)?;
         if let Some(junk) = dist.junk.as_deref() {
@@ -1959,11 +1994,7 @@ impl<'a> LootRoller<'a> {
         let (parent, last) = path.split_at(path.len() - 1);
         let item = &container_at(root, parent).items[last[0]];
         let script = self.script(item.script)?;
-        if has_tag(script, "NeverEmpty") && item.inner.as_ref().is_some_and(|c| c.items.is_empty())
-        {
-            return Err(unported("NeverEmpty removes an empty bag"));
-        }
-        Ok(())
+        Ok(has_tag(script, "NeverEmpty") && item.inner.as_ref().is_some_and(|c| c.items.is_empty()))
     }
 
     /// The `ITEM` lines of the oracle for the items of `c`: `ITEM <path> <type> id= uses= cond= weight= sharp=` (the
