@@ -29,7 +29,7 @@ impl MasterVolume {
         }
     }
 
-    /// zombie.audio.GameSound.MasterVolume.valueOf: the exact constant name; `Err` is the IllegalArgumentException.
+    /// java.lang.Enum.valueOf of GameSound.MasterVolume (the implicit `valueOf`): the exact constant name; `Err` is the IllegalArgumentException.
     pub fn value_of(name: &str) -> Result<MasterVolume, String> {
         match name {
             "Primary" => Ok(MasterVolume::Primary),
