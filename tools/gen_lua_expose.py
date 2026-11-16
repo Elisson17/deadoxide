@@ -47,6 +47,7 @@ zombie.characters.traits.ObservationFactory zombie.characters.SurvivorFactory zo
 zombie.gameStates.TermsOfServiceState zombie.ui.UIElement
 zombie.core.fonts.AngelCodeFont zombie.core.textures.Texture zombie.core.Translator zombie.core.Language
 zombie.scripting.objects.Item zombie.network.ServerOptions zombie.core.GameMode zombie.GameWindow zombie.MapGroups
+java.io.BufferedReader zombie.Lua.LuaManager$GlobalObject$LuaFileWriter
 zombie.SystemDisabler zombie.ui.UIManager zombie.ui.UITransition zombie.audio.DummySoundBank zombie.core.Color
 zombie.SandboxOptions$BooleanSandboxOption zombie.SandboxOptions$DoubleSandboxOption
 zombie.SandboxOptions$EnumSandboxOption zombie.SandboxOptions$IntegerSandboxOption
@@ -128,7 +129,7 @@ def decompiled(c):
         return None
     src = f.read_text(encoding="utf-8")
     for nested in c.split("$")[1:]:
-        m = re.search(r"\n(\s*)public (?:static )?(?:final )?class %s \{" % re.escape(nested), src)
+        m = re.search(r"\n([ \t]*)public (?:static )?(?:final )?class %s \{" % re.escape(nested), src)
         if not m:
             return None
         end = src.index("\n" + m.group(1) + "}", m.end())

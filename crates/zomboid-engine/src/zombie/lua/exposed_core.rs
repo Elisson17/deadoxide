@@ -6,12 +6,12 @@ use std::rc::Rc;
 use super::exposed_core_accessors::accessor;
 use super::exposed_methods::{
     bool_arg, int_arg, npe, ret, ret_bool, ret_float, ret_int, ret_str, string_arg, type_error, ud,
-    want_args, with_this, ArrayListObject, CoreObject,
+    want_args, with_this, ArrayListObject, CoreObject, CORE_HEIGHT, CORE_WIDTH,
 };
 use super::exposer::{Fail, Imp, JavaObject, JavaStatics, Ret};
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::object::{Object, Throwable};
-use crate::zombie::core::core_options::{Arg, Opt};
+use crate::zombie::core::core_options::{Arg, Opt, SaveContext};
 use crate::zombie::core::textures::color_info::ColorInfo;
 
 /// The generated getter of option field `field` (Java return type `ty`).
@@ -303,6 +303,26 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                     ctrl,
                     alt,
                 );
+                Ok(0)
+            })
+        },
+        // Core.saveOptions: `<cache>/options.ini` (ConfigFile.write)
+        "saveOptions" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, CoreObject, c, {
+                let path = std::path::Path::new(&s.cache_dir()?).join("options.ini");
+                let ctx = SaveContext {
+                    file_version: 8,
+                    screen_width: CORE_WIDTH,
+                    screen_height: CORE_HEIGHT,
+                    performance: &s.state.performance_settings.borrow(),
+                    // the measurement host is macOS (os.name "Mac OS X")
+                    os_x: cfg!(target_os = "macos"),
+                    active_controller_guids: &[],
+                };
+                let mut log = Vec::new();
+                c.options.borrow_mut().save_options(&ctx, &path, &mut log);
+                s.loader.borrow_mut().log.extend(log);
                 Ok(0)
             })
         },

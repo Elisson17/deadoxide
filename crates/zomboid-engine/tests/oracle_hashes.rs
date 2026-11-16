@@ -331,3 +331,16 @@ fn luaboot_matches_original() {
     // the client load, then ZomboidGlobals.Load and the events the game fires on its way to the main menu
     check("luaboot", &["-", "shared", "client"]);
 }
+
+#[test]
+fn luagame_matches_original() {
+    // the client's startup steps, the client load, then luaboot's events and the UI the scripts built; the port
+    // writes the files the scripts make (Lua/, options.ini, Saves/) into a fresh scratch cache dir, as the probe's
+    let scratch = std::env::temp_dir().join("pz-oracle-hashes-luagame");
+    let _ = std::fs::remove_dir_all(&scratch);
+    check(
+        "luagame",
+        &[scratch.to_str().expect("utf-8 path"), "shared", "client"],
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}

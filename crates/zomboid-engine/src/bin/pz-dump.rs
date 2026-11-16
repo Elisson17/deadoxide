@@ -5748,6 +5748,82 @@ fn luaload_after(
                 self.closures.push((c.clone(), path.to_string()));
             }
         }
+        /// LuaGameProbe.element: `<prefix> x y width height (raw bits) visible anchors(T L R B) alwaysOnTop capture
+        /// scrollChildren scrollWithParent yScroll scrollHeight consumeMouseEvents wantKeyEvents wantExtraMouseEvents
+        /// forceCursorVisible table`, then the element's table (`UITABLE <path>`, a ref when printed before).
+        fn ui_element(
+            &mut self,
+            prefix: &str,
+            path: &str,
+            u: &Rc<dyn zomboid_engine::se::krka::kahlua::vm::object::Userdata>,
+        ) {
+            use zomboid_engine::zombie::ui::ui_element::ui_element;
+            let Some(obj) = ui_element(u) else {
+                let _ = writeln!(self.sb, "{prefix} {}", u.class().name);
+                return;
+            };
+            let table = {
+                let e = obj.0.borrow();
+                let flag = |b: bool| if b { "1" } else { "0" };
+                let _ = write!(
+                    self.sb,
+                    "{prefix} {:x} {:x} {:x} {:x} {} {}{}{}{} {} {} {} {} {:x} {} {}{}{}{} ",
+                    e.x.to_bits(),
+                    e.y.to_bits(),
+                    e.width.to_bits(),
+                    e.height.to_bits(),
+                    flag(e.visible),
+                    flag(e.anchor_top),
+                    flag(e.anchor_left),
+                    flag(e.anchor_right),
+                    flag(e.anchor_bottom),
+                    flag(e.always_on_top),
+                    flag(e.capture),
+                    flag(e.scroll_children),
+                    flag(e.scroll_with_parent),
+                    e.y_scroll.to_bits(),
+                    e.scroll_height,
+                    flag(e.consume_mouse_events),
+                    flag(e.want_key_events),
+                    flag(e.want_extra_mouse_events),
+                    flag(e.force_cursor_visible),
+                );
+                e.table.clone()
+            };
+            let table = table.map_or(Object::Nil, Object::Table);
+            let _ = writeln!(self.sb, "{}", value(&table));
+            self.dump(&format!("UITABLE {path}"), &table);
+        }
+        /// LuaGameProbe.tree: the controls of `u`, depth first, as `UICHILD <depth> <path>`.
+        fn ui_tree(
+            &mut self,
+            path: &str,
+            u: &Rc<dyn zomboid_engine::se::krka::kahlua::vm::object::Userdata>,
+            depth: usize,
+        ) {
+            use zomboid_engine::zombie::ui::ui_element::ui_element;
+            let Some(obj) = ui_element(u) else {
+                return;
+            };
+            let controls = obj.0.borrow().controls.clone();
+            for (i, c) in controls.iter().enumerate() {
+                let p = format!("{path}.{i}");
+                self.ui_element(&format!("UICHILD {depth} {p}"), &p, c);
+                self.ui_tree(&p, c, depth + 1);
+            }
+        }
+        /// LuaGameProbe.ui: each element of one of UIManager's lists, then its controls.
+        fn ui_list(
+            &mut self,
+            list: &str,
+            items: &[Rc<dyn zomboid_engine::se::krka::kahlua::vm::object::Userdata>],
+        ) {
+            for (i, u) in items.iter().enumerate() {
+                let p = format!("{list}[{i}]");
+                self.ui_element(&format!("UI {list} {i}"), &p, u);
+                self.ui_tree(&p, u, 1);
+            }
+        }
     }
     let mut lm = LuaManager::init_after(root, startup).map_err(|e| format!("init: {e:?}"))?;
     // the probe's ZomboidFileSystem.instance.setCacheDir(<scratch>)
@@ -5869,6 +5945,16 @@ fn luaload_after(
                 }
             }
             n += 1;
+        }
+        // LuaGameProbe's UI section: UIManager's pending lists, then the UI list
+        if lm.statics.state.client.borrow().is_some() {
+            let (to_add, to_remove, ui) = {
+                let m = lm.statics.state.ui_manager.borrow();
+                (m.to_add.clone(), m.to_remove.clone(), m.ui.clone())
+            };
+            d.ui_list("toAdd", &to_add);
+            d.ui_list("toRemove", &to_remove);
+            d.ui_list("UI", &ui);
         }
     }
     Ok(d.sb)

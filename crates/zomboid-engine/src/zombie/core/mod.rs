@@ -10,6 +10,7 @@ pub mod language;
 pub mod language_file;
 pub mod languages;
 pub mod math;
+pub mod performance_settings;
 pub mod properties;
 pub mod raknet;
 pub mod random;

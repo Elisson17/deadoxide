@@ -5,6 +5,7 @@ pub mod exposed_client;
 pub mod exposed_core;
 pub mod exposed_core_accessors;
 pub mod exposed_game;
+pub mod exposed_io;
 pub mod exposed_methods;
 #[rustfmt::skip] // generated, one entry per line
 pub mod exposed_table;

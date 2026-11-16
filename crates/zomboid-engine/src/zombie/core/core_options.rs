@@ -5,8 +5,12 @@
 //! changed and the Core method that owns the option runs its callback (only `controllerButtonStyle` and
 //! `gamepadBindingPreset` have one). Messages that the original sends to `DebugLog.log` / `DebugType.General.println`
 //! are pushed on the `log` the caller passes.
+use std::io::Write;
+use std::path::Path;
+
 use super::core_options_table::declare;
-use crate::java::{double_to_string, parse_double, parse_int};
+use super::performance_settings::PerformanceSettings;
+use crate::java::{compare_to_ignore_case, double_to_string, parse_double, parse_int};
 
 /// A value as `setValueFromObject(Object)` sees it: a `Double` (Lua number), a `String`, a `Boolean`, or null.
 #[derive(Clone, Debug)]
@@ -726,5 +730,109 @@ impl CoreOptions {
             .rev()
             .find(|i| !i.fake && i.opt.name() == name)
             .map(|i| &i.opt)
+    }
+}
+
+/// What `Core.saveOptions` reads besides its options.
+pub struct SaveContext<'a> {
+    /// `Core.fileversion` (8).
+    pub file_version: i32,
+    /// `Core.getScreenWidth()` / `getScreenHeight()`.
+    pub screen_width: i32,
+    pub screen_height: i32,
+    /// The PerformanceSettings statics.
+    pub performance: &'a PerformanceSettings,
+    /// `System.getProperty("os.name").contains("OS X")`.
+    pub os_x: bool,
+    /// `JoypadManager.instance.activeControllerGuids` (a HashSet: the order is its own).
+    pub active_controller_guids: &'a [String],
+}
+
+impl CoreOptions {
+    /// zombie.core.Core.saveOptions: a `ConfigFile` (version string "version", no tooltips) writes the options
+    /// sorted by name (case-insensitive, stable) after `addFakeOptionsForWriting`. Returns what `ConfigFile.write`
+    /// returns. Messages that the setters log go to `log`.
+    pub fn save_options(&mut self, ctx: &SaveContext, path: &Path, log: &mut Vec<String>) -> bool {
+        // addFakeOptionsForWriting(options)
+        let p = ctx.performance;
+        let set_int = |o: &mut CoreOptions, field: &str, v: i32, log: &mut Vec<String>| {
+            if let Opt::Int(x) = o.get_mut(field) {
+                x.set_value(v, log);
+            }
+        };
+        set_int(self, "optionFogQuality", p.fog_quality, log);
+        set_int(self, "optionViewConeOpacity", p.view_cone_opacity, log);
+        set_int(self, "optionLightingFps", p.lighting_fps, log);
+        set_int(self, "optionLockFps", p.lock_fps, log);
+        set_int(self, "optionPuddlesQuality", p.puddles_quality, log);
+        set_int(self, "optionScreenHeight", ctx.screen_height, log);
+        set_int(self, "optionScreenWidth", ctx.screen_width, log);
+        // optionTieredZombieUpdates.setValue(getOptionTieredZombieUpdates()): its own value
+        if let Opt::Bool(x) = self.get_mut("optionUncappedFps") {
+            x.value = p.uncapped_fps;
+        }
+        set_int(self, "optionWaterQuality", p.water_quality, log);
+        let guids = self.get_mut("optionActiveControllerGuids").array_mut();
+        guids.value.clear();
+        for guid in ctx.active_controller_guids {
+            self.get_mut("optionActiveControllerGuids").parse(guid, log);
+        }
+        // `new ArrayList<>(this.options)`, minus the macOS-only options elsewhere, plus the fake options
+        let mut list: Vec<&Item> = self
+            .items
+            .iter()
+            .filter(|i| !i.fake)
+            .filter(|i| {
+                ctx.os_x
+                    || !matches!(
+                        i.field,
+                        "optionMacosIgnoreMouseWheelAcceleration"
+                            | "optionMacosMapHorizontalMouseWheelToVertical"
+                    )
+            })
+            .collect();
+        list.extend(self.items.iter().filter(|i| i.fake));
+        list.sort_by(|a, b| compare_to_ignore_case(a.opt.name(), b.opt.name()));
+        let options: Vec<&Opt> = list.iter().map(|i| &i.opt).collect();
+        config_file_write(path, "version", ctx.file_version, &options)
+    }
+}
+
+/// zombie.config.ConfigFile.write with `writeTooltips == false`: `<versionString>=<version>` (when the version is not
+/// 0), then `name=value` per option, the options separated (not terminated) by `System.lineSeparator()`; a
+/// multi-line array option writes one `name=element` per element.
+pub fn config_file_write(
+    path: &Path,
+    version_string: &str,
+    version: i32,
+    options: &[&Opt],
+) -> bool {
+    let sep = if cfg!(windows) { "\r\n" } else { "\n" };
+    let mut out = String::new();
+    if version != 0 {
+        out.push_str(&format!("{version_string}={version}{sep}"));
+    }
+    for (i, option) in options.iter().enumerate() {
+        match option {
+            Opt::Array(a) if a.multi_line => {
+                for (j, element) in a.value.iter().enumerate() {
+                    out.push_str(&format!("{}={}", a.name, element.value_as_string()));
+                    if j + 1 < a.value.len() || i + 1 < options.len() {
+                        out.push_str(sep);
+                    }
+                }
+            }
+            _ => {
+                out.push_str(&format!("{}={}", option.name(), option.value_as_string()));
+                if i + 1 < options.len() {
+                    out.push_str(sep);
+                }
+            }
+        }
+    }
+    // FileWriter(file, false): an exception (no folder, no permission) is logged and false returned
+    match std::fs::File::create(path) {
+        Ok(mut f) => f.write_all(out.as_bytes()).is_ok(),
+        Err(_) => false,
     }
 }

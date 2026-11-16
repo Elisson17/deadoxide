@@ -67,6 +67,9 @@ pub struct State {
     pub textures: RefCell<HashMap<usize, Rc<super::exposed_game::TextureObject>>>,
     /// zombie.SystemDisabler's switches.
     pub system_disabler: RefCell<crate::zombie::system_disabler::SystemDisabler>,
+    /// zombie.core.PerformanceSettings' statics.
+    pub performance_settings:
+        RefCell<crate::zombie::core::performance_settings::PerformanceSettings>,
     /// TextureID.useFiltering (`useTextureFiltering(bool)`).
     pub use_texture_filtering: std::cell::Cell<bool>,
     /// GameWindow.doRenderEvent (private: whether a frame fires OnRenderTick/OnPostRender).
@@ -549,6 +552,9 @@ pub(super) use with_this;
 
 /// The written ones of LuaManager.GlobalObject's `@LuaMethod(global = true)` functions.
 pub fn global(name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_io::global(name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_game::global(name) {
         return Some(f);
     }
@@ -896,6 +902,9 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 }
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_io::instance_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_core::instance_method(class, name) {
         return Some(f);
     }
