@@ -1,9 +1,10 @@
 //! zombie.erosion.obj.ErosionObj: an object the erosion code places on a square and moves through its stages.
 use super::erosion_obj_sprites::{Entry, ErosionObjSprites};
 use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
+use crate::zombie::erosion::erosion_env::{Env, Pos};
 use crate::zombie::iso::iso_grid_square::IsoGridSquare;
 use crate::zombie::iso::iso_object::{IsoObject, IsoTree, ObjectKind};
-use crate::zombie::iso::sprite::iso_sprite_manager::{IsoSpriteManager, SpriteRef};
+use crate::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager;
 use crate::zombie::iso::sprite_details::iso_object_type::IsoObjectType;
 
 /// zombie.iso.objects.IsoTree.LOGS_PER_SIZE
@@ -24,8 +25,8 @@ pub struct ErosionObj {
     pub cycle_time: i32,
 }
 
-/// zombie.iso.objects.IsoTree.initTree on a tree whose sprite is already set: the sprite's tile type becomes `tree`
-/// (the sprite is shared), then the size from the sprite's `tree` property and the log yield and damage from it.
+/// zombie.iso.objects.IsoTree.initTree on a tree whose sprite is set: the sprite's tile type becomes `tree` (the
+/// sprite is shared), then the size comes from the sprite's `tree` property and the log yield and damage from it.
 /// `Err` where the original throws (no sprite, or a `tree` property that is not a number).
 fn init_tree(
     sm: &mut IsoSpriteManager,
@@ -83,22 +84,16 @@ impl ErosionObj {
         }
     }
 
-    /// zombie.erosion.obj.ErosionObj.getObject: the topmost object of the square that carries this object's name
-    /// (and takes it out of the square when `remove`).
-    pub fn get_object(&self, square: &mut IsoGridSquare, remove: bool) -> Option<usize> {
-        for i in (0..square.objects.len()).rev() {
-            if square.objects[i].name.as_deref() == Some(self.name.as_str()) {
-                if remove {
-                    square.objects.remove(i);
-                }
-                return Some(i);
-            }
-        }
-        None
+    /// zombie.erosion.obj.ErosionObj.getObject (square, false): the index of the topmost object of the square that
+    /// carries this object's name.
+    pub fn get_object(&self, square: &IsoGridSquare) -> Option<usize> {
+        (0..square.objects.len())
+            .rev()
+            .find(|&i| square.objects[i].name.as_deref() == Some(self.name.as_str()))
     }
 
-    /// zombie.erosion.obj.ErosionObj.createObject: a new object (a tree for `tree`) with the sprite of the stage and
-    /// season, named like this erosion object. The square it is made for is not needed until it is placed.
+    /// zombie.erosion.obj.ErosionObj.createObject: a new object (an IsoTree for `tree`) with the sprite of the stage
+    /// and season, named like this erosion object. The square it is made for is only needed once it is placed.
     pub fn create_object(
         &mut self,
         sm: &mut IsoSpriteManager,
@@ -130,28 +125,27 @@ impl ErosionObj {
         Ok(obj)
     }
 
-    /// zombie.erosion.obj.ErosionObj.placeObject: makes the object and sets its stage; the caller puts it on the
-    /// square (`getObjects().add` for a plain object, `AddTileObject` for a tree). `None` where the original
-    /// returns false.
+    /// zombie.erosion.obj.ErosionObj.placeObject: makes the object, sets its stage and puts it on the square
+    /// (`getObjects().add` for a plain object, `AddTileObject` for a tree). `false` where the original returns false.
     pub fn place_object(
         &mut self,
-        sm: &mut IsoSpriteManager,
-        alias: &TilePropertyAliasMap,
+        env: &mut Env,
+        pos: Pos,
         stage: i32,
         tree: bool,
         season: i32,
         bloom: bool,
-    ) -> Result<Option<IsoObject>, String> {
-        let mut obj = self.create_object(sm, alias, stage, tree, season)?;
-        if self.set_stage_object(sm, stage, &mut obj, season, bloom) {
-            Ok(Some(obj))
-        } else {
-            Ok(None)
+    ) -> Result<bool, String> {
+        let mut obj = self.create_object(env.sm, env.alias, stage, tree, season)?;
+        if !self.set_stage_object(env.sm, stage, &mut obj, season, bloom) {
+            return Ok(false);
         }
-    }
-
-    fn get_sprite(sm: &mut IsoSpriteManager, name: &str) -> SpriteRef {
-        sm.get_sprite(name)
+        if !tree {
+            env.sq_mut(pos)?.objects.push(obj);
+        } else if env.map.add_tile_object(pos, obj, env.sm).is_none() {
+            return Err("java.lang.NullPointerException: no square to add the tree to".into());
+        }
+        Ok(true)
     }
 
     /// zombie.erosion.obj.ErosionObj.setStageObject
@@ -168,24 +162,25 @@ impl ErosionObj {
                 .sprites
                 .get_base(stage, if self.no_season_base { 0 } else { season });
             let Some(sprite_name) = sprite_name else {
-                obj.sprite = Some(Self::get_sprite(sm, ""));
+                obj.sprite = Some(sm.get_sprite(""));
                 if let Some(a) = obj.attached_anim_sprite.as_mut() {
                     a.clear();
                 }
                 return true;
             };
-            obj.sprite = Some(Self::get_sprite(sm, &sprite_name));
+            obj.sprite = Some(sm.get_sprite(&sprite_name));
             if self.has_child_sprite || self.has_flower {
-                let list = obj.attached_anim_sprite.get_or_insert_with(Vec::new);
-                list.clear();
+                obj.attached_anim_sprite.get_or_insert_with(Vec::new).clear();
                 if self.has_child_sprite && season != 0 {
                     if let Some(n) = self.sprites.get_child_sprite(stage, season) {
-                        list.push(Self::get_sprite(sm, &n));
+                        let s = sm.get_sprite(&n);
+                        obj.attached_anim_sprite.get_or_insert_with(Vec::new).push(s);
                     }
                 }
                 if self.has_flower && bloom {
                     if let Some(n) = self.sprites.get_flower(stage) {
-                        list.push(Self::get_sprite(sm, &n));
+                        let s = sm.get_sprite(&n);
+                        obj.attached_anim_sprite.get_or_insert_with(Vec::new).push(s);
                     }
                 }
             }

@@ -94,36 +94,8 @@ pub fn get_category(region_id: i32, category_id: i32) -> Option<Category> {
     })
 }
 
-/// The "hasTop" part of WallVines.CategoryData / WallCracks.CategoryData.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Top {
-    pub game_obj: i32,
-    pub spawn_time: i32,
-    pub cur_id: i32,
-    pub alpha: f32,
-}
-
 /// The `curId` initialiser of StreetCracks, WallVines and WallCracks `CategoryData`.
 pub const NO_CUR_ID: i32 = -999999;
-
-impl Top {
-    /// A new WallVines.CategoryData / WallCracks.CategoryData used as the top square's data: every field at its
-    /// initialiser (`maxStage` and `stage` do not matter here, WallVines.update reads `hasTop.spawnTime` only).
-    pub fn new() -> Self {
-        Top {
-            game_obj: 0,
-            spawn_time: 0,
-            cur_id: NO_CUR_ID,
-            alpha: 0.0,
-        }
-    }
-}
-
-impl Default for Top {
-    fn default() -> Self {
-        Top::new()
-    }
-}
 
 /// zombie.erosion.categories.ErosionCategory.Data and the subclass fields (unused ones stay at their defaults).
 #[derive(Clone, Debug, PartialEq)]
@@ -143,7 +115,9 @@ pub struct CategoryData {
     pub cur_id: i32,
     pub has_grass: bool,
     pub alpha: f32,
-    pub has_top: Option<Top>,
+    /// `hasTop` of WallVines.CategoryData and WallCracks.CategoryData: another data object of the same category
+    /// (its `region_id` and `category_id` stay 0 and only the fields the saves carry are set by a load).
+    pub has_top: Option<Box<CategoryData>>,
 }
 
 impl CategoryData {
@@ -322,12 +296,12 @@ pub fn load_category_data(b: &mut ByteBuffer) -> Result<CategoryData, String> {
             d.cur_id = b.get_int()?;
             d.alpha = b.get_float()?;
             if b.get()? != 0 {
-                d.has_top = Some(Top {
-                    game_obj: i32::from(b.get()?),
-                    spawn_time: i32::from(b.get_short()?),
-                    cur_id: b.get_int()?,
-                    alpha: b.get_float()?,
-                });
+                let mut t = CategoryData::alloc(category, 0, 0);
+                t.game_obj = i32::from(b.get()?);
+                t.spawn_time = i32::from(b.get_short()?);
+                t.cur_id = b.get_int()?;
+                t.alpha = b.get_float()?;
+                d.has_top = Some(Box::new(t));
             }
         }
         WallVines => {
@@ -335,12 +309,11 @@ pub fn load_category_data(b: &mut ByteBuffer) -> Result<CategoryData, String> {
             d.spawn_time = i32::from(b.get_short()?);
             d.cur_id = b.get_int()?;
             if b.get()? != 0 {
-                d.has_top = Some(Top {
-                    game_obj: i32::from(b.get()?),
-                    spawn_time: i32::from(b.get_short()?),
-                    cur_id: b.get_int()?,
-                    alpha: 0.0,
-                });
+                let mut t = CategoryData::alloc(category, 0, 0);
+                t.game_obj = i32::from(b.get()?);
+                t.spawn_time = i32::from(b.get_short()?);
+                t.cur_id = b.get_int()?;
+                d.has_top = Some(Box::new(t));
             }
         }
     }

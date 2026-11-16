@@ -1,5 +1,9 @@
+pub mod categories;
 pub mod erosion_config;
 pub mod erosion_data;
+pub mod erosion_env;
+pub mod erosion_regions;
+pub mod erosion_world;
 pub mod obj;
 pub mod season;
 pub mod utils;

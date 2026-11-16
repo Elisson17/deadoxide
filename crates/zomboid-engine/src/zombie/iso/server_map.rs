@@ -11,15 +11,54 @@ use super::sprite::iso_sprite_manager::IsoSpriteManager;
 use crate::zombie::core::properties::iso_property_type as pt;
 use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
 
-/// The chunks of a server map, by chunk coordinates.
+/// zombie.network.ServerMap.ServerCell: the cell of 8 by 8 chunks, as far as the lookups need it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServerCell {
+    pub wx: i32,
+    pub wy: i32,
+    /// zombie.network.ServerMap.ServerCell.isLoaded: the lookups only see the chunks of a loaded cell.
+    pub is_loaded: bool,
+}
+
+/// The chunks of a server map, by chunk coordinates, and the cells they belong to in the order they were loaded
+/// (`ServerMap.loadedCells`).
 #[derive(Clone, Debug, Default)]
 pub struct ServerMap {
     pub chunks: BTreeMap<(i32, i32), IsoChunk>,
+    pub loaded_cells: Vec<ServerCell>,
 }
 
 impl ServerMap {
     pub fn new() -> Self {
         ServerMap::default()
+    }
+
+    /// Puts a chunk into its cell (`cell.chunks[x][y] = chunk`), making the cell (not yet `isLoaded`) when it is the
+    /// first of its cell.
+    pub fn add_chunk(&mut self, chunk: IsoChunk) {
+        let (cx, cy) = (chunk.wx.div_euclid(8), chunk.wy.div_euclid(8));
+        if !self.loaded_cells.iter().any(|c| (c.wx, c.wy) == (cx, cy)) {
+            self.loaded_cells.push(ServerCell {
+                wx: cx,
+                wy: cy,
+                is_loaded: false,
+            });
+        }
+        self.chunks.insert((chunk.wx, chunk.wy), chunk);
+    }
+
+    /// `cell.isLoaded = true` on every cell.
+    pub fn set_all_cells_loaded(&mut self) {
+        for c in &mut self.loaded_cells {
+            c.is_loaded = true;
+        }
+    }
+
+    fn chunk_visible(&self, wx: i32, wy: i32) -> bool {
+        let (cx, cy) = (wx.div_euclid(8), wy.div_euclid(8));
+        self.loaded_cells
+            .iter()
+            .any(|c| (c.wx, c.wy) == (cx, cy) && c.is_loaded)
     }
 
     /// zombie.network.ServerMap.getChunk
@@ -28,14 +67,22 @@ impl ServerMap {
     }
 
     /// zombie.network.ServerMap.getGridSquare, without the meta grid's validity test (only squares of loaded chunks
-    /// exist here).
+    /// exist here): only the chunks of a loaded cell are seen.
     pub fn get_grid_square(&self, x: i32, y: i32, z: i32) -> Option<&IsoGridSquare> {
-        let c = self.chunks.get(&(x.div_euclid(8), y.div_euclid(8)))?;
+        let key = (x.div_euclid(8), y.div_euclid(8));
+        if !self.chunk_visible(key.0, key.1) {
+            return None;
+        }
+        let c = self.chunks.get(&key)?;
         c.get_grid_square(x.rem_euclid(8), y.rem_euclid(8), z)
     }
 
     pub fn get_grid_square_mut(&mut self, x: i32, y: i32, z: i32) -> Option<&mut IsoGridSquare> {
-        let c = self.chunks.get_mut(&(x.div_euclid(8), y.div_euclid(8)))?;
+        let key = (x.div_euclid(8), y.div_euclid(8));
+        if !self.chunk_visible(key.0, key.1) {
+            return None;
+        }
+        let c = self.chunks.get_mut(&key)?;
         c.get_grid_square_mut(x.rem_euclid(8), y.rem_euclid(8), z)
     }
 
@@ -56,7 +103,7 @@ impl ServerMap {
             sq.objects.len()
         };
         sq.objects.insert(at, obj);
-        sq.recalc_properties(sm);
+        self.recalc_all_with_neighbours(pos, sm);
         Some(at)
     }
 
@@ -92,7 +139,7 @@ impl ServerMap {
             }
         }
         sq.objects.remove(index);
-        sq.recalc_properties(sm);
+        self.recalc_all_with_neighbours(pos, sm);
         self.check_have_roof(pos.0, pos.1, sm);
     }
 
@@ -108,7 +155,33 @@ impl ServerMap {
             if index < sq.objects.len() {
                 sq.objects.remove(index);
             }
-            sq.recalc_properties(sm);
+            sq.recalc_properties_if_needed(sm);
+        }
+    }
+
+    /// zombie.iso.IsoGridSquare.RecalcAllWithNeighbours (true): the square's own properties if dirty, then each
+    /// existing square of the 3x3x3 block around it (`RecalcPropertiesIfNeeded` of both through `ReCalculateAll`).
+    /// The collide, path and vision matrices and the grid navigation it also rebuilds are not modelled.
+    pub fn recalc_all_with_neighbours(&mut self, pos: (i32, i32, i32), sm: &IsoSpriteManager) {
+        if let Some(sq) = self.get_grid_square_mut(pos.0, pos.1, pos.2) {
+            sq.recalc_properties_if_needed(sm);
+        }
+        for x in pos.0 - 1..=pos.0 + 1 {
+            for y in pos.1 - 1..=pos.1 + 1 {
+                for z in pos.2 - 1..=pos.2 + 1 {
+                    if (x, y, z) == pos || !(-32..=31).contains(&z) {
+                        continue;
+                    }
+                    if self.get_grid_square(x, y, z).is_some() {
+                        if let Some(sq) = self.get_grid_square_mut(pos.0, pos.1, pos.2) {
+                            sq.recalc_properties_if_needed(sm);
+                        }
+                        if let Some(sq) = self.get_grid_square_mut(x, y, z) {
+                            sq.recalc_properties_if_needed(sm);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -117,14 +190,18 @@ impl ServerMap {
     pub fn check_have_roof(&mut self, x: i32, y: i32, sm: &IsoSpriteManager) {
         let mut have_roof = false;
         for z in (0..=31).rev() {
-            if let Some(sq) = self.get_grid_square_mut(x, y, z) {
-                if have_roof != sq.have_roof {
-                    sq.have_roof = have_roof;
-                    sq.recalc_properties(sm);
-                }
-                if sq.has_rain_blocking_tile() {
-                    have_roof = true;
-                }
+            let Some(sq) = self.get_grid_square_mut(x, y, z) else {
+                continue;
+            };
+            if have_roof != sq.have_roof {
+                sq.have_roof = have_roof;
+                self.recalc_all_with_neighbours((x, y, z), sm);
+            }
+            if self
+                .get_grid_square(x, y, z)
+                .is_some_and(|s| s.has_rain_blocking_tile())
+            {
+                have_roof = true;
             }
         }
     }

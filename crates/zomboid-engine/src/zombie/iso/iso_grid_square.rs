@@ -36,6 +36,11 @@ pub struct IsoGridSquare {
     pub save: Option<Box<SquareSave>>,
     /// zombie.iso.IsoGridSquare.erosion (`getErosionData` makes it on first use): the erosion state of the square.
     pub erosion: Option<Box<crate::zombie::erosion::erosion_data::Square>>,
+    /// zombie.iso.IsoGridSquare.propertiesDirty: `RecalcPropertiesIfNeeded` rebuilds the properties only when set.
+    pub properties_dirty: bool,
+    /// `chunk == null || chunk.loaded` of the original, which `RecalcProperties` copies into `propertiesDirty`:
+    /// true for a square without a chunk and for the squares of a chunk that is loaded (`IsoChunk::set_loaded`).
+    pub chunk_loaded: bool,
 }
 
 impl IsoGridSquare {
@@ -58,6 +63,8 @@ impl IsoGridSquare {
             objects: Vec::new(),
             save: None,
             erosion: None,
+            properties_dirty: true,
+            chunk_loaded: true,
         }
     }
 
@@ -309,6 +316,14 @@ impl IsoGridSquare {
         }
         if non_transparent_cut_w && p.has(F::transparentW) {
             p.unset(F::transparentW);
+        }
+        self.properties_dirty = self.chunk_loaded;
+    }
+
+    /// zombie.iso.IsoGridSquare.RecalcPropertiesIfNeeded
+    pub fn recalc_properties_if_needed(&mut self, sm: &IsoSpriteManager) {
+        if self.properties_dirty {
+            self.recalc_properties(sm);
         }
     }
 

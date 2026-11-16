@@ -74,8 +74,24 @@ impl IsoChunk {
         for level in self.min_level..=self.max_level {
             self.squares.entry(level).or_insert_with(|| vec![None; 64]);
         }
+        let loaded = self.loaded;
         if let Some(l) = self.squares.get_mut(&z) {
-            l[(x + y * 8) as usize] = square.map(Box::new);
+            l[(x + y * 8) as usize] = square.map(|mut sq| {
+                sq.chunk_loaded = loaded;
+                Box::new(sq)
+            });
+        }
+    }
+
+    /// The part of zombie.network.ServerMap.ServerCell.RecalcAll2 that marks a chunk loaded: `chunk.loaded = true`
+    /// and `propertiesDirty = true` on every square.
+    pub fn set_loaded(&mut self) {
+        self.loaded = true;
+        for level in self.squares.values_mut() {
+            for sq in level.iter_mut().flatten() {
+                sq.chunk_loaded = true;
+                sq.properties_dirty = true;
+            }
         }
     }
 }
@@ -120,14 +136,11 @@ impl IsoChunk {
     }
 
     /// zombie.iso.IsoChunk.loadInWorldStreamerThread: the squares around objects exist, every square's properties
-    /// are built, the squares under a rain blocking tile get `haveRoof` (and lose `exterior`). The matrices that the
-    /// original's closing `RecalcAllWithNeighbours` pass computes are not modelled; the pass's property recalculation
-    /// is `recalc_properties` of every square.
-    pub fn load_in_world_streamer_thread(
-        &mut self,
-        sm: &IsoSpriteManager,
-        meta_grid: &IsoMetaGrid,
-    ) {
+    /// are built (with the chunk not loaded, so no square is left dirty by them), the squares under a rain blocking
+    /// tile get `haveRoof` (and lose `exterior`), `RecalcAllWithNeighbours(true, chunkGetter)` builds the properties
+    /// of the squares that are still dirty (those `ensureNotNull` made after their level had been passed) and every
+    /// square is marked dirty. The collide, path and vision matrices of that pass are not modelled.
+    pub fn load_in_world_streamer_thread(&mut self, sm: &IsoSpriteManager, meta_grid: &IsoMetaGrid) {
         for z in self.min_level..=self.max_level {
             for y in 0..8 {
                 for x in 0..8 {
@@ -180,9 +193,14 @@ impl IsoChunk {
             for y in 0..8 {
                 for x in 0..8 {
                     if let Some(sq) = self.get_grid_square_mut(x, y, z) {
-                        sq.recalc_properties(sm);
+                        sq.recalc_properties_if_needed(sm);
                     }
                 }
+            }
+        }
+        for level in self.squares.values_mut() {
+            for sq in level.iter_mut().flatten() {
+                sq.properties_dirty = true;
             }
         }
     }

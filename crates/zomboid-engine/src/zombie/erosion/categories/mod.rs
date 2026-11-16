@@ -1,0 +1,10 @@
+//! Package `zombie.erosion.categories`.
+pub mod erosion_category;
+pub mod flowerbed;
+pub mod nature_bush;
+pub mod nature_generic;
+pub mod nature_plants;
+pub mod nature_trees;
+pub mod street_cracks;
+pub mod wall_cracks;
+pub mod wall_vines;
