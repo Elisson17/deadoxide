@@ -21,6 +21,9 @@ use crate::zombie::sandbox_options::{SandboxOptions, Value as SoValue};
 use crate::zombie::scripting::item::{parse_float, Item, Value};
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
+mod food;
+pub use food::FoodState;
+
 /// The generator the rolls draw from (`Rand.rand`, a `RandStandard` in the game; a seeded `java.util.Random` here).
 pub type LootRand = RandAbstract<Random>;
 
@@ -85,6 +88,8 @@ pub struct LootItem {
     pub inner: Option<Box<LootContainer>>,
     /// `InventoryContainer.weightReduction` (0..=100).
     pub weight_reduction: i32,
+    /// The `Food` state (`None` for every other class).
+    pub food: Option<FoodState>,
 }
 
 /// An ItemContainer: the type, the capacity set on it, its items and the square it was made for (`sourceGrid`).
@@ -915,9 +920,13 @@ impl<'a> LootRoller<'a> {
         if it.class != ItemType::Food {
             return Ok(base);
         }
-        // Food.getActualWeight for a fresh item (no extra items, not custom weight, not cooked or burnt)
-        let hung_change = script_float(script, "hungerChange") / 100.0f32;
-        let thirst_change = script_float(script, "thirstChange") / 100.0f32;
+        // Food.getActualWeight (no extra items, not custom weight): `getHungChange()` and `getThirstChange()` of the state
+        let food = it
+            .food
+            .as_ref()
+            .ok_or_else(|| unported("a food without state"))?;
+        let hung_change = food.hung_change;
+        let thirst_change = food.thirst_change_modified();
         if let Some(replace) = script_str(script, "replaceOnUse") {
             let module = &script.module;
             let full = if replace.contains('.') {
@@ -1223,6 +1232,7 @@ impl<'a> LootRoller<'a> {
             fluid_amount: None,
             inner: None,
             weight_reduction: 0,
+            food: (class == ItemType::Food).then(|| FoodState::from_script(script)),
         };
         if class == ItemType::Container {
             // Item.InstanceItem: `new InventoryContainer` (its ItemContainer's type is the script name), then
@@ -1507,7 +1517,10 @@ impl<'a> LootRoller<'a> {
                     if script_str(script, "recordedMediaCat").is_some() {
                         return Err(unported("recorded media"));
                     }
-                    // setAutoAge: state only
+                    if !dist.no_auto_age {
+                        let outermost = container.type_name.clone();
+                        self.item_set_auto_age(&mut container.items[idx], &outermost)?;
+                    }
                     if !is_trash && self.picker.weapon_upgrade_map.contains_key(&type_name) {
                         return Err(unported("DoWeaponUpgrade"));
                     }
@@ -1572,10 +1585,21 @@ impl<'a> LootRoller<'a> {
                         && (dist.cook_food || dist.can_burn)
                         && script_complex(script, "replaceoncooked").is_none()
                     {
-                        return Err(unported("cooking spawned food"));
+                        let outermost = container.type_name.clone();
+                        self.cook_spawned_food(
+                            &mut container.items[idx],
+                            dist.can_burn,
+                            &outermost,
+                        )?;
                     }
-                    if dist.is_trash || dist.is_worn || dist.is_rotten {
-                        return Err(unported("trashItem / wearDownItem / rotItem"));
+                    if dist.is_trash {
+                        self.trash_item(&mut container.items[idx])?;
+                    }
+                    if dist.is_worn {
+                        self.wear_down_item(&mut container.items[idx])?;
+                    }
+                    if dist.is_rotten {
+                        self.rot_item(&mut container.items[idx])?;
                     }
                     if has_tag(script, "Regional") && container.square.is_some() {
                         self.on_create_region();
@@ -1635,12 +1659,7 @@ impl<'a> LootRoller<'a> {
 
     /// The item tags whose handling in the rolls is not ported (each returns `not ported`).
     fn reject_unported_tags(&self, script: &Item, full_type: &str) -> Result<(), String> {
-        for tag in [
-            "KeyRing",
-            "CarKey",
-            "BuildingKey",
-            "SpawnCooked",
-        ] {
+        for tag in ["KeyRing", "CarKey", "BuildingKey"] {
             if has_tag(script, tag) {
                 return Err(unported(format!("item tag {tag} ({full_type})")));
             }
@@ -1743,8 +1762,10 @@ impl<'a> LootRoller<'a> {
             }
             inner.explored = true;
         }
-        if it.class == ItemType::Food && has_tag(script, "SpawnCooked") {
-            return Err(unported("SpawnCooked"));
+        if has_tag(script, "SpawnCooked") {
+            if let Some(food) = it.food.as_mut() {
+                food.spawn_cooked(script_str(script, "onCooked"))?;
+            }
         }
         // unsealIfNotFull: a fluid container's seal state only
         if it.class == ItemType::Drainable
@@ -1865,8 +1886,15 @@ impl<'a> LootRoller<'a> {
                         self.fill_nested_bag(root, &path, &type_name)?;
                     }
                 }
-                if dist.is_trash || dist.is_worn {
-                    return Err(unported("trashItem / wearDownItem"));
+                // `if (!container.getType().equals("freezer")) setAutoAge()`: a bag's container is never a freezer;
+                // the food's outermost container is the one the bag lies in
+                let outermost = root.type_name.clone();
+                self.item_set_auto_age(&mut container_at_mut(root, bag).items[idx], &outermost)?;
+                if dist.is_trash {
+                    self.trash_item(&mut container_at_mut(root, bag).items[idx])?;
+                }
+                if dist.is_worn {
+                    self.wear_down_item(&mut container_at_mut(root, bag).items[idx])?;
                 }
                 if has_tag(script, "Regional") && root.square.is_some() {
                     self.on_create_region();
@@ -1949,6 +1977,33 @@ impl<'a> LootRoller<'a> {
             if let Some(h) = i.head_condition {
                 let _ = write!(out, " head={h} hmax={}", self.head_condition_max(i)?);
             }
+            if let Some(f) = &i.food {
+                let _ = write!(
+                    out,
+                    " fd age={:x} off={}/{} ck={}{} ct={:x} hung={:x} thirst={:x} end={:x} bore={:x} unh={:x} str={:x} fat={:x} flu={} sick={} pain={:x} kcal={:x} carb={:x} prot={:x} lip={:x} pois={}",
+                    f.age.to_bits(),
+                    f.off_age,
+                    f.off_age_max,
+                    u8::from(f.cooked),
+                    u8::from(f.burnt),
+                    f.cooking_time.to_bits(),
+                    f.hung_change.to_bits(),
+                    f.thirst_change.to_bits(),
+                    f.end_change.to_bits(),
+                    f.boredom_change.to_bits(),
+                    f.unhappy_change.to_bits(),
+                    f.stress_change.to_bits(),
+                    f.fatigue_change.to_bits(),
+                    f.flu_reduction,
+                    f.food_sickness(),
+                    f.pain_reduction.to_bits(),
+                    f.calories.to_bits(),
+                    f.carbohydrates.to_bits(),
+                    f.proteins.to_bits(),
+                    f.lipids.to_bits(),
+                    f.poison_power
+                );
+            }
             if let Some(inner) = &i.inner {
                 let (clo, chi) = self.bag_contents_weight(i)?;
                 let (ulo, uhi) = self.unequipped_weight(i)?;
@@ -2000,10 +2055,9 @@ impl<'a> LootRoller<'a> {
     /// InventoryItem.getCurrentUses and its Food override (`(int)Math.abs(hungChange * 100)` once the food has a
     /// base hunger).
     pub fn item_current_uses(&self, it: &LootItem) -> Result<i32, String> {
-        if it.class == ItemType::Food {
-            let base_hunger = script_float(self.script(it.script)?, "hungerChange") / 100.0f32;
-            if base_hunger != 0.0 {
-                return Ok((base_hunger * 100.0f32).abs() as i32);
+        if let Some(food) = &it.food {
+            if food.base_hunger != 0.0 {
+                return Ok((food.hung_change * 100.0f32).abs() as i32);
             }
         }
         Ok(it.uses)

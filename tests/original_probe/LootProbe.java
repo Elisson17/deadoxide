@@ -185,7 +185,15 @@ public class LootProbe {
             n++;
             StringBuilder b = new StringBuilder("ITEM " + path + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
                     + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
- if (i.hasHeadCondition()) b.append(" head=" + i.getHeadCondition() + " hmax=" + i.getHeadConditionMax());
+            if (i.hasHeadCondition()) b.append(" head=" + i.getHeadCondition() + " hmax=" + i.getHeadConditionMax());
+            if (i instanceof zombie.inventory.types.Food f) {
+                b.append(" fd age=" + fbits(f.getAge()) + " off=" + f.getOffAge() + "/" + f.getOffAgeMax() + " ck=" + (f.isCooked() ? 1 : 0) + (f.isBurnt() ? 1 : 0)
+                        + " ct=" + fbits(f.getCookingTime()) + " hung=" + fbits(f.getHungChange()) + " thirst=" + fbits(f.getThirstChangeUnmodified()) + " end=" + fbits(f.getEndChange())
+                        + " bore=" + fbits(f.getBoredomChangeUnmodified()) + " unh=" + fbits(f.getUnhappyChangeUnmodified()) + " str=" + fbits(f.getStressChangeUnmodified())
+                        + " fat=" + fbits(f.getFatigueChange()) + " flu=" + f.getFluReduction() + " sick=" + f.getFoodSicknessChange() + " pain=" + fbits(f.getPainReduction())
+                        + " kcal=" + fbits(f.getCalories()) + " carb=" + fbits(f.getCarbohydrates()) + " prot=" + fbits(f.getProteins()) + " lip=" + fbits(f.getLipids())
+                        + " pois=" + f.getPoisonPower());
+            }
             if (i instanceof zombie.inventory.types.InventoryContainer ic) {
                 b.append(" cap=" + ic.getCapacity() + " icap=" + ic.getItemContainer().getCapacity() + " red=" + ic.getWeightReduction()
                         + " nin=" + ic.getItemContainer().getItems().size() + " cw=" + fbits(ic.getContentsWeight()) + " uw=" + fbits(ic.getUnequippedWeight())
