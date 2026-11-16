@@ -2,7 +2,8 @@
 //! game and its Lua make (`getText`, `getTextOrNull`, item, recipe, moveable, media, attribute names).
 //! The original's statics are one `Translator` value; `Languages.instance` is its `languages` field and the inputs
 //! the original reads from elsewhere (`Core`'s language option, the JVM's `user.language`, `Core.debug`) are fields.
-//! Not ported: mods (`tryFillMapFromMods`, `readModTranslation`; no mod is active in the compared runs),
+//! Not ported: the mods' tables (`tryFillMapFromMods`; no mod is active in the compared runs; `readModTranslation`
+//! is ported),
 //! `Translator.debug` (the translationProblems.txt report, off in the game), the `Core.IS_DEV` checks (off in the
 //! game: the strict JSON mode, the look-alike character check, the placeholder report), `readMapTranslation`,
 //! `getMoveableDisplayName(IsoObject)`, and `PerkFactory.initTranslations` at the end of `loadFiles` (standalone its
@@ -575,9 +576,34 @@ impl Translator {
             .unwrap_or_else(|| s.to_string())
     }
 
-    /// Translator.tempMap (filled by readMapTranslation/readModTranslation, not ported).
+    /// Translator.tempMap (filled by readModTranslation; readMapTranslation is not ported).
     pub fn temp_map(&self) -> &HashMap<String, String> {
         &self.temp_map
+    }
+
+    /// zombie.core.Translator.readModTranslation: `tempMap` cleared, then for each language of `forLanguageStack`
+    /// the mod's `Mod.json` from its common folder, then from its version folder; the mod's name and description
+    /// become the table's "name"/"description" when present. A file's error is the RuntimeException the original
+    /// throws (the mod's name and description are then left as they were).
+    pub fn read_mod_translation(
+        &mut self,
+        common_dir: &str,
+        version_dir: &str,
+        name: &mut String,
+        desc: &mut String,
+    ) -> Result<(), TranslatorError> {
+        self.temp_map.clear();
+        for lang in self.for_language_stack() {
+            try_fill_map_from_file(common_dir, "Mod", &mut self.temp_map, &lang)?;
+            try_fill_map_from_file(version_dir, "Mod", &mut self.temp_map, &lang)?;
+        }
+        if let Some(n) = self.temp_map.get("name") {
+            *name = n.clone();
+        }
+        if let Some(d) = self.temp_map.get("description") {
+            *desc = d.clone();
+        }
+        Ok(())
     }
 }
 

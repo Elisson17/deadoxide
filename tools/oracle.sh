@@ -192,6 +192,9 @@ sel recipes && server_case recipes RecipesProbe
 sel vehicles && server_case vehicles VehiclesProbe
 # the XUI scripts (xuiConfig, xuiSkin, ...) as ScriptManager loaded them, and XuiManager.ParseScripts' skins, styles, vars
 sel xui && server_case xui XuiProbe
+# mod loading over crafted mod folders in the probe's cache dir: ChooseGameInfo (mod.info, availability), the mod folders
+# and their 42/42.x/common versions, ActiveMods, loadMods' order and the file map the mods' files shadow
+sel mods && game_case mods ModsProbe "$HERE/tests/mods_cases.txt"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

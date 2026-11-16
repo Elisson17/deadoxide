@@ -1,0 +1,221 @@
+# Commands for the `mods` oracle case (tests/original_probe/ModsProbe.java vs `pz-dump mods`): crafted mod folders,
+# written under the probe's own cache dir ($S), then the original's mod discovery, mod.info reading, availability,
+# load order, ActiveMods and the file map. Generated content only. One command per line, fields separated by TAB;
+# escapes \n \t \r \\ \xHH (a raw byte) and \uXXXX; `#` starts a comment line. "$S" in an argument is the cache dir.
+
+lang	EN
+
+# GameVersion.parse and ZomboidFileSystem.getGameVersionIntFromName
+gv	42.0
+gv	42.21
+gv	42.21abc
+gv	042.007
+gv	42
+gv	a42.0
+gv	42.1000
+gv	99999999999.5
+gv	42.0\u0085
+vint	42
+vint	42.21
+vint	42.21.9
+vint	42.1000
+vint	-1
+vint	+42
+vint	\x2042\x20
+vint	x
+vint	..
+vint	.42
+vint	42.
+vint	42.x
+vint	2147484
+vint	99999999999
+vint	common
+
+# ModA: B42 layout, 42/ and common/, translations, a poster in 42/, an icon in common/, files that shadow the game's
+file	mods/ModA/42/mod.info	name=Mod A\nid=ModA\ndescription=First line.\ndescription= Second line.\nposter=poster.png\nposter=missing.png\nicon=icon.png\nurl=https://theindiestone.com/forums/modA\nauthor=Tester\nmodversion=1.2\ncategory=content\nversionMin=42.0\n
+file	mods/ModA/42/poster.png	PNG
+file	mods/ModA/42/media/newtiledefinitions.tiles	override A
+file	mods/ModA/common/icon.png	PNG
+file	mods/ModA/common/media/scripts/moda.txt	module ModA {}
+file	mods/ModA/common/media/maps/ModAMap/map.info	title=Mod A Map\n
+file	mods/ModA/common/media/lua/shared/Translate/EN/Mod.json	{"name": "Mod A (EN)"}
+file	mods/ModA/common/media/lua/shared/Translate/FR/Mod.json	{"name": "Mod A (FR)", "description": "Description FR"}
+
+# ModB: versioned folders 41, 42, 42.5, 43 (42.5 wins), require, loadModAfter/Before, incompatible, packs, tiledefs
+file	mods/ModB/41/mod.info	id=ModB_41\n
+file	mods/ModB/42/mod.info	id=ModB_42\n
+file	mods/ModB/42.5/mod.info	name=Mod B\nid=ModB\nrequire=\\ModA\nloadModAfter=\\ModA\nloadModBefore=ModC,\nincompatible=ModX,\\ModY\npack=modb_tiles\npack=modb_floor.floor\npack=modb_ui type=ui\npack=modb_other.pack type=other\ntiledef=modb_tiles 200\ntiledef=modb_more\t300\n
+file	mods/ModB/43/mod.info	id=ModB_43\n
+file	mods/ModB/42.5/media/scripts/modb.txt	module ModB {}
+file	mods/ModB/42.5/media/newtiledefinitions.tiles	override B
+file	mods/ModB/common/media/scripts/moda.txt	module ModA {} from B
+
+# ModC needs a missing mod; ModD/ModE are outside their version range; ModE2 sits on both bounds
+file	mods/ModC/42/mod.info	id=ModC\nrequire=ModB,ModMissing\n
+file	mods/ModD/42/mod.info	id=ModD\nversionMin=42.30\n
+file	mods/ModE/42/mod.info	id=ModE\nversionMax=42.10\n
+file	mods/ModE2/42/mod.info	id=ModE2\nversionMax=42.21\nversionMin=42.21\n
+
+# BOM and CRLF / bare CR line ends
+file	mods/ModF/42/mod.info	\xef\xbb\xbfid=ModF_bom\r\nname=Mod F\r\nid=ModF\r\nrequire=ModA\r\n
+file	mods/ModF2/42/mod.info	\xef\xbb\xbfname=Mod F2\rid=ModF2\r
+
+# only common/ (the version folder falls back to "42.0", which does not exist)
+file	mods/ModG/common/mod.info	name=Mod G\nid=ModG\nposter=poster.png\n
+file	mods/ModG/common/poster.png	PNG
+file	mods/ModG/common/media/scripts/modg.txt	module ModG {}
+
+# bad pack= / tiledef= / version lines: the mod is rejected
+file	mods/ModH/42/mod.info	id=ModH\npack=\n
+file	mods/ModI/42/mod.info	id=ModI\ntiledef=onlyname\n
+file	mods/ModJ/42/mod.info	id=ModJ\ntiledef=name 50\n
+file	mods/ModJ2/42/mod.info	id=ModJ2\ntiledef=name x\n
+file	mods/ModK/42/mod.info	id=ModK\npack=abtype=ui\n
+file	mods/ModL/42/mod.info	id=ModL\nversionMax=garbage\n
+file	mods/ModL2/42/mod.info	id=ModL2\nversionMin=42.1000\n
+
+# a second folder with ModY's id; an empty require=; a require cycle
+file	mods/ModN/42/mod.info	name=Mod N dup\nid=ModY\n
+file	mods/ModO/42/mod.info	id=ModO\nrequire=\n
+file	mods/ModP/42/mod.info	id=ModP\nrequire=ModQ\n
+file	mods/ModQ/42/mod.info	id=ModQ\nrequire=ModP\n
+
+# refused by name; mod.info that is a folder; no mod.info; "Common" in another letter case
+file	mods/ExampleMod/42/mod.info	id=ExampleMod\n
+dir	mods/ModS/42/mod.info
+file	mods/ModT/media/x.txt	x
+file	mods/ModU/Common/mod.info	id=ModU\n
+file	mods/ModU/Common/media/scripts/modu.txt	module ModU {}
+
+# version folders that tie (42.21 and 42.21.7), one newer than the game, a version "folder" that is a file
+file	mods/ModV/42.21/mod.info	id=ModV_a\n
+file	mods/ModV/42.21.7/mod.info	id=ModV_b\n
+file	mods/ModV/42.22/mod.info	id=ModV_c\n
+file	mods/ModW/42.9	not a folder
+file	mods/ModW/common/mod.info	id=ModW\n
+
+# a translation file that is not JSON; a url that is not The Indie Stone's
+file	mods/ModX/42/mod.info	id=ModX\n
+file	mods/ModX/42/media/lua/shared/Translate/EN/Mod.json	{"name": }
+file	mods/ModY/42/mod.info	id=ModY\nurl=https://example.com/modY\n
+
+# key matching quirks ("contains", "startsWith"), whitespace, a malformed UTF-8 byte; "+42" is the version folder
+file	mods/ModZ/+42/mod.info	name=   \n id=ModZ_space\nid= ModZ \t\nurl=https://pzwiki.net/name=x\nauthor=A\xffB\ndescription=d=1\ncategory=\nicon=   \nposter= \t\nmodversion=0.1\u00a0\nversionMin=\nversionMax=  \n
+file	mods/ModZ/42.1000/mod.info	id=ModZ_wrong\n
+
+# outside the mods folder: Workshop / Steam sources by the folder two levels up
+file	ws/Contents/mods/WsMod/common/mod.info	name=Ws Mod\nid=WsMod\n
+file	ws/Contents/mods/WsMod/common/media/lua/shared/Translate/EN/Mod.json	{"name": "Ws Mod (EN)", "description": "EN"}
+file	ws/Contents/mods/WsMod/common/media/lua/shared/Translate/FR/Mod.json	{"description": "FR"}
+file	ws/Contents/mods/LowerWs/42/mod.info	id=LowerWs\n
+file	ws/123456789/mods/SteamMod/42/mod.info	id=SteamMod\n
+file	ws/18446744073709551616/mods/BigMod/42/mod.info	id=BigMod\n
+file	ws/18446744073709551615/mods/MaxMod/42/mod.info	id=MaxMod\n
+file	ws/-5/mods/NegMod/42/mod.info	id=NegMod\n
+file	ws/Contents/mods/DupWs/42/mod.info	name=Dup of ModE\nid=ModE\n
+
+# the "default" ActiveMods list (mods/default.txt)
+file	mods/default.txt	VERSION = 1,\nmods\n{\n    /* the list */\n    mod = \\ModA,\n    mod = ModC,\n    mod = ModD,\n    MOD = ModB ,\n    mod = ,\n    map = NotAMod,\n}\nmaps\n{\n}\n
+
+order	mods
+folders
+state
+details	ModB
+state
+available	ModB
+state
+available	ModC
+available	ModD
+available	ModE
+available	ModE2
+available	ModF
+available	ModF2
+available	ModO
+available	ModP
+available	ModQ
+details	ModMissing
+details	ExampleMod
+details	ModN
+details	ModY
+details	ModZ
+details	ModV_a
+details	ModV_b
+details	ModW
+details	ModU
+details	ModS
+details	undefined_id
+state
+read	$S/ws/Contents/mods/LowerWs
+read	$S/ws/123456789/mods/SteamMod
+read	$S/ws/18446744073709551616/mods/BigMod
+read	$S/ws/18446744073709551615/mods/MaxMod
+read	$S/ws/-5/mods/NegMod
+read	$S/ws/nothing
+read	$S/mods/ModT
+read	$S/ws/Contents/mods/DupWs
+available	ModE
+lang	FR
+read	$S/ws/Contents/mods/WsMod
+read	$S/ws/Contents/mods/WsMod/
+read	$S/mods/ModA
+read	$S/mods/ModN
+verdir	$S/mods/ModV
+verdir	$S/mods/ModB
+verdir	$S/mods/ModZ
+verdir	$S/nothing
+state
+
+# ActiveMods lists
+active	default	ModA	true
+active	Custom	 ModB 	true
+active	Custom	ModC	true
+active	Custom	ModA	true
+active	Custom	ModB	true
+isactive	Custom	ModB
+isactive	Custom	\x20
+active	 custom 	ModG	true
+active	Custom	ModZ	true
+active	Custom	ModZ	false
+remove	Custom	ModA
+active	   	ModA	true
+active	 Other 	ModA	true
+active	Other	ModU	true
+checkmissing	Custom
+lists
+
+# the file map before and after loading
+get	media/newtiledefinitions.tiles
+get	icon.png
+load	Custom
+map
+get	media/newtiledefinitions.tiles
+get	media/NewTileDefinitions.TILES
+get	media/scripts/moda.txt
+get	media/scripts/modg.txt
+get	icon.png
+get	mod.info
+get
+get	media/maps/modamap
+get	media/maps/modamap/
+dirget	media/maps/modamap
+dirget	media/maps/modamap/
+get	$S/mods/ModA/42/poster.png
+known	$S/mods/ModA/42/poster.png
+known	media/scripts/modb.txt
+known	media/scripts/nothing.txt
+abs	media/scripts/moda.txt
+abs	MEDIA/SCRIPTS/MODA.TXT
+load	Other
+loadstr	default
+lists
+map
+loadstr	Custom
+lists
+get	media/scripts/modu.txt
+
+order	mods,mods,workshop,steam
+folders
+order	steam
+folders
+state
+mods

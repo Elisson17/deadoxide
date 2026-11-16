@@ -3,6 +3,7 @@ pub mod colors;
 #[allow(clippy::module_inception)] // zombie.core.Core
 pub mod core;
 pub mod fonts;
+pub mod game_version;
 pub mod immutable_color;
 pub mod language;
 pub mod language_file;
