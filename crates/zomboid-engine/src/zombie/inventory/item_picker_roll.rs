@@ -1100,6 +1100,21 @@ impl<'a> LootRoller<'a> {
         Ok(Some(idx))
     }
 
+    /// The `getSpawnWith()` step of `doRollItemInternal` / `rollContainerItemInternal`:
+    /// `ItemSpawner.spawnItem(spawnWith, container)` and then `spawnWithItem.copyClothing(spawnItem)`. Headless,
+    /// `copyClothing` calls the Lua `copyClothingItem`, which fails on the first `getVisual()` (a `ClothingItem` asset
+    /// that is not ready gives no visual) before it changes anything, so it draws nothing and sets nothing the
+    /// oracle compares. UNKNOWN: the copied tint/texture/decal/dirt/blood/holes in the running game.
+    fn spawn_with(
+        &mut self,
+        root: &mut LootContainer,
+        path: &[usize],
+        spawn_with: &str,
+    ) -> Result<(), String> {
+        self.spawn_item(root, path, spawn_with)?;
+        Ok(())
+    }
+
     /// InventoryItemFactory.createItemInternal for the supported classes.
     fn create_item(&mut self, item_type: &str) -> Result<Option<LootItem>, String> {
         let mut name = item_type;
@@ -1555,11 +1570,10 @@ impl<'a> LootRoller<'a> {
                         return Err(unported("Clothing.randomizeCondition of a laundry item"));
                     }
                     self.reject_unported_tags(script, &full_type)?;
-                    if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty())
-                        && !is_trash
-                        && !dist.is_worn
-                    {
-                        return Err(unported("spawnWith"));
+                    if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
+                        if !is_trash && !dist.is_worn {
+                            self.spawn_with(container, &[], sw)?;
+                        }
                     }
                     if has_tag(script, "SpawnFullUnlessLaundry") && !laundry {
                         self.set_current_uses_to_max(&mut container.items[idx])?;
@@ -1842,11 +1856,10 @@ impl<'a> LootRoller<'a> {
                     return Err(unported("trashItem / wearDownItem"));
                 }
                 self.reject_unported_tags(script, &full_type)?;
-                if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty())
-                    && !dist.is_worn
-                    && !dist.is_trash
-                {
-                    return Err(unported("spawnWith"));
+                if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
+                    if !dist.is_worn && !dist.is_trash {
+                        self.spawn_with(root, bag, sw)?;
+                    }
                 }
                 if has_tag(script, "SpawnFullUnlessLaundry") {
                     let target = container_at_mut(root, bag);
