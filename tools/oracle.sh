@@ -138,6 +138,8 @@ sel luavm && jre_case luavm LuaVmProbe "$HERE/tests/lua_vm_cases.txt"
 sel luastring && jre_case luastring LuaVmProbe "$HERE/tests/lua_string_cases.txt"
 sel luaos && jre_case luaos LuaVmProbe "$HERE/tests/lua_os_cases.txt"
 sel javachars && jre_case javachars JavaCharsProbe
+# zombie.core.Translator: Languages.init + loadFiles for every language, getText & co., the formatter and org.json
+sel translator && game_case translator TranslatorProbe "$HERE/tests/translator_cases.txt"
 sel fdlibm && jre_case fdlibm FdLibmProbe
 sel luaload && game_case luaload LuaLoadEnvProbe shared
 # measurement only (no Rust side): what the original LuaManager.init exposes, the input of tools/gen_lua_expose.py

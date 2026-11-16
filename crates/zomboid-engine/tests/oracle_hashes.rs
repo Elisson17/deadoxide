@@ -288,3 +288,10 @@ fn luaload_matches_original() {
     // the second argument is the probe's scratch cache dir, unused by pz-dump
     check("luaload", &["-", "shared"]);
 }
+
+#[test]
+fn translator_matches_original() {
+    // the second argument is the probe's scratch cache dir, unused by pz-dump
+    let commands = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/translator_cases.txt");
+    check("translator", &["-", commands.to_str().expect("utf-8 path")]);
+}

@@ -1,0 +1,431 @@
+# Commands of tests/original_probe/TranslatorProbe.java and `pz-dump translator` (fields separated by TAB).
+# Escapes in fields: \n \t \r \\ \xHH (a raw byte) \uXXXX (UTF-8 of that unit). Args: s:<text> d:<double> b:<bool> n.
+userlang	en
+# Calls run after every load (getText: every prefix branch, placeholders with too few/many args, <br>, %%, empty values).
+call	getText	Tooltip_AddPaddingToAll
+call	getText	Tooltip_BrokenRod
+call	getText	Tooltip_GetPatchBack
+call	getText	IGUI_A
+call	getText	IGUI_AdminPanel_ModalAdminPower
+call	getText	IGUI_BackButton_Zoom
+call	getText	ContextMenu_AddAll
+call	getText	ContextMenu_HotbarRadialRemove
+call	getText	ContextMenu_CampfireKit_tooltip
+call	getText	Puddle
+call	getText	SurvivalGuide_WindowTitle
+call	getText	Farming_Aphid
+call	getText	Moodles_Angry_desc_lvl1
+call	getText	Sandbox_Abundant
+call	getText	Sandbox_ErosionSpeed_tooltip
+call	getText	Challenge_AReallyCDDAy_desc
+call	getText	MakeUpCategory_Eyes
+call	getText	MakeUpType_EyesFootball
+call	getText	Stash_AnnotedMap
+call	getText	Stash_WpMap16_Text31
+call	getText	RM_0012f83d-0d02-49f7-9b89-7eb17fafbc9c
+call	getText	RM_05443706-8a3b-474d-b30c-5586c0789eef
+call	getText	SurvivorName_Aaron
+call	getText	SurvivorSurname_Creel
+call	getText	Attributes_TooltipOverride_Durability
+call	getText	Fluid_All
+call	getText	Print_Media_A1Hay_info
+call	getText	Print_Media_FlyerTemplate10_info
+call	getText	Print_Text_A1Hay_info
+call	getText	Print_Text_Airport_info
+call	getText	EC_CraftLogicTooltip_DryingRate
+call	getText	RD_00067743-5bcf-4d97-b3b0-792d036381cd
+call	getText	RD_5735ca0a-e59f-498d-aca7-3cfc331f81df
+call	getText	BODYPART_HEAD
+call	getText	MapLabel_Muldraugh
+call	getText	credits_role.additional_artists
+call	getText	credits_role.general_arcade
+call	getText	AEBS_Choppah
+call	getText	GameSound_AddItemInRecipe
+call	getText	UI_EpilepsyWarning_2
+call	getText	UI_BloodDecals1
+call	getText	UI_ModsNagPanel_Text
+call	getText	UI_ConnectToServer_ReminderSteam
+call	getText	Author
+call	getText	Base.3030Box
+call	getText	RecipeGroup_OpenBox
+call	getText	AddACigarette
+call	getText	50s_Barstool
+call	getText	UI_DoesNotExist
+call	getText	Nothing
+call	getText	Missing%1
+call	getText	100%
+call	getText	Text<br>Line<BR>End
+call	getText	IGUI_perks_Axe
+call	getText	UI_btn_accept
+call	getText	IGUI_CraftUI_TimeRequiredFormat
+call	getText	Tooltip_AndNMore
+call	getText	Tooltip_AndNMore	s:5
+call	getText	Tooltip_AndNMore	d:5
+call	getText	Tooltip_AndNMore	d:2.5
+call	getText	Tooltip_AndNMore	n
+call	getText	Tooltip_AndNMore	b:true
+call	getText	Tooltip_AndNMore	s:1	s:2
+call	getText	Tooltip_vehicle_recommendedSkill	s:Mechanics	d:3
+call	getText	Tooltip_Dashboard_SpeedRegulator	s:a	s:b	s:c
+call	getText	Tooltip_GetPatchBack	s:x
+call	getText	IGUI_CraftUI_Controls1	s:A	s:B	s:C	s:D
+call	getText	IGUI_CraftUI_Controls1	s:A	s:B	s:C
+call	getText	IGUI_CraftUI_TimeRequiredFormat	s:5	s:30
+call	getText	IGUI_CraftUI_TimeRequiredFormat	d:5	d:30
+call	getText	IGUI_AnimClipViewer_Frame	d:1	d:24
+call	getText	ContextMenu_AddCompostItem	s:Apple	d:10
+call	getText	ContextMenu_EvolvedRecipe_RecipeNameNew	s:a	s:b	s:c
+call	getText	SurvivalGuide_first_aid_description_joypad	s:1	s:2	s:3	s:4	s:5	s:6
+call	getText	SurvivalGuide_crafting_menu_description	s:1	s:2
+call	getText	Farming_MissingItem	s:Seeds
+call	getText	Sandbox_MinMaxDefault	d:1	d:10	d:5.5
+call	getText	Sandbox_Default	b:false
+call	getText	Challenge_Challenge2_ButtonBonus	s:1	s:2	s:3
+call	getText	Fluid_HoldingTwoTypes	s:Water	s:Gas	d:0.25
+call	getText	EC_CraftLogic_Duration	d:-0
+call	getText	AEBS_temperature	s:10	s:5	s:15	s:50
+call	getText	AEBS_random_0	s:a	s:b	s:c	s:d	s:e
+call	getText	GameSound_VolumeControlTooltip	s:a	s:b	s:c
+call	getText	UI_BadWordCheck	s:word
+call	getText	UI_GameLoad_PlayerPopulation	d:1e20	d:0.0001
+call	getText	UI_GameLoad_windSpeed	d:NaN	d:Infinity	d:9.223372036854775807E18
+call	getText	UI_Missing_%1_%2	s:A	s:B
+call	getText	%s and %s	s:x
+call	getText	%s and %s	s:x	s:y
+call	getTextOrNull	UI_btn_accept
+call	getTextOrNull	UI_DoesNotExist
+call	getTextOrNull	Author
+call	getTextOrNull	credits_role.general_arcade
+call	getTextOrNull	Tooltip_BrokenRod
+call	getTextOrNull	Missing%1
+call	getTextOrNull	Tooltip_AndNMore	s:7
+call	getTextOrNull	IGUI_CraftUI_Controls1	s:A
+call	getDisplayItemName	Some Item-Name
+call	getDisplayItemName	Base.3030Box
+call	getDisplayItemName	Sledgehammer
+call	getItemNameFromFullType	Base.3030Box
+call	getItemNameFromFullType	Base.LargeMeteorite
+call	getItemNameFromFullType	Base.NoSuchItem
+call	getItemNameFromFullType	Base.NoSuchItem
+call	getItemNameFromFullType	NoDot
+call	getItemNameFromFullType	Moveables.Moveable
+call	getItemEvolvedRecipeName	Base.CannedBologneseOpen
+call	setDefaultItemEvolvedRecipeName	Base.NewThing	English Thing
+call	setDefaultItemEvolvedRecipeName	Base.CannedPeasOpen	Peas
+call	getItemEvolvedRecipeName	Base.NewThing
+call	getItemEvolvedRecipeName	Base.CannedPeasOpen
+call	getItemEvolvedRecipeName	Base.Missing
+call	getItemEvolvedRecipeName	NoDot
+call	setDefaultItemEvolvedRecipeName	NoDot	x
+call	getMoveableDisplayName	24 Hour Sign
+call	getMoveableDisplayName	50s Barstool
+call	getMoveableDisplayName	Aaaaah! Painting
+call	getMoveableDisplayName	Light Green Carpet
+call	getMoveableDisplayName	Light-Green Carpet
+call	getMoveableDisplayName	No Such Thing
+call	getMoveableDisplayName	99 Cent Sale Sign
+call	getMoveableDisplayName	Ma'ma\\.s Sign
+call	getMoveableDisplayNameOrNull	50s Seat
+call	getMoveableDisplayNameOrNull	No Such Thing
+call	getRecipeName	AddACigarette
+call	getRecipeName	MakeShingleMold
+call	getRecipeName	Missing_Recipe
+call	getRecipeName	addacigarette
+call	getRecipeName	RecipeGroup_OpenBox
+call	getRecipeGroupName	RecipeGroup_OpenBox
+call	getRecipeGroupName	Missing_Group
+call	getTextMediaEN	RM_0012f83d-0d02-49f7-9b89-7eb17fafbc9c
+call	getTextMediaEN	RM_05443706-8a3b-474d-b30c-5586c0789eef
+call	getTextMediaEN	RM_missing
+call	getTextMediaEN	UI_btn_accept
+call	getTextMediaEN	RM_a<br>b<BR>c
+call	getAttributeText	Attributes_TooltipOverride_Durability
+call	getAttributeText	Attributes_Type_MetalType
+call	getAttributeText	Attributes_Missing
+call	getAttributeTextOrNull	Attributes_Missing2
+call	getAttributeTextOrNull	Attributes_TooltipOverride_Durability
+call	getFluidText	Fluid_All
+call	getFluidText	Fluid_Missing
+call	getEntityText	EC_CraftLogicTooltip_DryingRate
+call	getEntityText	EC_Missing
+call	getMapLabelText	MapLabel_Muldraugh
+call	getMapLabelText	MapLabel_Missing
+# Loads: EN and RU in full, every other language as a digest; then an option in other case, an unknown option and
+# an empty one (both fall back to user.language), an unknown user.language (falls back to the default, EN).
+load	EN	full
+load	RU	full
+load	AR	digest
+load	CA	digest
+load	CH	digest
+load	CN	digest
+load	CS	digest
+load	DA	digest
+load	DE	digest
+load	ES	digest
+load	ES_CL	digest
+load	ES_MX	digest
+load	FI	digest
+load	FR	digest
+load	HU	digest
+load	ID	digest
+load	IT	digest
+load	JP	digest
+load	KO	digest
+load	NL	digest
+load	NO	digest
+load	PL	digest
+load	PT	digest
+load	PTBR	digest
+load	RO	digest
+load	STREW	digest
+load	TH	digest
+load	TR	digest
+load	UA	digest
+load	es_mx	digest
+load	xx	digest
+userlang	pl
+load	_	digest
+load	 \t	digest
+userlang	zz
+load	xx	digest
+userlang	en
+load	EN	digest
+# Formatting (java.util.Formatter through String.formatted, then the original's fallback for malformed templates)
+fmt	Hello %s	s:Alex
+fmt	%1$s / %2$s	s:one	s:two
+fmt	%s %s	s:one	s:two
+fmt	100%% %s	s:done
+fmt	%2$s %1$s	s:one	s:two
+fmt	%1 %2	s:one
+fmt	%s %s	s:one
+fmt	plain	s:extra
+fmt	%s	s:a%2
+fmt	%1 %s	s:one	s:two
+fmt	%1 %1	s:A
+fmt	%1%%	s:50
+fmt	%s %q	s:one	s:two
+fmt	%5	s:a	s:b	s:c	s:d	s:e
+fmt	%s
+fmt	literal 50%	s:unused
+fmt	%1 %s	s:A
+fmt	Wave %1 in : %2 (press Enter to skip)	s:4	s:9
+fmt	average temperature %1. Minimum: %2. Maximum: %3. Humidity: %4%%...	s:10	s:5	s:15	s:50
+fmt	%s	n
+fmt	%s	d:1.0
+fmt	%s	d:1.5
+fmt	%s	b:true
+fmt	%1	n
+fmt	%d	d:12.0
+fmt	%f	d:1.25
+fmt	%b	b:false
+fmt	%S	s:hello
+fmt	[%8s]	s:hi
+fmt	[%.3s]	s:abcdef
+fmt	%s %<s	s:repeat
+fmt	%2$s %s %s	s:a	s:b
+fmt	%1 %2	n	s:x
+fmt	%b	n
+fmt	%b	s:false
+fmt	%B	b:true
+fmt	%s	d:-0.0
+fmt	%s	d:1e20
+fmt	%s	d:0.0001
+fmt	[%-8s]	s:hi
+fmt	[%-s]	s:hi
+fmt	[%8.3S]	s:abcdef
+fmt	%h	s:hello
+fmt	%H	s:hello
+fmt	%h	b:true
+fmt	%h	n
+fmt	%h	b:false
+fmt	%#s	s:x
+fmt	%#b	b:true
+fmt	%+s	s:x
+fmt	% s	s:x
+fmt	%0s	s:x
+fmt	%,s	s:x
+fmt	%(s	s:x
+fmt	%--5s	s:x
+fmt	%<s	s:x
+fmt	%0$s	s:x
+fmt	%00$s	s:x
+fmt	%99999999999$s	s:x
+fmt	%99999999999s	s:x
+fmt	%.99999999999s	s:x
+fmt	%3$s	s:x
+fmt	%2147483647$s	s:x
+fmt	%.s	s:x
+fmt	%5.s	s:x
+fmt	%n	s:x
+fmt	a%nb
+fmt	%5n
+fmt	%-n
+fmt	%5%
+fmt	[%-5%]
+fmt	%-%
+fmt	%.2%
+fmt	%#%
+fmt	%c	s:x
+fmt	%c	n
+fmt	[%5c]	n
+fmt	%d	s:12
+fmt	%d	n
+fmt	[%05d]	n
+fmt	%x	n
+fmt	%X	n
+fmt	%o	n
+fmt	%e	n
+fmt	%E	n
+fmt	%g	n
+fmt	%a	n
+fmt	%f	s:1.5
+fmt	%tY	n
+fmt	%TY	n
+fmt	%tY	s:2020
+fmt	%tq	n
+fmt	%t	n
+fmt	x%T	n
+fmt	%T	n
+fmt	%t1	n
+fmt	%5t1	n
+fmt	%.2tY	n
+fmt	%-tY	n
+fmt	[%-8tY]	n
+fmt	%#tY	n
+fmt	%
+fmt	50%
+fmt	%q
+fmt	%é	s:x
+fmt	%1$	s:x
+fmt	%1$-	s:x
+fmt	%-1$s	s:x
+fmt	%1$<s	s:x
+fmt	%s %2$<s	s:a	s:b
+fmt	%2$s %<s %s	s:a	s:b
+fmt	%<s %s	s:a
+fmt	%s	s:жßİ
+fmt	%S	s:жßİǆ
+fmt	%S	b:true
+fmt	%S	n
+fmt	[%3S]	s:ß
+fmt	%.1S	s:ßß
+fmt	%.3s	s:a😀b
+fmt	[%4s]	s:😀
+fmt	%-08s	s:x
+fmt	%-+s	s:x
+fmt	%+-s	s:x
+fmt	%#h	s:x
+fmt	%#S	s:x
+fmt	%1$s%%%2$s	s:a	s:b
+fmt	%%%1	s:a
+fmt	%%1	s:a
+fmt	%%%%1	s:a
+fmt	%%12	s:a
+fmt	%0%1	s:a
+fmt	%.%1	s:a
+fmt	%d%1	s:a
+fmt	%s%1	s:a
+fmt	%1 50%	s:a
+fmt	%1 50%.	s:a
+fmt	%1 %d	s:a	s:b
+fmt	%1 %ds	s:a
+fmt	%1 %.5	s:a
+fmt	%02dm %02ds	s:5	s:30
+fmt	%02dm %02ds	s:5
+fmt	%02dm %02ds	s:5	s:30	s:7
+fmt	%1 %9	s:a
+fmt	%1 %10	s:a
+fmt	%y %1	s:a
+fmt	%1$s %y	s:a
+fmt	<br>%1<BR>	s:a
+fmt	a<br>b
+fmt	%s<br>	s:x<br>
+fmt	%1$s %1$s	s:a
+fmt	%2$s	s:a
+fmt	%1$s %2$s %3$s	s:a	s:b
+fmt	%s	d:9.223372036854775807E18
+fmt	%s	d:-9.223372036854775808E18
+fmt	%s	d:1e300
+fmt	%s	d:-1.5
+fmt	%s	d:123456789.0
+fmt	%s	d:1.0E-5
+fmt	%s	d:4.9E-324
+fmt	%s	d:-Infinity
+fmt	%s	d:0.1
+fmt	%s %s %s	b:true	n	d:3
+# org.json through Translator.tryFillMapFromFile: each text is one file read into the same map, in order
+json	0	{"a": "x", "b": "%1 of %2, 100%% and %a %0"}
+json	1	{"a": "first", "b": "keep"}	{"a": "", "b": "second", "c": ""}
+json	2	{"a": "x", "a": "y"}
+json	3	{"a": 1}
+json	4	{"a": true}
+json	5	{"a": null}
+json	6	{"a": [1, 2]}
+json	7	{"a": {"b": "c"}}
+json	8	{"a": 1.5}
+json	9	{a: x, b c: y z }
+json	10	{'a': 'it''s'}
+json	11	{'a': "q"}
+json	12	{"a": "x";"b": "y"}
+json	13	{"a": "x",}
+json	14	{"a": "x",,"b": "y"}
+json	15	{"a": "x" "b": "y"}
+json	16	{"a" "x"}
+json	17	{"a": "x"
+json	18	{"a": "x\\n"}
+json	19	{"a": "line\nbreak"}
+json	20	{"a": "tab\there"}
+json	21	{"a": "\\u0041\\u00e9\\u0436\\ud83d\\ude00"}
+json	22	{"a": "\\u00g1"}
+json	23	{"a": "\\u+041"}
+json	24	{"a": "\\u-001"}
+json	25	{"a": "\\q"}
+json	26	{"a": "\\/\\'\\b\\f\\r\\t"}
+json	27	{"a": "\\u00
+json	28	﻿{"a": "bom"}
+json	29	{"a": "\xff"}
+json	30	{"a": "\xc3"}
+json	31	
+json	32	   
+json	33	[]
+json	34	{}
+json	35	{} trailing
+json	36	{"a": "x"} {"b": "y"}
+json	37	  \r\n\t{ "a" : "x" , "b":"y"\r\n}
+json	38	{"a": x y}
+json	39	{"a": tRuE}
+json	40	{"a": NULL}
+json	41	{"a": 0x10}
+json	42	{"a": 007}
+json	43	{"a": -}
+json	44	{"a": 1.5f}
+json	45	{"a": 1e}
+json	46	{"a": -0}
+json	47	{"a": .5}
+json	48	{"a": abc/def}
+json	49	{"a": a=b}
+json	50	{"a": a#b}
+json	51	{true: "t", 12: "i", 1.50: "d", 1e3: "e", -0: "z", -0.0: "z2", 00.5: "l", 1.e2: "p", 99999999999: "L", 1.5f: "f", 0x1.8p1: "h", TRUE: "T", null: "N", 1e-7: "s"}
+json	52	{"a": "\\u0000b"}
+json	53	{"a": "x\x00y"}
+json	54	{"k": "v"}\x00garbage
+json	55	{"a": "x", "b": {"c": [1,,2]}, "d": "y"}
+json	56	{"a": [1,,2], "b": "x"}
+json	57	{"a": [,], "b": "x"}
+json	58	{"a": [1, 2 3]}
+json	59	{"a": ["x"]
+json	60	{"a":
+json	61	{"a"
+json	62	{"a": ""}
+json	63	{"a": "", "b": ""}	{"a": "z"}
+json	64	{"a": "%%1 %1%2 %12"}
+json	65	{,}
+json	66	{"a": "x"}}
+json	67	{"": "empty key"}
+json	68	{"a": "\\u00e9t\\u00e9", "\\u00e9": "key"}
+json	69	{"long": "жжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжжж"}
+json	70	{"a": "x"}\n\n
+json	71	{\n"a": "1",\n"b": 2\n}
+json	72	{\r\n"a": "1",\r\n"b":\r\n}
+json	73	{"a": "x\\
+json	74	{"a": [}
