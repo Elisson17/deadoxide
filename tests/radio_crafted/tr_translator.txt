@@ -1,0 +1,7 @@
+[Info]
+guid = g
+language = EN
+version = 3
+translator = ,a,,b,
+translator = ,
+[/Info]

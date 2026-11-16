@@ -1,0 +1,32 @@
+[Info]
+guid = tr-guid-1
+language = EN
+version = 7
+translator = Ann,Bob, Carl 
+[/Info]
+[Translations]
+xa = Hello
+xb=World = of
+  xc  =  padded  
+[Collection]
+text = Shared text
+member = xm1
+member = xm2
+[/Collection]
+[Collection]
+text = Orphan
+[/Collection]
+[Collection]
+member = xm3
+[/Collection]
+[Collection]
+text = Again
+member = xm1
+member = xm4
+text = Second text wins
+[/Collection]
+noequals
+=emptykey
+xa = Hello again
+[/Translations]
+after = ignored

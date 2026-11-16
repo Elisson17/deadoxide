@@ -213,6 +213,11 @@ impl Translator {
         &mut self.maps[UI]
     }
 
+    /// zombie.core.Translator.radioData (the `RD_` table of `RadioData.json`), for a probe that adds texts to it.
+    pub fn radio_data_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.maps[RADIO_DATA]
+    }
+
     /// zombie.core.Translator.loadFiles: forgets the language, clears every table but `entity` (the original does
     /// not clear it, so its entries of an earlier load stay), resolves the language (`getLanguage()` in the log
     /// line), then fills each BY_NAME table from its file in every language of `forLanguageStack` (the default

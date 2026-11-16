@@ -1,0 +1,13 @@
+[Info]
+guid = g3
+language = EN
+version = 1
+[/Info]
+xa = ignored
+[Collection]
+text = T
+member = xm
+[/Collection]
+[Translations]
+xb = kept
+[/Translations]

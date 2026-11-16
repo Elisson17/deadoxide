@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadioData>
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <Adverts>
+    <ScriptEntry ID="pa" name="pool" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="pa-b0" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a0" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pa-b1" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a1" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pa-b2" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a2" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pa-b3" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a3" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pa-b4" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a4" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pa-b5" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a5" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pa-b6" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xp-a6" r="255" g="128" b="0" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </Adverts>
+  <Channels>
+  <ChannelEntry ID="c1" name="Adv" cat="Radio" freq="1000" startscript="main">
+    <ScriptEntry ID="ps" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="pb0" timestamp="0" endstamp="10" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-0" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb1" timestamp="10" endstamp="20" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-1" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb2" timestamp="20" endstamp="30" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-2" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb3" timestamp="30" endstamp="40" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-3" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb4" timestamp="40" endstamp="50" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-4" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb5" timestamp="50" endstamp="60" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-5" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb6" timestamp="60" endstamp="70" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-6" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb7" timestamp="70" endstamp="80" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-7" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb8" timestamp="80" endstamp="90" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-8" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb9" timestamp="90" endstamp="100" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-9" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb10" timestamp="100" endstamp="110" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-10" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb11" timestamp="110" endstamp="120" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-11" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb12" timestamp="120" endstamp="130" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-12" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb13" timestamp="130" endstamp="140" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-13" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb14" timestamp="140" endstamp="150" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-14" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb15" timestamp="150" endstamp="160" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-15" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb16" timestamp="160" endstamp="170" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-16" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb17" timestamp="170" endstamp="180" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-17" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb18" timestamp="180" endstamp="190" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-18" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb19" timestamp="190" endstamp="200" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-19" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb20" timestamp="200" endstamp="210" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-20" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb21" timestamp="210" endstamp="220" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-21" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb22" timestamp="220" endstamp="230" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-22" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb23" timestamp="230" endstamp="240" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-23" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb24" timestamp="240" endstamp="250" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-24" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb25" timestamp="250" endstamp="260" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-25" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb26" timestamp="260" endstamp="270" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-26" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb27" timestamp="270" endstamp="280" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-27" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb28" timestamp="280" endstamp="290" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-28" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb29" timestamp="290" endstamp="300" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-29" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb30" timestamp="300" endstamp="310" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-30" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb31" timestamp="310" endstamp="320" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-31" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb32" timestamp="320" endstamp="330" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-32" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb33" timestamp="330" endstamp="340" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-33" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb34" timestamp="340" endstamp="350" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-34" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb35" timestamp="350" endstamp="360" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-35" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb36" timestamp="360" endstamp="370" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-36" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb37" timestamp="370" endstamp="380" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-37" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb38" timestamp="380" endstamp="390" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-38" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="pb39" timestamp="390" endstamp="400" type="ActivateBroadcast" day="0" advertCat="pa" isSegment="false">
+        <LineEntry ID="xp-39" r="255" g="128" b="0" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </ChannelEntry>
+  </Channels>
+</RadioData>

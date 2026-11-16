@@ -1,0 +1,7 @@
+[Info]
+guid = a = b
+language = EN = x
+version = 3
+language = EN
+translator =
+[/Info]

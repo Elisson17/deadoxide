@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadioData>
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <Channels>
+  <ChannelEntry ID="c1" name="One" cat="Radio" freq="1000" startscript="main">
+    <ScriptEntry ID="s1" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="b1" timestamp="0" endstamp="10" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xe-1" r="255" g="128" b="0" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </ChannelEntry>
+  <ChannelEntry ID="c2" name="Two" cat="Radio2" freq="1001" startscript="main">
+  </ChannelEntry>
+  </Channels>
+</RadioData>

@@ -6,16 +6,20 @@ pub fn trim(s: &str) -> &str {
 }
 
 /// java.lang.Integer.parseInt(String): optional sign then decimal digits, no whitespace; `None` is NumberFormatException.
-/// Non-ASCII digits, which Java also accepts, are rejected here.
+/// The digits are those of `Character.digit(char, 10)`: the Nd digits of any script (BMP) count, as in Java.
 pub fn parse_int(s: &str) -> Option<i32> {
-    if s.is_empty()
-        || !s
-            .bytes()
-            .all(|b| b.is_ascii_digit() || b == b'+' || b == b'-')
-    {
-        return None;
+    let mut ascii = String::with_capacity(s.len());
+    for (i, c) in s.chars().enumerate() {
+        match c {
+            '+' | '-' if i == 0 => ascii.push(c),
+            _ => {
+                let unit = u16::try_from(u32::from(c)).ok()?;
+                let d = crate::java_chars::digit10(unit)?;
+                ascii.push(char::from_digit(d, 10)?);
+            }
+        }
     }
-    s.parse::<i32>().ok()
+    ascii.parse::<i32>().ok()
 }
 
 /// java.lang.Character.isWhitespace(char).
@@ -59,18 +63,10 @@ pub fn equals_ignore_case(a: &str, b: &str) -> bool {
     }
 }
 fn upper(c: char) -> char {
-    let mut u = c.to_uppercase();
-    match (u.next(), u.next()) {
-        (Some(x), None) => x,
-        _ => c,
-    }
+    crate::java_chars::to_upper_char(c)
 }
 fn lower(c: char) -> char {
-    let mut u = c.to_lowercase();
-    match (u.next(), u.next()) {
-        (Some(x), None) => x,
-        _ => c,
-    }
+    crate::java_chars::to_lower_char(c)
 }
 
 /// java.lang.Math.min(float, float): NaN if either is NaN, and -0.0 below 0.0.
@@ -496,8 +492,8 @@ pub fn parse_long(s: &str, radix: u32) -> Option<i64> {
 /// java.lang.Double.parseDouble (`FloatingDecimal.readJavaFormatString`) for decimal input: leading and trailing
 /// characters up to U+0020 trimmed, an optional sign, "NaN", "Infinity", digits with at most one point and at least
 /// one digit, an optional exponent with at least one digit, and one optional trailing f/F/d/D; correctly rounded.
-/// Hexadecimal floating-point input ("0x1p4") is not ported (`None`, the NumberFormatException). `None` is also the
-/// original's NumberFormatException for anything else.
+/// Hexadecimal floating-point input ("0x1.8p3", the binary exponent is required) is read exactly and rounded once.
+/// `None` is the original's NumberFormatException.
 pub fn parse_double(s: &str) -> Option<f64> {
     let s = trim(s);
     let b = s.as_bytes();
@@ -523,7 +519,7 @@ pub fn parse_double(s: &str) -> Option<f64> {
         return Some(if neg { -v } else { v });
     }
     if rest.starts_with("0x") || rest.starts_with("0X") {
-        return None;
+        return parse_hex(s).map(|h| hex_to_f64(&h));
     }
     let mut mantissa = String::new();
     let mut digits = 0usize;
@@ -577,10 +573,156 @@ pub fn parse_double(s: &str) -> Option<f64> {
 /// java.lang.Float.parseFloat: the grammar of `parse_double`, rounded once from the decimal to float (not through
 /// double). `None` is the NumberFormatException.
 pub fn parse_float(s: &str) -> Option<f32> {
+    if is_hex_literal(s) {
+        return parse_hex(s).map(|h| hex_to_f32(&h));
+    }
     parse_double(s)?;
     let t = trim(s);
     let t = t.strip_suffix(['f', 'F', 'd', 'D']).unwrap_or(t);
     t.parse::<f32>().ok()
+}
+
+/// A hexadecimal floating-point literal: `mant * 2^exp` with the top bit of `mant` set (`mant` 0 for zero); `sticky` when
+/// non-zero bits below the 64 kept were dropped.
+struct HexFloat {
+    neg: bool,
+    mant: u64,
+    exp: i32,
+    sticky: bool,
+}
+
+fn is_hex_literal(s: &str) -> bool {
+    let t = trim(s);
+    let t = t.strip_prefix(['+', '-']).unwrap_or(t);
+    t.starts_with("0x") || t.starts_with("0X")
+}
+
+/// The grammar of `FloatingDecimal` for hexadecimal input: sign, `0x`, hex digits with at most one point (at least one
+/// digit), `p`, a signed decimal exponent, one optional f/F/d/D.
+fn parse_hex(s: &str) -> Option<HexFloat> {
+    let t = trim(s);
+    let (neg, r) = match t.as_bytes().first()? {
+        b'-' => (true, &t[1..]),
+        b'+' => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let r = r.strip_prefix("0x").or_else(|| r.strip_prefix("0X"))?;
+    let b = r.as_bytes();
+    let (mut mant, mut exp, mut sticky, mut digits, mut point) = (0u64, 0i32, false, 0usize, false);
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i].is_ascii_hexdigit() {
+            let d = u64::from((b[i] as char).to_digit(16)?);
+            digits += 1;
+            if mant >> 60 == 0 {
+                mant = (mant << 4) | d;
+                if point {
+                    exp -= 4;
+                }
+            } else {
+                sticky |= d != 0;
+                if !point {
+                    exp += 4;
+                }
+            }
+        } else if b[i] == b'.' && !point {
+            point = true;
+        } else {
+            break;
+        }
+        i += 1;
+    }
+    if digits == 0 || i >= b.len() || (b[i] != b'p' && b[i] != b'P') {
+        return None;
+    }
+    i += 1;
+    let mut eneg = false;
+    if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+        eneg = b[i] == b'-';
+        i += 1;
+    }
+    let start = i;
+    let mut e: i64 = 0;
+    while i < b.len() && b[i].is_ascii_digit() {
+        e = (e * 10 + i64::from(b[i] - b'0')).min(1_000_000);
+        i += 1;
+    }
+    if i == start
+        || (i < b.len() && (i != b.len() - 1 || !matches!(b[i], b'f' | b'F' | b'd' | b'D')))
+    {
+        return None;
+    }
+    if eneg {
+        e = -e;
+    }
+    if mant == 0 {
+        return Some(HexFloat {
+            neg,
+            mant: 0,
+            exp: 0,
+            sticky: false,
+        });
+    }
+    let lz = mant.leading_zeros();
+    let exp = (i64::from(exp) - i64::from(lz) + e).clamp(-200_000, 200_000);
+    Some(HexFloat {
+        neg,
+        mant: mant << lz,
+        exp: exp as i32,
+        sticky,
+    })
+}
+
+/// `h` rounded to nearest even to `p` significant bits, no lower than the bit worth 2^`lsb_min`: the value `k * 2^q`.
+fn round_hex(h: &HexFloat, p: i32, lsb_min: i32) -> (u64, i32) {
+    let leading = h.exp + 63;
+    let q = (leading - (p - 1)).max(lsb_min);
+    let shift = q - h.exp;
+    if shift > 64 {
+        return (0, q);
+    }
+    let m = u128::from(h.mant);
+    let (kept, dropped) = (m >> shift, m & ((1u128 << shift) - 1));
+    let half = 1u128 << (shift - 1);
+    let up = dropped > half || (dropped == half && (h.sticky || kept & 1 == 1));
+    ((kept as u64) + u64::from(up), q)
+}
+
+fn scale(k: u64, q: i32) -> f64 {
+    let (a, b) = (q / 2, q - q / 2);
+    (k as f64) * 2f64.powi(a) * 2f64.powi(b)
+}
+
+fn hex_to_f64(h: &HexFloat) -> f64 {
+    let v = if h.mant == 0 || h.exp + 63 < -1200 {
+        0.0
+    } else if h.exp + 63 > 1100 {
+        f64::INFINITY
+    } else {
+        let (k, q) = round_hex(h, 53, -1074);
+        scale(k, q)
+    };
+    if h.neg {
+        -v
+    } else {
+        v
+    }
+}
+
+fn hex_to_f32(h: &HexFloat) -> f32 {
+    let v = if h.mant == 0 || h.exp + 63 < -400 {
+        0.0
+    } else if h.exp + 63 > 400 {
+        f32::INFINITY
+    } else {
+        let (k, q) = round_hex(h, 24, -149);
+        scale(k, q) as f32
+    };
+    if h.neg {
+        -v
+    } else {
+        v
+    }
 }
 
 /// The message of NumberFormatException.forInputString for radix 10 (Integer.parseInt, Float.parseFloat).
@@ -1020,5 +1162,60 @@ mod crc32_tests {
     #[test]
     fn check_value() {
         assert_eq!(super::crc32(b"123456789"), 0xCBF4_3926);
+    }
+}
+
+#[cfg(test)]
+mod number_parse_tests {
+    use super::*;
+
+    /// Values from IEEE 754 (the nearest float or double to each hexadecimal literal, ties to even), and the digits of
+    /// other scripts that `Integer.parseInt` accepts (`Character.digit`).
+    #[test]
+    fn hex_floats_round_once_to_nearest_even() {
+        assert_eq!(parse_float("0x1.8p1"), Some(3.0));
+        assert_eq!(parse_float(" -0X.8P0f "), Some(-0.5));
+        assert_eq!(parse_float("0x1p-149"), Some(f32::from_bits(1)));
+        assert_eq!(parse_float("0x1p-150"), Some(0.0));
+        assert_eq!(parse_float("0x1.8p-149"), Some(f32::from_bits(2)));
+        assert_eq!(parse_float("0x1.000001p0"), Some(1.0));
+        assert_eq!(
+            parse_float("0x1.0000010000000001p0"),
+            Some(f32::from_bits(0x3F80_0001))
+        );
+        assert_eq!(parse_float("0x1.fffffep127"), Some(f32::MAX));
+        assert_eq!(parse_float("0x1.ffffffp127"), Some(f32::INFINITY));
+        assert_eq!(parse_double("0x1p-1074"), Some(f64::from_bits(1)));
+        assert_eq!(parse_double("0x1p-1075"), Some(0.0));
+        assert_eq!(parse_double("0x1.fffffffffffffp1023"), Some(f64::MAX));
+        assert!(parse_double("-0x0p0").is_some_and(|v| v == 0.0 && v.is_sign_negative()));
+        assert_eq!(
+            parse_double("0xffffffffffffffffp0"),
+            Some(18_446_744_073_709_551_616.0)
+        );
+        for bad in [
+            "0x1",
+            "0x1.8",
+            "0x.p1",
+            "0xp1",
+            "0x1p",
+            "0x1p+",
+            "0x1p1x",
+            "0x1.8.8p1",
+        ] {
+            assert_eq!(parse_double(bad), None, "{bad}");
+            assert_eq!(parse_float(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn parse_int_takes_the_digits_of_every_script() {
+        assert_eq!(parse_int("\u{0661}\u{0660}\u{0660}\u{0660}"), Some(1000));
+        assert_eq!(parse_int("-\u{0967}2"), Some(-12));
+        assert_eq!(parse_int("+\u{FF15}"), Some(5));
+        assert_eq!(parse_int("\u{1D7CF}"), None);
+        assert_eq!(parse_int("\u{00B2}"), None);
+        assert_eq!(parse_int("-"), None);
+        assert_eq!(parse_int("2147483648"), None);
     }
 }

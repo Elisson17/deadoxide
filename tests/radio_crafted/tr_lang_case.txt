@@ -1,0 +1,5 @@
+[Info]
+guid = g
+language = en
+version = 1
+[/Info]

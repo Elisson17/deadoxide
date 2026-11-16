@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadioData>
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <Channels>
+  <ChannelEntry ID="c1" name="One" cat="Radio" freq="1000" startscript="main">
+    <ScriptEntry ID="s1" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="b1" timestamp="0" endstamp="10" advertCat="none">
+      </BroadcastEntry>
+    </ScriptEntry>
+  </ChannelEntry>
+  </Channels>
+</RadioData>
