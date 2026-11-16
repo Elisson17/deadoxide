@@ -22,7 +22,9 @@ use crate::zombie::scripting::item::{parse_float, Item, Value};
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
 mod clothing;
+mod firearm;
 mod food;
+pub use firearm::WeaponState;
 pub use food::FoodState;
 
 /// The generator the rolls draw from (`Rand.rand`, a `RandStandard` in the game; a seeded `java.util.Random` here).
@@ -91,6 +93,12 @@ pub struct LootItem {
     pub weight_reduction: i32,
     /// The `Food` state (`None` for every other class).
     pub food: Option<FoodState>,
+    /// `InventoryItem.maxAmmo` / `currentAmmoCount` and the item key of its `AmmoType` (a clip, a firearm).
+    pub max_ammo: i32,
+    pub current_ammo: i32,
+    pub ammo_item: Option<String>,
+    /// A `HandWeapon`'s ammunition state (`None` for every other class).
+    pub weapon: Option<WeaponState>,
 }
 
 /// An ItemContainer: the type, the capacity set on it, its items and the square it was made for (`sourceGrid`).
@@ -894,24 +902,19 @@ impl<'a> LootRoller<'a> {
     /// A bag's contents weight is its container's contents plus its fluid (`InventoryContainer.getContentsWeight`).
     fn unequipped_weight(&self, it: &LootItem) -> Result<(f32, f32), String> {
         let actual = self.actual_weight(it)?;
-        let (flo, fhi) = it.fluid_amount.unwrap_or((0.0, 0.0));
-        if let Some(inner) = &it.inner {
-            let (mut clo, mut chi) = self.contents_weight(inner)?;
-            if it.fluid_amount.is_some() {
-                clo += flo;
-                chi += fhi;
-            }
+        if it.inner.is_some() {
+            let (clo, chi) = self.bag_contents_weight(it)?;
             return Ok((actual + clo, actual + chi));
         }
-        Ok((actual + flo, actual + fhi))
+        let (clo, chi) = self.item_contents_weight(it)?;
+        Ok((actual + clo, actual + chi))
     }
 
     /// InventoryItem.getActualWeight and its Food override.
     fn actual_weight(&self, it: &LootItem) -> Result<f32, String> {
         let script = self.script(it.script)?;
         if it.class == ItemType::Weapon {
-            // HandWeapon.getActualWeight: the script's weight plus attached parts (none)
-            return Ok(script_actual_weight(script));
+            return Ok(self.weapon_actual_weight(it, script));
         }
         let base = if it.zero_weight {
             0.0
@@ -1081,6 +1084,16 @@ impl<'a> LootRoller<'a> {
         let Some(item) = self.create_item(item_type)? else {
             return Ok(None);
         };
+        self.spawn_created_item(root, path, item)
+    }
+
+    /// ItemSpawner.spawnItem(InventoryItem, ItemContainer) (`fill` true) for an item that was created already.
+    fn spawn_created_item(
+        &mut self,
+        root: &mut LootContainer,
+        path: &[usize],
+        item: LootItem,
+    ) -> Result<Option<usize>, String> {
         if !self.is_item_allowed(container_at(root, path), &item)? {
             return Ok(None);
         }
@@ -1107,6 +1120,10 @@ impl<'a> LootRoller<'a> {
                 }
             }
         }
+        // `item.setAutoAge()` (twice in the original: the second changes nothing)
+        let outermost = root.type_name.clone();
+        let target = container_at_mut(root, path);
+        self.item_set_auto_age(&mut target.items[idx], &outermost)?;
         Ok(Some(idx))
     }
 
@@ -1177,6 +1194,7 @@ impl<'a> LootRoller<'a> {
                 | ItemType::Weapon
                 | ItemType::Clothing
                 | ItemType::Container
+                | ItemType::WeaponPart
         ) {
             return Err(unported(format!(
                 "item class {class:?} ({})",
@@ -1184,28 +1202,22 @@ impl<'a> LootRoller<'a> {
             )));
         }
         for c in &script.components {
-            if c != "FluidContainer" && c != "Durability" {
+            if c != "FluidContainer" && c != "Durability" && c != "ContextMenuConfig" {
                 return Err(unported(format!("component {c} ({})", script.full_name())));
             }
         }
         if script.fluid_blocks > 1 {
             return Err(unported("two FluidContainer blocks"));
         }
-        if class == ItemType::Weapon
-            && (script_bool(script, "ranged")
-                || script_str(script, "magazineType").is_some_and(|m| !m.is_empty())
-                || script_str(script, "ammoBox").is_some_and(|m| !m.is_empty()))
-        {
-            return Err(unported(format!("firearm {}", script.full_name())));
-        }
-        for key in ["ammotype"] {
-            if script_complex(script, key).is_some() {
-                return Err(unported(format!(
-                    "script parameter {key} ({})",
-                    script.full_name()
-                )));
-            }
-        }
+        // Item.InstanceItem `item.setAmmoType(this.ammoType)`: the `AmmoType` the script names
+        let ammo_item = match script_complex(script, "ammotype") {
+            None => None,
+            Some(v) => Some(
+                firearm::ammo_item_key(java::trim(v))
+                    .ok_or_else(|| unported(format!("AmmoType {v} ({})", script.full_name())))?
+                    .to_string(),
+            ),
+        };
         // Item.InstanceItem: a clothing item picks its palette, then the Clothing constructor draws the colour
         if class == ItemType::Clothing {
             if let Some(p) = script_complex(script, "palettes") {
@@ -1242,6 +1254,10 @@ impl<'a> LootRoller<'a> {
             inner: None,
             weight_reduction: 0,
             food: (class == ItemType::Food).then(|| FoodState::from_script(script)),
+            max_ammo: script_int(script, "maxAmmo"),
+            current_ammo: 0,
+            ammo_item,
+            weapon: (class == ItemType::Weapon).then(WeaponState::default),
         };
         if class == ItemType::Container {
             // Item.InstanceItem: `new InventoryContainer` (its ItemContainer's type is the script name), then
@@ -1327,6 +1343,9 @@ impl<'a> LootRoller<'a> {
             let max_uses = Self::drainable_max_uses(script);
             item.uses = (max_uses as f32 * 1.0f32) as i32;
             self.drainable_update_weight(&mut item)?;
+        } else if class == ItemType::WeaponPart {
+            // `item instanceof Drainable`: WeaponPart.getMaxUses() = floor(1 / useDelta), no weight update
+            item.uses = (Self::drainable_max_uses(script) as f32 * 1.0f32) as i32;
         }
         Ok(Some(item))
     }
@@ -1396,18 +1415,6 @@ impl<'a> LootRoller<'a> {
                 it.full_type
             )));
         }
-        Ok(())
-    }
-
-    /// HandWeapon.randomizeFirearmAsLoot for a weapon with no magazine type, no ammo box and no chamber.
-    fn randomize_firearm_as_loot(&mut self, script: &Item) -> Result<(), String> {
-        // `reloadDifficulty > 1 && !isNullOrEmpty(magazineType) && ...`: no magazine type
-        if self.reload_difficulty == 1 || self.rand.next(100) < 30 {
-            let max_ammo = script_int(script, "maxAmmo");
-            self.rand.next_range(1, max_ammo);
-            // `if (haveChamber()) setRoundChambered(true)`: the round weighs only with an ammo type (gated out)
-        }
-        // `getContainer() != null && !isNullOrEmpty(getAmmoBox())`: no ammo box (the class gate)
         Ok(())
     }
 
@@ -1537,7 +1544,7 @@ impl<'a> LootRoller<'a> {
                         self.item_set_auto_age(&mut container.items[idx], &outermost)?;
                     }
                     if !is_trash && self.picker.weapon_upgrade_map.contains_key(&type_name) {
-                        return Err(unported("DoWeaponUpgrade"));
+                        self.do_weapon_upgrade(container, idx, &type_name)?;
                     }
                     let drainable = class == ItemType::Drainable;
                     if drainable
@@ -1564,9 +1571,14 @@ impl<'a> LootRoller<'a> {
                     }
                     if !is_trash && weapon {
                         if dist.gun_storage {
-                            return Err(unported("doGunStorageContainer"));
+                            self.do_gun_storage_container(
+                                dist.dont_spawn_ammo,
+                                container,
+                                &[],
+                                idx,
+                            )?;
                         } else if !dist.dont_spawn_ammo && self.rand.next(100) < 90 {
-                            self.randomize_firearm_as_loot(script)?;
+                            self.randomize_firearm_as_loot(container, &[], idx)?;
                         }
                     }
                     // `container.Remove(spawnItem)` of a NeverEmpty bag that stayed empty is done after the item's
@@ -1888,11 +1900,11 @@ impl<'a> LootRoller<'a> {
                 // ItemConfigurator.ConfigureItem: no item config; a MapItem is not ported
                 self.check_stash_item(&container_at(root, bag).items[idx])?;
                 if !dist.is_trash && self.picker.weapon_upgrade_map.contains_key(&type_name) {
-                    return Err(unported("DoWeaponUpgrade"));
+                    self.do_weapon_upgrade(container_at_mut(root, bag), idx, &type_name)?;
                 }
                 let weapon = class == ItemType::Weapon;
                 if !dist.is_trash && weapon && !dist.dont_spawn_ammo && self.rand.next(100) < 90 {
-                    self.randomize_firearm_as_loot(script)?;
+                    self.randomize_firearm_as_loot(root, bag, idx)?;
                 }
                 let has_sharpness = script_complex(script, "sharpness").is_some();
                 if !dist.is_trash && (has_tag(script, "ShowCondition") || weapon || has_sharpness) {
@@ -1994,7 +2006,10 @@ impl<'a> LootRoller<'a> {
         let (parent, last) = path.split_at(path.len() - 1);
         let item = &container_at(root, parent).items[last[0]];
         let script = self.script(item.script)?;
-        Ok(has_tag(script, "NeverEmpty") && item.inner.as_ref().is_some_and(|c| c.items.is_empty()))
+        Ok(
+            has_tag(script, "NeverEmpty")
+                && item.inner.as_ref().is_some_and(|c| c.items.is_empty()),
+        )
     }
 
     /// The `ITEM` lines of the oracle for the items of `c`: `ITEM <path> <type> id= uses= cond= weight= sharp=` (the
@@ -2027,6 +2042,27 @@ impl<'a> LootRoller<'a> {
             );
             if let Some(h) = i.head_condition {
                 let _ = write!(out, " head={h} hmax={}", self.head_condition_max(i)?);
+            }
+            if i.max_ammo > 0 || i.weapon.is_some() {
+                let (ulo, uhi) = self.unequipped_weight(i)?;
+                if ulo != uhi {
+                    return Err(unported("a weapon's weight depends on a fluid amount"));
+                }
+                let _ = write!(
+                    out,
+                    " ammo={}/{} uw={:x}",
+                    i.current_ammo,
+                    i.max_ammo,
+                    ulo.to_bits()
+                );
+                if let Some(w) = &i.weapon {
+                    let _ = write!(
+                        out,
+                        " clip={} ch={}",
+                        u8::from(w.contains_clip),
+                        u8::from(w.round_chambered)
+                    );
+                }
             }
             if let Some(f) = &i.food {
                 let _ = write!(
@@ -2088,7 +2124,7 @@ impl<'a> LootRoller<'a> {
     fn bag_contents_weight(&self, it: &LootItem) -> Result<(f32, f32), String> {
         let (flo, fhi) = it.fluid_amount.unwrap_or((0.0, 0.0));
         let Some(inner) = &it.inner else {
-            return Ok((flo, fhi));
+            return self.item_contents_weight(it);
         };
         let (mut lo, mut hi) = self.contents_weight(inner)?;
         if it.fluid_amount.is_some() {

@@ -8502,7 +8502,11 @@ fn loot_scenario(
         // fill that stopped
         let mut lines = String::new();
         // an `EXC <class>` result is a Java exception the original throws too (the fill ends there, its items stay)
-        let exc = res.as_ref().err().and_then(|e| e.strip_prefix("EXC ")).map(str::to_string);
+        let exc = res
+            .as_ref()
+            .err()
+            .and_then(|e| e.strip_prefix("EXC "))
+            .map(str::to_string);
         let res = match &exc {
             Some(_) => roller.item_lines("", &c, &mut lines),
             None => res.and_then(|()| roller.item_lines("", &c, &mut lines)),

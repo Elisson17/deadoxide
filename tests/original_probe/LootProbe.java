@@ -186,6 +186,10 @@ public class LootProbe {
             StringBuilder b = new StringBuilder("ITEM " + path + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
                     + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
             if (i.hasHeadCondition()) b.append(" head=" + i.getHeadCondition() + " hmax=" + i.getHeadConditionMax());
+            if (i.getMaxAmmo() > 0 || i instanceof zombie.inventory.types.HandWeapon) {
+                b.append(" ammo=" + i.getCurrentAmmoCount() + "/" + i.getMaxAmmo() + " uw=" + fbits(i.getUnequippedWeight()));
+                if (i instanceof zombie.inventory.types.HandWeapon hw) b.append(" clip=" + (hw.isContainsClip() ? 1 : 0) + " ch=" + (hw.isRoundChambered() ? 1 : 0));
+            }
             if (i instanceof zombie.inventory.types.Food f) {
                 b.append(" fd age=" + fbits(f.getAge()) + " off=" + f.getOffAge() + "/" + f.getOffAgeMax() + " ck=" + (f.isCooked() ? 1 : 0) + (f.isBurnt() ? 1 : 0)
                         + " ct=" + fbits(f.getCookingTime()) + " hung=" + fbits(f.getHungChange()) + " thirst=" + fbits(f.getThirstChangeUnmodified()) + " end=" + fbits(f.getEndChange())

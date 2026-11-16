@@ -22,9 +22,9 @@ fn covered_part_count(name: &str) -> Option<usize> {
         "ShortsShort" => 3,
         "Trousers" => 5,
         "Shoes" | "Hands" | "LowerLegs" | "UpperLegs" | "LowerArms" | "UpperArms" => 2,
-        "FullHelmet" | "Bag" | "Head" | "Neck" | "Groin" | "UpperBody" | "LowerBody"
-        | "Hand_L" | "Hand_R" | "ForeArm_L" | "ForeArm_R" | "UpperArm_L" | "UpperArm_R"
-        | "UpperLeg_L" | "UpperLeg_R" | "LowerLeg_L" | "LowerLeg_R" | "Foot_L" | "Foot_R" => 1,
+        "FullHelmet" | "Bag" | "Head" | "Neck" | "Groin" | "UpperBody" | "LowerBody" | "Hand_L"
+        | "Hand_R" | "ForeArm_L" | "ForeArm_R" | "UpperArm_L" | "UpperArm_R" | "UpperLeg_L"
+        | "UpperLeg_R" | "LowerLeg_L" | "LowerLeg_R" | "Foot_L" | "Foot_R" => 1,
         _ => return None,
     })
 }
