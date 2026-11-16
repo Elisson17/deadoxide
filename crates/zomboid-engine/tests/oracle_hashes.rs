@@ -338,6 +338,81 @@ fn sounds_matches_original() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// The player's five `gos_*.bin` plus the files in tests/gos_crafted (the original writer's own output and hand-made
+/// broken ones), read into global object systems with the shared lookup.
+#[test]
+fn global_objects_match_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED gos: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/gos_crafted");
+    check("gos", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
+/// `map_worldgen.bin`, `map_symbols.bin`, `statistics.bin` and `metadata.bin`: the player's real files plus the files in
+/// tests/savemeta_crafted (the original writers' own output and hand-made broken ones).
+#[test]
+fn save_meta_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED savemeta: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/savemeta_crafted");
+    check("savemeta", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
+/// The original `WorldMapVisited` driven by tests/visited_cases.txt: the player's real `map_visited.bin`, the setters,
+/// `save`, reading back, and hand-made files of the current and the legacy formats.
+#[test]
+fn world_map_visited_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED visited: the isolated profile's save is not present");
+        return;
+    };
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/visited_cases.txt");
+    check("visited", &[cases.to_str().expect("utf-8 path"), &save]);
+}
+
+/// `IsoRegionWorker.loadSaveMap` over the player's real `isoregiondata` and the scenario folders of
+/// tests/isoregion_crafted (the original writer's files and hand-made ones).
+#[test]
+fn iso_region_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED isoregion: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/isoregion_crafted");
+    check("isoregion", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
+/// `ErosionConfig.readFile`/`writeFile` over the player's real `erosion.ini` and the hand-made files of
+/// tests/erosionini_crafted.
+#[test]
+fn erosion_ini_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED erosionini: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/erosionini_crafted");
+    check(
+        "erosionini",
+        &[&save, crafted.to_str().expect("utf-8 path")],
+    );
+}
+
+/// `IsoWorld.readWorldVersion` and the `map_ver.bin` read over the player's real files and the hand-made pairs of
+/// tests/mapver_crafted.
+#[test]
+fn map_ver_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED mapver: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/mapver_crafted");
+    check("mapver", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

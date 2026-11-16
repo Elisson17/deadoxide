@@ -52,6 +52,14 @@ fn main() {
         Some("sounds") if a.len() == 5 => {
             sounds(Path::new(&a[2]), Some((Path::new(&a[3]), Path::new(&a[4]))))
         }
+        Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
+        Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
+        Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
+        Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
+        Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
+        Some("visited") if a.len() == 5 => {
+            visited(Path::new(&a[2]), Path::new(&a[4]), Path::new(&a[3]))
+        }
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -4070,6 +4078,857 @@ pub fn sounds(root: &Path, crafted: Option<(&Path, &Path)>) -> Result<String, St
                 let _ = writeln!(sb, "{at}\tunknown command");
             }
         }
+    }
+    Ok(sb)
+}
+
+/// The global object systems of a save's `gos_*.bin` files, the ones the probe's own writer made, hand-made broken
+/// files and the writer's file cut at every length (pairs with GosProbe.java): what `SGlobalObjectSystem.load` read
+/// and what the shared `GlobalObjectLookup` says about each object.
+pub fn gos(root: &Path, save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::java::string_hash_code;
+    use zomboid_engine::java_nio::ByteBuffer;
+    use zomboid_engine::zombie::global_objects::{MetaGridBounds, SGlobalObjects};
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    let mut reg = SGlobalObjects::new(MetaGridBounds {
+        min_x: g.min_x,
+        min_y: g.min_y,
+        width: g.grid_x(),
+        height: g.grid_y(),
+    });
+    let mut sb = String::new();
+    let _ = writeln!(
+        sb,
+        "GRID {} {} {} {}",
+        g.min_x,
+        g.min_y,
+        g.grid_x(),
+        g.grid_y()
+    );
+    fn sorted_files(dir: &Path, prefix: &str) -> Result<Vec<(String, std::path::PathBuf)>, String> {
+        let mut v = Vec::new();
+        for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let e = e.map_err(|e| e.to_string())?;
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with(prefix) && n.ends_with(".bin") {
+                v.push((n, e.path()));
+            }
+        }
+        v.sort();
+        Ok(v)
+    }
+    fn list(l: &[usize]) -> String {
+        if l.is_empty() {
+            return "-".to_string();
+        }
+        l.iter().map(usize::to_string).collect::<Vec<_>>().join(",")
+    }
+    fn at(i: Option<usize>) -> i64 {
+        i.map_or(-1, |i| i as i64)
+    }
+    let dump = |sb: &mut String, reg: &SGlobalObjects, label: &str, sys: usize| {
+        let s = &reg.systems[sys];
+        let _ = writeln!(
+            sb,
+            "SYS {label} v={} n={} md={}",
+            s.loaded_world_version,
+            s.objects.len(),
+            save_dump::table(&s.mod_data)
+        );
+        for (i, o) in s.objects.iter().enumerate() {
+            let _ = writeln!(
+                sb,
+                "OBJ {label} {i} {} {} {} md={}",
+                o.x,
+                o.y,
+                o.z,
+                save_dump::table(&o.mod_data)
+            );
+            let _ = writeln!(
+                sb,
+                "AT {label} {i} {} {}",
+                at(reg.get_object_at(sys, o.x, o.y, o.z)),
+                at(reg.get_object_at(sys, o.x, o.y, o.z.wrapping_add(1)))
+            );
+            let (wx, wy) = (o.x / 8, o.y / 8);
+            let _ = writeln!(
+                sb,
+                "CHK {label} {i} {wx} {wy} {} {}",
+                u8::from(reg.has_objects_in_chunk(sys, wx, wy)),
+                list(&reg.get_objects_in_chunk(sys, wx, wy))
+            );
+            let _ = writeln!(
+                sb,
+                "ADJ {label} {i} {}",
+                list(&reg.get_objects_adjacent_to(sys, o.x, o.y, o.z))
+            );
+        }
+    };
+    let hash = |s: &str| format!("{:x}", string_hash_code(s));
+
+    // 1. the real files
+    for (n, p) in sorted_files(save, "gos_")? {
+        let name = &n[4..n.len() - 4];
+        let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let label = format!("real_{name}");
+        let sys = reg.new_system(&label)?;
+        if let Err(e) = reg.load_file(sys, Some(&data)) {
+            eprintln!("{label}: {e}");
+        }
+        dump(&mut sb, &reg, &label, sys);
+    }
+    // 3. the crafted dir (2. is the probe's writer: its file is file_craft.bin there)
+    let mut craft_bytes: Option<Vec<u8>> = None;
+    for (n, p) in sorted_files(crafted, "")? {
+        let data = std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let base = &n[n.find('_').map_or(0, |i| i + 1)..n.len() - 4];
+        if n.starts_with("file_") {
+            if n == "file_craft.bin" {
+                craft_bytes = Some(data.clone());
+            }
+            let label = format!("f_{base}");
+            let sys = reg.new_system(&label)?;
+            if let Err(e) = reg.load_file(sys, Some(&data)) {
+                eprintln!("{label}: {e}");
+            }
+            dump(&mut sb, &reg, &label, sys);
+        } else if n.starts_with("payload_") {
+            for v in [249, 100, 25] {
+                let label = format!("p_{base}_{v}");
+                let sys = reg.new_system(&label)?;
+                let err = reg
+                    .load(sys, &mut ByteBuffer::wrap(&data), v)
+                    .err()
+                    .unwrap_or_else(|| "-".to_string());
+                let _ = writeln!(sb, "PAYLOAD {base} {v} err={err}");
+                dump(&mut sb, &reg, &label, sys);
+            }
+        }
+    }
+    let craft_bytes = craft_bytes.ok_or("no file_craft.bin in the crafted folder")?;
+    let payload = craft_bytes
+        .get(8..)
+        .ok_or("file_craft.bin is shorter than its header")?;
+    for k in 0..=payload.len() {
+        let sys = reg.new_system(&format!("t_{k}"))?;
+        let err = reg
+            .load(sys, &mut ByteBuffer::wrap(&payload[..k]), 249)
+            .err()
+            .unwrap_or_else(|| "-".to_string());
+        let s = &reg.systems[sys];
+        let mut objs = String::new();
+        for o in &s.objects {
+            let _ = write!(
+                objs,
+                "{},{},{},{};",
+                o.x,
+                o.y,
+                o.z,
+                save_dump::table(&o.mod_data)
+            );
+        }
+        let _ = writeln!(
+            sb,
+            "TR {k} err={err} v={} n={} md={} objs={}",
+            s.loaded_world_version,
+            s.objects.len(),
+            hash(&save_dump::table(&s.mod_data)),
+            hash(&objs)
+        );
+    }
+    Ok(sb)
+}
+
+/// Four small world-level save files read by their loaders, the player's real files, the files the original
+/// writers made from values chosen in the probe, hand-made broken ones and the first writer file cut at every length
+/// (pairs with SaveMetaProbe.java): `map_worldgen.bin`, `map_symbols.bin`, `statistics.bin`, `metadata.bin`.
+pub fn savemeta(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::java::{string_compare_to, string_hash_code};
+    use zomboid_engine::zombie::iso::meta_tracker::{self, Alarm, Helicopter};
+    use zomboid_engine::zombie::iso::worldgen::world_gen_params::{LoadResult, WorldGenParams};
+    use zomboid_engine::zombie::statistics::StatisticsManager;
+    use zomboid_engine::zombie::world_map::symbols::world_map_symbols::{
+        WorldMapSymbol, WorldMapSymbols,
+    };
+    /// The probe's `esc`: printable ASCII except quote and backslash stays, any other UTF-16 unit is `\uXXXX`.
+    fn esc(s: &str) -> String {
+        let mut o = String::from("\"");
+        for u in s.encode_utf16() {
+            if (0x20..0x7f).contains(&u) && u != u16::from(b'"') && u != u16::from(b'\\') {
+                o.push(char::from(u as u8));
+            } else {
+                let _ = write!(o, "\\u{u:04x}");
+            }
+        }
+        o.push('"');
+        o
+    }
+    fn hash(s: &str) -> String {
+        format!("{:x}", string_hash_code(s))
+    }
+    fn read(p: &Path) -> Result<Vec<u8>, String> {
+        std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))
+    }
+    /// The crafted files of one family sorted by name: (label, bytes).
+    fn family(dir: &Path, prefix: &str) -> Result<Vec<(String, Vec<u8>)>, String> {
+        let mut names = Vec::new();
+        for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let n = e
+                .map_err(|e| e.to_string())?
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+            if n.starts_with(prefix) && n.ends_with(".bin") {
+                names.push(n);
+            }
+        }
+        names.sort();
+        names
+            .into_iter()
+            .map(|n| {
+                let label = n[prefix.len()..n.len() - 4].to_string();
+                Ok((label, read(&dir.join(&n))?))
+            })
+            .collect()
+    }
+    let mut sb = String::new();
+
+    // WGEN
+    let wgen = |sb: &mut String, label: &str, data: Option<&[u8]>| {
+        let mut p = WorldGenParams::default();
+        p.set_seed_string("");
+        p.min_x_cell = -250;
+        p.min_y_cell = -250;
+        p.max_x_cell = 250;
+        p.max_y_cell = 250;
+        let (r, _err) = p.load_file(data);
+        let _ = writeln!(
+            sb,
+            "WGEN {label} {} seed={} {} cells={},{},{},{}",
+            match r {
+                LoadResult::NotPresent => "NOT_PRESENT",
+                LoadResult::Done => "DONE",
+            },
+            esc(&p.seed_string),
+            p.get_seed(),
+            p.min_x_cell,
+            p.min_y_cell,
+            p.max_x_cell,
+            p.max_y_cell
+        );
+    };
+    wgen(&mut sb, "missing", None);
+    wgen(
+        &mut sb,
+        "real",
+        Some(&read(&save.join("map_worldgen.bin"))?),
+    );
+    let files = family(crafted, "wgen_")?;
+    for (label, data) in &files {
+        wgen(&mut sb, label, Some(data));
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no wgen_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        wgen(&mut sb, &format!("cut{k}"), Some(&craft[..k]));
+    }
+
+    // MSYM
+    fn msym_text(label: &str, s: &WorldMapSymbols) -> String {
+        let mut o = format!("MSYM {label} n={}", s.symbols.len());
+        for sy in &s.symbols {
+            let (name, base) = match sy {
+                WorldMapSymbol::Text { base, .. } => ("WorldMapTextSymbol", base),
+                WorldMapSymbol::Texture { base, .. } => ("WorldMapTextureSymbol", base),
+            };
+            let _ = write!(o, "\t{name}");
+            for v in [
+                base.x,
+                base.y,
+                base.anchor_x,
+                base.anchor_y,
+                base.scale,
+                base.rotation,
+                base.r,
+                base.g,
+                base.b,
+                base.a,
+            ] {
+                let _ = write!(o, ",{}", save_dump::fh(v));
+            }
+            let flag = |v: bool| if v { '1' } else { '0' };
+            let _ = write!(
+                o,
+                ",{}{}{},{},{}",
+                flag(base.collide),
+                flag(base.match_perspective),
+                flag(base.apply_zoom),
+                save_dump::fh(base.min_zoom.unwrap_or(0.0)),
+                save_dump::fh(base.max_zoom.unwrap_or(24.0))
+            );
+            match sy {
+                WorldMapSymbol::Text {
+                    text,
+                    translated,
+                    layer_id,
+                    ..
+                } => {
+                    let _ = write!(
+                        o,
+                        ",{},{},{}",
+                        esc(text),
+                        flag(*translated),
+                        esc(layer_id.as_deref().unwrap_or("text-note"))
+                    );
+                }
+                WorldMapSymbol::Texture { symbol_id, .. } => {
+                    let _ = write!(o, ",{}", esc(symbol_id));
+                }
+            }
+        }
+        o
+    }
+    let msym = |sb: &mut String, label: &str, data: Option<&[u8]>, summary: bool| {
+        let mut s = WorldMapSymbols::default();
+        let _ = s.load_world_map(data);
+        let text = msym_text(label, &s);
+        if summary {
+            let _ = writeln!(
+                sb,
+                "MSYMCUT {label} n={} {}",
+                s.symbols.len(),
+                hash(&format!("{text}\n"))
+            );
+        } else {
+            let _ = writeln!(sb, "{text}");
+        }
+    };
+    msym(&mut sb, "missing", None, false);
+    msym(
+        &mut sb,
+        "real",
+        Some(&read(&save.join("map_symbols.bin"))?),
+        false,
+    );
+    let files = family(crafted, "msym_")?;
+    for (label, data) in &files {
+        msym(&mut sb, label, Some(data), false);
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no msym_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        msym(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
+    }
+
+    // STAT
+    let stat = |sb: &mut String, label: &str, data: Option<&[u8]>, summary: bool| {
+        let mut sm = StatisticsManager::default();
+        let _ = sm.load(data);
+        let mut parts = String::new();
+        let sorted = sm.sorted();
+        for st in &sorted {
+            let _ = write!(
+                parts,
+                "\t{},{},{},{},{}",
+                esc(&st.name),
+                esc(&st.name),
+                st.statistic_type.name(),
+                st.statistic_category.name(),
+                save_dump::fh(st.value)
+            );
+        }
+        let mut ach: Vec<_> = sm.achievements.iter().collect();
+        ach.sort_by(|a, b| string_compare_to(a.name, b.name));
+        let flags: String = ach
+            .iter()
+            .map(|a| if a.unlocked { '1' } else { '0' })
+            .collect();
+        if summary {
+            let _ = writeln!(
+                sb,
+                "STATCUT {label} n={} ach={flags} {}",
+                sorted.len(),
+                hash(&parts)
+            );
+        } else {
+            let _ = writeln!(sb, "STAT {label} n={} ach={flags}{parts}", sorted.len());
+        }
+    };
+    stat(&mut sb, "missing", None, false);
+    stat(
+        &mut sb,
+        "real",
+        Some(&read(&save.join("statistics.bin"))?),
+        false,
+    );
+    let files = family(crafted, "stat_")?;
+    for (label, data) in &files {
+        stat(&mut sb, label, Some(data), false);
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no stat_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        stat(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
+    }
+
+    // META
+    fn meta_text(h: &Helicopter, alarms: &[Alarm]) -> String {
+        let mut o = format!(
+            "active={} state={} x={} y={} alarms={}",
+            u8::from(h.active),
+            h.state.map_or("null", |s| s.name()),
+            save_dump::fh(h.x),
+            save_dump::fh(h.y),
+            alarms.len()
+        );
+        for a in alarms {
+            let _ = write!(o, " {},{},{}", a.x, a.y, save_dump::fh(a.end_game_time));
+        }
+        o
+    }
+    let meta = |sb: &mut String, label: &str, data: Option<&[u8]>, summary: bool| {
+        let mut h = Helicopter::default();
+        let mut alarms = Vec::new();
+        let _ = meta_tracker::load(data, &mut h, &mut alarms);
+        let text = meta_text(&h, &alarms);
+        if summary {
+            let _ = writeln!(sb, "METACUT {label} {}", hash(&text));
+        } else {
+            let _ = writeln!(sb, "META {label} {text}");
+        }
+    };
+    meta(&mut sb, "missing", None, false);
+    let real_meta = read(&save.join("metadata.bin"))?;
+    meta(&mut sb, "real", Some(&real_meta), false);
+    {
+        // MetaTracker.load into the server's own helicopter: the dedicated server's ambient manager reads nothing
+        let mut h = Helicopter::default();
+        let mut ignored = Vec::new();
+        let _ = meta_tracker::load(Some(&real_meta), &mut h, &mut ignored);
+        let t = meta_text(&h, &[]);
+        let _ = writeln!(
+            sb,
+            "METATRACKER real {}",
+            t.rsplit_once(" alarms=").map_or(t.as_str(), |(a, _)| a)
+        );
+    }
+    let files = family(crafted, "meta_")?;
+    for (label, data) in &files {
+        meta(&mut sb, label, Some(data), false);
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no meta_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        meta(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
+    }
+    Ok(sb)
+}
+
+/// The visited / known map units (`map_visited.bin`) of the ORIGINAL `WorldMapVisited`, driven by the commands of
+/// tests/visited_cases.txt (pairs with VisitedProbe.java): the real file, the setters and clearers, `save` and
+/// reading back, the current format cut short or too long, and the legacy row format.
+pub fn visited(root: &Path, save: &Path, cases: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::world_map::world_map_visited::{GridBounds, WorldMapVisited};
+    let media = root.join("media");
+    let mut g = IsoMetaGrid::default();
+    let dirs = IsoMetaGrid::lot_directories(&media, "Muldraugh, KY");
+    g.create_step1(&media, &dirs, (-250, -250, 250, 250))?;
+    let grid = GridBounds {
+        min_x: g.min_x,
+        min_y: g.min_y,
+        max_x: g.max_x,
+        max_y: g.max_y,
+    };
+    /// `Arrays.hashCode(byte[])`, as `Integer.toHexString`.
+    fn arrays_hash(b: &[u8]) -> String {
+        let mut h: i32 = 1;
+        for &x in b {
+            h = h.wrapping_mul(31).wrapping_add(i32::from(x as i8));
+        }
+        format!("{h:x}")
+    }
+    fn unhex(s: &str) -> Result<Vec<u8>, String> {
+        (0..s.len() / 2)
+            .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|e| e.to_string()))
+            .collect()
+    }
+    fn file_text(f: &Option<Vec<u8>>) -> String {
+        f.as_ref().map_or("none".to_string(), |b| {
+            format!("{},{}", b.len(), arrays_hash(b))
+        })
+    }
+    fn dump(sb: &mut String, n: usize, v: &WorldMapVisited) {
+        let mut c = [0u64; 4];
+        for &x in &v.visited {
+            for k in 0..4 {
+                c[(i32::from(x as i8) >> (2 * k) & 3) as usize] += 1;
+            }
+        }
+        let _ = writeln!(
+            sb,
+            "DUMP {n} len={} hash={} units={},{},{},{} bounds={},{}",
+            v.visited.len(),
+            arrays_hash(&v.visited),
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            v.min_x,
+            v.min_y
+        );
+    }
+    let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    let mut sb = String::new();
+    let mut file: Option<Vec<u8>> = None;
+    let mut map_all_known = false;
+    let mut inst: Option<WorldMapVisited> = None;
+    let mut n = 0usize;
+    for line in text.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        n += 1;
+        let t: Vec<&str> = line.split(' ').collect();
+        let int = |i: usize| -> Result<i32, String> {
+            t.get(i)
+                .ok_or_else(|| format!("{line}: missing argument"))?
+                .parse::<i32>()
+                .map_err(|e| format!("{line}: {e}"))
+        };
+        match t[0] {
+            "mapallknown" => map_all_known = t[1] == "1",
+            "open" | "openhex" | "openbody" => {
+                match t[0] {
+                    "open" => match t[1] {
+                        "real" => {
+                            let p = save.join("map_visited.bin");
+                            file = Some(
+                                std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?,
+                            );
+                        }
+                        "none" => file = None,
+                        _ => {}
+                    },
+                    "openhex" => file = Some(unhex(t[1])?),
+                    _ => {
+                        let probe = WorldMapVisited::new(grid);
+                        let len = i64::from(probe.visited_length()) + i64::from(int(1)?);
+                        let pat = unhex(t[2])?;
+                        let mut b = Vec::new();
+                        for v in [249, 2, grid.min_x, grid.min_y, grid.max_x, grid.max_y, 8] {
+                            b.extend_from_slice(&i32::to_be_bytes(v));
+                        }
+                        for i in 0..len.max(0) as usize {
+                            b.push(pat[i % pat.len()]);
+                        }
+                        file = Some(b);
+                    }
+                }
+                // WorldMapVisited.getInstance: load, mark the map known if asked, save (a throw skips the rest)
+                let mut v = WorldMapVisited::new(grid);
+                if v.load(file.as_deref()).is_ok() {
+                    if map_all_known {
+                        v.set_known_in_cells(grid.min_x, grid.min_y, grid.max_x, grid.max_y);
+                    }
+                    file = Some(v.save());
+                }
+                let _ = writeln!(sb, "OPEN {n} file={}", file_text(&file));
+                dump(&mut sb, n, &v);
+                inst = Some(v);
+            }
+            "save" => {
+                let v = inst.as_ref().ok_or("save before open")?;
+                file = Some(v.save());
+                let _ = writeln!(sb, "SAVE {n} file={}", file_text(&file));
+            }
+            "dump" => dump(&mut sb, n, inst.as_ref().ok_or("dump before open")?),
+            cmd => {
+                let v = inst.as_mut().ok_or("mutator before open")?;
+                let (a, b, c, d) = (int(1)?, int(2)?, int(3)?, int(4)?);
+                match cmd {
+                    "setVisitedSquares" => v.set_visited_in_squares(a, b, c, d),
+                    "setKnownSquares" => v.set_known_in_squares(a, b, c, d),
+                    "clearVisitedSquares" => v.clear_visited_in_squares(a, b, c, d),
+                    "clearKnownSquares" => v.clear_known_in_squares(a, b, c, d),
+                    "setVisitedCells" => v.set_visited_in_cells(a, b, c, d),
+                    "setKnownCells" => v.set_known_in_cells(a, b, c, d),
+                    "clearVisitedCells" => v.clear_visited_in_cells(a, b, c, d),
+                    "clearKnownCells" => v.clear_known_in_cells(a, b, c, d),
+                    _ => return Err(format!("unknown command: {line}")),
+                }
+            }
+        }
+    }
+    Ok(sb)
+}
+
+/// `IsoWorld.readWorldVersion` and the `map_ver.bin` read of `IsoWorld.init` on the save's real files and the
+/// hand-made pairs of the crafted dir (pairs with MapVerProbe.java).
+pub fn mapver(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::iso::world_version::{read_map_ver, read_world_version};
+    /// The probe's `esc`: printable ASCII except quote and backslash stays, any other UTF-16 unit is `\uXXXX`.
+    fn esc(s: &str) -> String {
+        let mut o = String::from("\"");
+        for u in s.encode_utf16() {
+            if (0x20..0x7f).contains(&u) && u != u16::from(b'"') && u != u16::from(b'\\') {
+                o.push(char::from(u as u8));
+            } else {
+                let _ = write!(o, "\\u{u:04x}");
+            }
+        }
+        o.push('"');
+        o
+    }
+    fn one(sb: &mut String, label: &str, map_t: Option<&[u8]>, map_ver: Option<&[u8]>) {
+        let srv = read_world_version(true, map_t, map_ver);
+        let cli = read_world_version(false, map_t, map_ver);
+        let _ = writeln!(sb, "MV {label} srv={srv} cli={cli}");
+        let r = match map_ver {
+            None => "missing".to_string(),
+            Some(d) => match read_map_ver(d) {
+                Ok((v, m)) => format!("version={v} map={}", esc(&m)),
+                Err(e) => format!("exception {}", e.split(':').next().unwrap_or("")),
+            },
+        };
+        let _ = writeln!(sb, "MD {label} {r}");
+    }
+    let mut sb = String::new();
+    one(&mut sb, "none", None, None);
+    let t = std::fs::read(save.join("map_t.bin")).ok();
+    let v = std::fs::read(save.join("map_ver.bin")).ok();
+    one(&mut sb, "real", t.as_deref(), v.as_deref());
+    let mut labels: Vec<String> = std::fs::read_dir(crafted)
+        .map_err(|e| format!("{}: {e}", crafted.display()))?
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.strip_suffix(".map_t")
+                .or_else(|| n.strip_suffix(".map_ver"))
+                .map(str::to_string)
+        })
+        .collect();
+    labels.sort();
+    labels.dedup();
+    for l in labels {
+        let t = std::fs::read(crafted.join(format!("{l}.map_t"))).ok();
+        let v = std::fs::read(crafted.join(format!("{l}.map_ver"))).ok();
+        one(&mut sb, &l, t.as_deref(), v.as_deref());
+    }
+    Ok(sb)
+}
+
+/// `ErosionConfig.readFile` on the save's `erosion.ini` and on every hand-made `*.ini` of the crafted dir, then
+/// `writeFile`'s text (pairs with ErosionIniProbe.java).
+pub fn erosionini(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::erosion::erosion_config::ErosionConfig;
+    /// The probe's `esc`: printable ASCII except quote and backslash stays, any other UTF-16 unit is `\uXXXX`.
+    fn esc(s: &str) -> String {
+        let mut o = String::from("\"");
+        for u in s.encode_utf16() {
+            if (0x20..0x7f).contains(&u) && u != u16::from(b'"') && u != u16::from(b'\\') {
+                o.push(char::from(u as u8));
+            } else {
+                let _ = write!(o, "\\u{u:04x}");
+            }
+        }
+        o.push('"');
+        o
+    }
+    fn one(sb: &mut String, label: &str, text: Option<&[u8]>) {
+        let mut cfg = ErosionConfig::default();
+        let ret = cfg.read_file(text);
+        let _ = writeln!(sb, "ERO {label} ret={ret}");
+        let mut fields: Vec<(String, String)> = Vec::new();
+        let bits = |f: f32| format!("{:08x}", f.to_bits());
+        for (name, a) in [
+            ("seedMain", &cfg.seeds.seed_main),
+            ("seedMoisture", &cfg.seeds.seed_moisture),
+            ("seedMinerals", &cfg.seeds.seed_minerals),
+            ("seedKudzu", &cfg.seeds.seed_kudzu),
+        ] {
+            for (i, v) in a.iter().enumerate() {
+                fields.push((format!("seeds.{name}{i}"), v.to_string()));
+            }
+        }
+        let t = &cfg.time;
+        for (n, v) in [
+            ("tickunit", t.tickunit),
+            ("ticks", t.ticks),
+            ("eticks", t.eticks),
+            ("epoch", t.epoch),
+        ] {
+            fields.push((format!("time.{n}"), v.to_string()));
+        }
+        let s = &cfg.season;
+        for (n, v) in [
+            ("lat", s.lat),
+            ("tempMax", s.temp_max),
+            ("tempMin", s.temp_min),
+            ("tempDiff", s.temp_diff),
+            ("seasonLag", s.season_lag),
+            ("seedA", s.seed_a),
+            ("seedB", s.seed_b),
+            ("seedC", s.seed_c),
+        ] {
+            fields.push((format!("season.{n}"), v.to_string()));
+        }
+        fields.push(("season.noon".into(), bits(s.noon)));
+        for (m, v) in [
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+        ]
+        .iter()
+        .zip(s.months)
+        {
+            fields.push((format!("season.{m}"), bits(v)));
+        }
+        let d = &cfg.debug;
+        fields.push(("debug.enabled".into(), d.enabled.to_string()));
+        fields.push(("debug.startday".into(), d.startday.to_string()));
+        fields.push(("debug.startmonth".into(), d.startmonth.to_string()));
+        // the probe prints each section's fields sorted by name
+        let section = |n: &str| n.split('.').next().unwrap_or("").to_string();
+        for sec in ["seeds", "time", "debug", "season"] {
+            let mut part: Vec<&(String, String)> =
+                fields.iter().filter(|(n, _)| section(n) == sec).collect();
+            part.sort_by(|a, b| a.0.cmp(&b.0));
+            for (n, v) in part {
+                let _ = writeln!(sb, "F {label} {n}={v}");
+            }
+        }
+        for (i, line) in cfg.write_file().split('\n').enumerate() {
+            let _ = writeln!(sb, "W {label} {i} {}", esc(line));
+        }
+    }
+    let mut sb = String::new();
+    one(&mut sb, "none", None);
+    let real = std::fs::read(save.join("erosion.ini")).ok();
+    one(&mut sb, "real", real.as_deref());
+    let mut files: Vec<_> = std::fs::read_dir(crafted)
+        .map_err(|e| format!("{}: {e}", crafted.display()))?
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".ini"))
+        .collect();
+    files.sort_by_key(|e| e.file_name());
+    for f in files {
+        let name = f.file_name().to_string_lossy().replace(".ini", "");
+        let data = std::fs::read(f.path()).map_err(|e| e.to_string())?;
+        one(&mut sb, &name, Some(&data));
+    }
+    Ok(sb)
+}
+
+/// The saved part of IsoRegions (`isoregiondata/datachunk_*.bin`, `RegionHeader.bin`) loaded by the port's
+/// `IsoRegionWorker.loadSaveMap`, for the player's real folder and each scenario folder of the crafted dir (pairs
+/// with IsoRegionProbe.java).
+pub fn isoregion(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::iso::areas::isoregion::iso_region_worker::IsoRegionWorker;
+    fn scenario(sb: &mut String, label: &str, dir: Option<&Path>) -> Result<(), String> {
+        let mut header = None;
+        let mut chunk_files: Vec<(String, Vec<u8>)> = Vec::new();
+        if let Some(dir) = dir {
+            for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+                let e = e.map_err(|e| e.to_string())?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                let data = std::fs::read(e.path()).map_err(|e| e.to_string())?;
+                if name == "RegionHeader.bin" {
+                    header = Some(data);
+                } else if name.starts_with("datachunk_") && name.ends_with(".bin") {
+                    chunk_files.push((name, data));
+                }
+            }
+        }
+        // the original lists the directory in the file system's order; every scenario with more than one file
+        // loads them all without error, so the order is only visible in the discovery list, which is printed sorted
+        chunk_files.sort();
+        let files: Vec<Vec<u8>> = chunk_files.into_iter().map(|(_, d)| d).collect();
+        let mut w = IsoRegionWorker::new();
+        let _ = w.load_save_map(header.as_deref(), &files);
+        w.apply_jobs();
+        let mut disc = w.discovered_chunks.clone();
+        disc.sort_unstable();
+        let mut th = w.thread_discovered_chunks.clone();
+        th.sort_unstable();
+        let list = |v: &[i32]| {
+            format!(
+                "[{}]",
+                v.iter().map(i32::to_string).collect::<Vec<_>>().join(", ")
+            )
+        };
+        let chunks = w.root_buffer.all_chunks_sorted();
+        let _ = writeln!(
+            sb,
+            "ISO {label} chunks={} disc={} thread={}",
+            chunks.len(),
+            list(&disc),
+            list(&th)
+        );
+        for c in chunks {
+            let mut act = String::new();
+            for &b in &c.active_z_layers {
+                act.push(if b { '1' } else { '0' });
+            }
+            let mut h: i32 = 0;
+            for z in 0..32 {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        let v = w.root_buffer.get_square_flags(
+                            c.chunk_x * 8 + x,
+                            c.chunk_y * 8 + y,
+                            z,
+                        )?;
+                        h = h.wrapping_mul(31).wrapping_add(i32::from(v));
+                    }
+                }
+            }
+            let flags = c.square_flags.as_ref().map_or("null".to_string(), |f| {
+                let mut fh: i32 = 1;
+                for &b in f {
+                    fh = fh.wrapping_mul(31).wrapping_add(i32::from(b as i8));
+                }
+                format!("{},{fh:x}", f.len())
+            });
+            let found = w
+                .root_buffer
+                .get_data_chunk(c.chunk_x, c.chunk_y)
+                .is_some_and(|f| std::ptr::eq(f, c));
+            let _ = writeln!(
+                sb,
+                "CH {label} {} {} id={:x} hz={} flags={flags} active={act} sq={h:x} found={}",
+                c.chunk_x,
+                c.chunk_y,
+                c.hash_id,
+                c.highest_z,
+                u8::from(found)
+            );
+        }
+        Ok(())
+    }
+    let mut sb = String::new();
+    scenario(&mut sb, "none", None)?;
+    scenario(&mut sb, "real", Some(&save.join("isoregiondata")))?;
+    let mut dirs: Vec<_> = std::fs::read_dir(crafted)
+        .map_err(|e| format!("{}: {e}", crafted.display()))?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .collect();
+    dirs.sort_by_key(|e| e.file_name());
+    for d in dirs {
+        scenario(&mut sb, &d.file_name().to_string_lossy(), Some(&d.path()))?;
     }
     Ok(sb)
 }

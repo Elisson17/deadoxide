@@ -48,8 +48,24 @@ impl WorldGenParams {
     /// along with the error.
     pub fn load(data: &[u8]) -> (Self, Option<String>) {
         let mut p = WorldGenParams::default();
+        let r = p.load_bytes(data);
+        (p, r.err())
+    }
+
+    /// zombie.iso.worldgen.WorldGenParams.load as the singleton runs it on a server or single player (`GameClient.client`
+    /// false): `None` is a missing file (`NOT_PRESENT`, nothing changes), any file is `DONE` with the fields it set
+    /// before a failure; the failure is the second value.
+    pub fn load_file(&mut self, data: Option<&[u8]>) -> (LoadResult, Option<String>) {
+        match data {
+            None => (LoadResult::NotPresent, None),
+            Some(d) => (LoadResult::Done, self.load_bytes(d).err()),
+        }
+    }
+
+    fn load_bytes(&mut self, data: &[u8]) -> Result<(), String> {
+        let p = self;
         let mut b = ByteBuffer::wrap(data);
-        let r = (|| -> Result<(), String> {
+        (|| -> Result<(), String> {
             if b.get_bytes(4)? != FILE_MAGIC {
                 return Err("java.io.IOException: does not appear to be map_worldgen.bin".into());
             }
@@ -61,7 +77,13 @@ impl WorldGenParams {
             p.max_x_cell = b.get_int()?;
             p.max_y_cell = b.get_int()?;
             Ok(())
-        })();
-        (p, r.err())
+        })()
     }
+}
+
+/// zombie.iso.worldgen.WorldGenParams.Result (`CLIENT` is a network client's, never read from a file).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoadResult {
+    NotPresent,
+    Done,
 }

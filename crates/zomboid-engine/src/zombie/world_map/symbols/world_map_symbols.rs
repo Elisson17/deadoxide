@@ -118,9 +118,18 @@ impl WorldMapBaseSymbol {
 }
 
 impl WorldMapSymbols {
-    /// zombie.worldMap.symbols.WorldMapSymbols.load: a version (1 or 2), the font table (version 2), then the
-    /// symbols, each a type byte (0 text, 1 texture) and its fields.
+    /// zombie.worldMap.symbols.WorldMapSymbols.load into a new list (a map item's own symbols).
     pub fn load(b: &mut ByteBuffer) -> Result<Self, String> {
+        let mut out = WorldMapSymbols::default();
+        out.load_into(b)?;
+        Ok(out)
+    }
+
+    /// zombie.worldMap.symbols.WorldMapSymbols.load: a version (1 or 2), the font table (version 2), then the
+    /// symbols, each a type byte (0 text, 1 texture) and its fields. The symbols are appended to the ones the list
+    /// has, one at a time: a failure part-way keeps the symbols read before it (the original adds a symbol only
+    /// after its own `load` returned).
+    pub fn load_into(&mut self, b: &mut ByteBuffer) -> Result<(), String> {
         let symbols_version = b.get_short()?;
         if !(1..=2).contains(&symbols_version) {
             return Err(format!(
@@ -135,10 +144,9 @@ impl WorldMapSymbols {
             save_data.load(b)?;
         }
         let symbol_count = b.get_int()?;
-        let mut out = WorldMapSymbols::default();
         for _ in 0..symbol_count.max(0) {
             let symbol_type = b.get()?;
-            out.symbols.push(match symbol_type {
+            let symbol = match symbol_type {
                 // WorldMapTextSymbol.load
                 0 => {
                     let base = WorldMapBaseSymbol::load(b, &save_data)?;
@@ -172,8 +180,25 @@ impl WorldMapSymbols {
                     }
                 }
                 t => return Err(format!("java.io.IOException: unknown map symbol type {t}")),
-            });
+            };
+            self.symbols.push(symbol);
         }
-        Ok(out)
+        Ok(())
+    }
+
+    /// zombie.inventory.types.MapItem.LoadWorldMap over the bytes of `map_symbols.bin` (`None` is a missing file):
+    /// the "WMSY" magic, the world version, then `load` into the world map's symbols. The original logs a failure
+    /// and keeps what was loaded; this returns the error.
+    pub fn load_world_map(&mut self, data: Option<&[u8]>) -> Result<(), String> {
+        let Some(data) = data else {
+            return Ok(());
+        };
+        // read into SliceY.SliceBuffer, limited to the file's length
+        let mut b = ByteBuffer::wrap_slice_buffer(data);
+        if b.get_bytes(4)? != b"WMSY" {
+            return Err("java.io.IOException: does not appear to be map_symbols.bin".to_string());
+        }
+        let _world_version = b.get_int()?;
+        self.load_into(&mut b)
     }
 }
