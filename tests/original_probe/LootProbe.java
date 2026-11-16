@@ -193,6 +193,7 @@ public class LootProbe {
             if (i instanceof zombie.inventory.types.Key k) b.append(" key=" + k.getKeyId());
             if (i instanceof zombie.inventory.types.Radio r) b.append(" rch=" + r.getDeviceData().getChannel());
             if (i instanceof zombie.inventory.types.IAlarmClock a) b.append(" al=" + a.getHour() + ":" + a.getMinute() + ":" + (a.isAlarmSet() ? 1 : 0));
+            if (i.hasComponent(zombie.entity.ComponentType.FluidContainer)) b.append(" fa=" + fbits(i.getFluidContainer().getAmount()));
             if (i instanceof zombie.inventory.types.Food f) {
                 b.append(" fd age=" + fbits(f.getAge()) + " off=" + f.getOffAge() + "/" + f.getOffAgeMax() + " ck=" + (f.isCooked() ? 1 : 0) + (f.isBurnt() ? 1 : 0)
                         + " ct=" + fbits(f.getCookingTime()) + " hung=" + fbits(f.getHungChange()) + " thirst=" + fbits(f.getThirstChangeUnmodified()) + " end=" + fbits(f.getEndChange())

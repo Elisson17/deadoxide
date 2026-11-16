@@ -81,6 +81,8 @@ pub struct FluidScript {
     pub initial_fluids_is_random: bool,
     /// `initialFluids.size()`: the `Fluid` values and `fluid` blocks of the `fluids` block.
     pub initial_fluids: usize,
+    /// `FluidScript.percentage` of each initial fluid, in order (normalised to sum 1 unless the pick is random).
+    pub initial_percentages: Vec<f32>,
     /// A `whitelist` or `blacklist` block is present.
     pub has_filter: bool,
 }
@@ -95,6 +97,7 @@ impl FluidScript {
             initial_amount_max: 1.0,
             initial_fluids_is_random: false,
             initial_fluids: 0,
+            initial_percentages: Vec::new(),
             has_filter: false,
         }
     }
@@ -136,6 +139,13 @@ impl FluidScript {
                         for value in &child.values {
                             if java::equals_ignore_case(java::trim(value.get_key()), "Fluid") {
                                 f.initial_fluids += 1;
+                                // readFluid: `Type:percentage[:r:g:b]`
+                                let parts = java::split_char(java::trim(value.get_value()), ':');
+                                f.initial_percentages.push(if parts.len() > 1 {
+                                    float(parts[1])?
+                                } else {
+                                    1.0
+                                });
                             }
                         }
                         for fb in &child.children {
@@ -145,6 +155,17 @@ impl FluidScript {
                                 })
                             {
                                 f.initial_fluids += 1;
+                                // readFluidAsBlock: the last `percentage` value
+                                let mut pct = 1.0f32;
+                                for v in &fb.values {
+                                    if java::equals_ignore_case(
+                                        java::trim(v.get_key()),
+                                        "percentage",
+                                    ) {
+                                        pct = float(java::trim(v.get_value()))?;
+                                    }
+                                }
+                                f.initial_percentages.push(pct);
                             }
                         }
                     } else if java::equals_ignore_case(&child.r#type, "whitelist")
@@ -156,6 +177,18 @@ impl FluidScript {
             }
         }
         // OnScriptsLoaded
+        if !f.initial_fluids_is_random && !f.initial_percentages.is_empty() {
+            // PZMath.normalize: the total summed from the last to the first, then each divided by it
+            let mut total = 0.0f32;
+            for p in f.initial_percentages.iter().rev() {
+                total += *p;
+            }
+            if total != 0.0 {
+                for p in f.initial_percentages.iter_mut().rev() {
+                    *p /= total;
+                }
+            }
+        }
         f.capacity = f.capacity.max(0.05);
         if f.initial_amount_min > f.initial_amount_max {
             std::mem::swap(&mut f.initial_amount_min, &mut f.initial_amount_max);

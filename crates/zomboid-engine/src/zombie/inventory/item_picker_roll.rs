@@ -1349,27 +1349,40 @@ impl<'a> LootRoller<'a> {
                 .fluid
                 .as_ref()
                 .ok_or_else(|| unported("FluidContainer component without script data"))?;
-            if f.has_filter {
-                return Err(unported(format!(
-                    "FluidContainer whitelist/blacklist ({})",
-                    script.full_name()
-                )));
-            }
-            let mut amount_hi = 0.0f32;
-            let mut exact = true;
+            // `script.getInitialFluids() != null && !isEmpty() && script.getInitialAmount() > 0` (each call of
+            // `getInitialAmount` with a range draws)
+            let mut amount = 0.0f32;
             if f.initial_fluids > 0 && self.fluid_initial_amount(f) > 0.0 {
                 let initial = self.fluid_initial_amount(f);
-                if f.initial_fluids == 1 {
-                    amount_hi = initial.min(f.capacity);
+                let percentage = if f.initial_fluids == 1 {
+                    f.initial_percentages[0]
                 } else if f.initial_fluids_is_random {
-                    self.rand.next(f.initial_fluids as i32);
-                    amount_hi = initial.min(f.capacity);
+                    let pick = self.rand.next(f.initial_fluids as i32);
+                    f.initial_percentages[pick as usize]
                 } else {
-                    amount_hi = (initial * f.initial_fluids as f32).min(f.capacity);
+                    return Err(unported(format!(
+                        "several initial fluids that mix ({})",
+                        script.full_name()
+                    )));
+                };
+                if f.has_filter {
+                    return Err(unported(format!(
+                        "FluidContainer whitelist/blacklist ({})",
+                        script.full_name()
+                    )));
                 }
-                exact = false;
+                // FluidContainer.addInitialFluid / addFluid into an empty container: `max(0, amount)` capped by the
+                // free capacity (the fluid blends with nothing and no filter refuses it)
+                let add = (initial * percentage).max(0.0);
+                if add > 0.0 {
+                    amount = add.min(f.capacity);
+                }
             }
-            item.fluid_amount = Some((if exact { amount_hi } else { 0.0 }, amount_hi));
+            // FluidContainer.getAmount (`recalculateCaches`): within 0.001 of the capacity reads as full
+            if f.capacity - amount < 0.001f32 {
+                amount = f.capacity;
+            }
+            item.fluid_amount = Some((amount, amount));
         }
         // OutfitRNG.setSeed(Rand.Next(Integer.MAX_VALUE)) around synchWithVisual
         self.rand.next(i32::MAX);
@@ -1472,12 +1485,12 @@ impl<'a> LootRoller<'a> {
             6 => chance -= 20,
             _ => {}
         }
-        if self.rand.next(100) <= 100 - chance && self.stash.items.contains(&it.full_type) {
-            return Err(unported(format!(
-                "StashSystem.checkStashItem for {}",
-                it.full_type
-            )));
-        }
+        // `Rand.Next(100) <= 100 - chance`, then the stashes naming this item are looked at: one is possible only if
+        // `IsoWorld.instance.getMetaGrid().getRoomAt(buildingX, buildingY, 0)` finds its building, and no map is
+        // loaded headless (`getChunkDataFromTile` is null), so none is possible and nothing is drawn or annotated.
+        // UNKNOWN: with a loaded map the stash is picked (`Rand.Next(0, count)`) and `doStashItem` annotates the map
+        // (`StashInfo::items` holds the item types the stashes name).
+        let _passed = self.rand.next(100) <= 100 - chance;
         Ok(())
     }
 
@@ -2147,6 +2160,12 @@ impl<'a> LootRoller<'a> {
             }
             if let Some(a) = i.alarm {
                 let _ = write!(out, " al={}:{}:{}", a.hour, a.minute, u8::from(a.set));
+            }
+            if let Some((flo, fhi)) = i.fluid_amount {
+                if flo != fhi {
+                    return Err(unported("a fluid amount that is only bounded"));
+                }
+                let _ = write!(out, " fa={:x}", flo.to_bits());
             }
             if let Some(f) = &i.food {
                 let _ = write!(
