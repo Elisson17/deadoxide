@@ -183,11 +183,20 @@ pub fn string_hash_code(s: &str) -> i32 {
 /// `keys_in_insertion_order`, duplicates keeping their first position. Buckets ascend, entries of one bucket keep
 /// insertion order. Bins that Java would turn into trees (8+ entries with 64+ buckets) may iterate differently there.
 pub fn hash_map_order(keys_in_insertion_order: &[&str]) -> Vec<usize> {
+    hash_map_order_from(keys_in_insertion_order, 16)
+}
+
+/// `hash_map_order` for a map whose table started at `initial_capacity` buckets (a power of two): 16 for `new HashMap()`,
+/// `tableSizeFor((int)(size / 0.75f + 1.0f))` for `new HashMap(Map)`.
+pub fn hash_map_order_from(
+    keys_in_insertion_order: &[&str],
+    initial_capacity: usize,
+) -> Vec<usize> {
     let mut seen = std::collections::HashSet::new();
     let unique: Vec<usize> = (0..keys_in_insertion_order.len())
         .filter(|i| seen.insert(keys_in_insertion_order[*i]))
         .collect();
-    let mut cap: usize = 16;
+    let mut cap: usize = initial_capacity;
     while unique.len() as f64 > cap as f64 * 0.75 {
         cap *= 2;
     }
@@ -206,6 +215,8 @@ pub fn hash_map_order(keys_in_insertion_order: &[&str]) -> Vec<usize> {
 pub struct JavaHashMap<V> {
     keys: Vec<String>,
     values: Vec<V>,
+    /// Buckets the table starts with: 16, or the copy constructor's `tableSizeFor(size / 0.75 + 1)`.
+    initial_capacity: usize,
 }
 
 impl<V> Default for JavaHashMap<V> {
@@ -213,6 +224,7 @@ impl<V> Default for JavaHashMap<V> {
         JavaHashMap {
             keys: Vec::new(),
             values: Vec::new(),
+            initial_capacity: 16,
         }
     }
 }
@@ -250,10 +262,65 @@ impl<V> JavaHashMap<V> {
 
     /// java.util.HashMap.values(), in the map's iteration order.
     pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.iter().map(|(_, v)| v)
+    }
+
+    /// java.util.HashMap.entrySet() / forEach order: the entries in the map's iteration order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
         let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
-        hash_map_order(&keys)
+        hash_map_order_from(&keys, self.initial_capacity)
             .into_iter()
-            .map(move |i| &self.values[i])
+            .map(move |i| (self.keys[i].as_str(), &self.values[i]))
+    }
+
+    /// java.util.HashMap.values(), mutable, in the map's iteration order.
+    pub fn values_mut(&mut self) -> Vec<&mut V> {
+        let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
+        let order = hash_map_order_from(&keys, self.initial_capacity);
+        let mut slots: Vec<Option<&mut V>> = self.values.iter_mut().map(Some).collect();
+        order.into_iter().filter_map(|i| slots[i].take()).collect()
+    }
+
+    /// java.util.HashMap.containsKey
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.keys.iter().any(|k| k == key)
+    }
+
+    /// java.util.HashMap.getOrDefault
+    pub fn get_or_default(&self, key: &str, default: V) -> V
+    where
+        V: Clone,
+    {
+        self.get(key).cloned().unwrap_or(default)
+    }
+
+    /// java.util.HashMap.clear (the table keeps its size).
+    pub fn clear(&mut self) {
+        self.keys.clear();
+        self.values.clear();
+    }
+
+    /// `new HashMap<>(Map)`: the entries put in the source's iteration order into a table sized
+    /// `tableSizeFor((int)(size / 0.75f + 1.0f))`.
+    pub fn copy_of(&self) -> JavaHashMap<V>
+    where
+        V: Clone,
+    {
+        let ft = (self.keys.len() as f32 / 0.75f32 + 1.0f32) as usize;
+        let mut cap = 1usize;
+        while cap < ft {
+            cap <<= 1;
+        }
+        let mut out = JavaHashMap {
+            keys: Vec::new(),
+            values: Vec::new(),
+            initial_capacity: if self.keys.is_empty() { 16 } else { cap },
+        };
+        for (k, v) in self.iter() {
+            out.keys.push(k.to_string());
+            out.values.push(v.clone());
+        }
+        out
     }
 }
 

@@ -411,6 +411,13 @@ fn radio_matches_original() {
     );
 }
 
+/// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
+/// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
+#[test]
+fn txtmodels_matches_original() {
+    check("txtmodels", &[]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

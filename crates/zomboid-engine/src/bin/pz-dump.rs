@@ -12,6 +12,9 @@
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 //!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
 //!   pz-dump sounds <game root> [<command file> <scratch dir>]   (pairs with SoundsProbe.java)
+#[path = "pz-dump-models/mod.rs"]
+mod models;
+
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -60,6 +63,7 @@ fn main() {
             Path::new(&a[4]),
             a.get(5).map(Path::new),
         ),
+        Some("txtmodels") if a.len() >= 3 => models::txtmodels(Path::new(&a[2]), &a[3..]),
         Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
