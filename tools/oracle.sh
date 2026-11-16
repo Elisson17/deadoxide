@@ -164,6 +164,20 @@ sel erosion && server_case erosion ErosionProbe \
   "1034,1458,1036,1460:1993:6:8:3:0/3:speed=1" \
   "1034,1458,1036,1460:1993:6:11:4:0/4:speed=5,keep=1" \
   "1034,1458,1036,1460:1994:0:1:2:2:speed=3,apo=5,temp=1,keep=1"
+# the original zombie.characters.IsoZombie, constructed headless inside the booted server over a fixed lore preset (the
+# probe sets every ZombieLore option itself, so the server's own preset does not matter): scenarios seed:count:ticks[:Key=value,..]
+# (the global Rand = java.util.Random(seed) with its draw counter at 0, OutfitRNG seeded likewise, Key = a ZombieLore option's
+# name). Per zombie: the draw counter, the descriptor (names from the game's own name lists and translations), health,
+# direction, palette, tints, the lore stats and speed, walk type, blood. The speed, strength, cognition, memory, sight, hearing
+# and crawl-under-vehicle options each in every branch
+sel zombie && server_case zombie ZombieProbe \
+  "12345:40:0" "1:40:0:Speed=4,SprinterPercentage=50" "2:30:0:Speed=1" "3:30:0:Speed=3" \
+  "4:30:0:Speed=4,SprinterPercentage=0,Strength=4,Cognition=4,DoorOpeningPercentage=50" \
+  "5:30:0:Memory=5,Sight=4,Hearing=4,CrawlUnderVehicle=2" \
+  "6:30:0:Memory=6,Sight=5,Hearing=5,CrawlUnderVehicle=7,Strength=1,Cognition=1" \
+  "7:30:0:Strength=3,Memory=1,CrawlUnderVehicle=1,Speed=4,SprinterPercentage=100" \
+  "8:30:0:Memory=3,CrawlUnderVehicle=3,Sight=1,Hearing=3" "9:30:0:Memory=4,CrawlUnderVehicle=4,Sight=3,Hearing=1" \
+  "10:30:0:CrawlUnderVehicle=6,Speed=2,Cognition=2"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

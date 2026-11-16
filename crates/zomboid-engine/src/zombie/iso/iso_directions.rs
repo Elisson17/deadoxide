@@ -37,6 +37,12 @@ impl IsoDirections {
     pub fn from_index(index: i32) -> Self {
         VALUES[(index & 7) as usize]
     }
+    /// zombie.iso.IsoDirections.getRandom: `VALUES[Rand.Next(8)]`.
+    pub fn get_random<R: crate::java::JavaRandom>(
+        rand: &mut crate::zombie::core::random::rand_abstract::RandAbstract<R>,
+    ) -> Self {
+        VALUES[(rand.next(8) & 7) as usize]
+    }
     /// zombie.iso.IsoDirections.RotLeft
     pub fn rot_left(self) -> Self {
         VALUES[(self as usize + 1) & 7]

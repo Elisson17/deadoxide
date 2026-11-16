@@ -69,6 +69,7 @@ fn main() {
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
         Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
         Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
+        Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -7030,6 +7031,223 @@ fn apply_custom_tile_props(
         n += 1;
     }
     Ok(n)
+}
+
+/// ZombieProbe's output for the port: `zombie.characters.IsoZombie` constructed over the same fixed lore options, global
+/// `Rand` (java.util.Random(seed), draw counter at 0) and OutfitRNG seed. The name lists come from running the effect
+/// of `MainCreationMethods.lua` (a stand-in for the `OnGameBoot` Lua, see `SurvivorFactory::from_main_creation_methods`)
+/// with the game's own translations. Scenario "seed:count:ticks[:Key=value,...]" as in ZombieProbe.java.
+pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    use zomboid_engine::java::{float_to_string as fl, Random};
+    use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
+    use zomboid_engine::zombie::characters::survivor_factory::SurvivorFactory;
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
+    use zomboid_engine::zombie::core::translator::Translator;
+    use zomboid_engine::zombie::sandbox_options::SandboxOptions;
+
+    let mut tr = Translator::new(root);
+    tr.languages.init(root);
+    tr.load_files()
+        .map_err(|e| format!("Translator.loadFiles: {e:?}"))?;
+    let lua_path = root.join("media/lua/shared/NPCs/MainCreationMethods.lua");
+    let lua =
+        std::fs::read_to_string(&lua_path).map_err(|e| format!("{}: {e}", lua_path.display()))?;
+    let survivors =
+        SurvivorFactory::from_main_creation_methods(&lua, &mut |k| tr.get_text(k, &[]))?;
+
+    // the fixed base of ZombieProbe.BASE, then the scenario's overrides
+    const BASE: [(&str, i32); 12] = [
+        ("Speed", 2),
+        ("SprinterPercentage", 33),
+        ("Strength", 2),
+        ("Toughness", 2),
+        ("Cognition", 3),
+        ("DoorOpeningPercentage", 33),
+        ("CrawlUnderVehicle", 5),
+        ("Memory", 2),
+        ("Sight", 2),
+        ("Hearing", 2),
+        ("ActiveOnly", 1),
+        ("DisableFakeDead", 1),
+    ];
+    let mut sb = String::new();
+    let _ = writeln!(
+        sb,
+        "NAMES female={} male={} surnames={}",
+        survivors.female_forenames.len(),
+        survivors.male_forenames.len(),
+        survivors.surnames.len()
+    );
+    for (name, list) in [
+        ("female", &survivors.female_forenames),
+        ("male", &survivors.male_forenames),
+        ("surname", &survivors.surnames),
+    ] {
+        let n = list.len();
+        if n == 0 {
+            return Err(format!("empty {name} list"));
+        }
+        let _ = writeln!(
+            sb,
+            "NAME {name} 0={} {}={} {}={}",
+            list[0],
+            n / 2,
+            list[n / 2],
+            n - 1,
+            list[n - 1]
+        );
+    }
+    for spec in scenarios {
+        let p: Vec<&str> = spec.split(':').collect();
+        if p.len() < 3 {
+            return Err(format!("bad scenario {spec}"));
+        }
+        let seed: i64 = p[0].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let count: usize = p[1].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let ticks: i32 = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let mut sandbox = SandboxOptions::new();
+        let mut want: Vec<(String, i32)> = BASE.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        if let Some(opts) = p.get(3).filter(|o| !o.is_empty()) {
+            for kv in opts.split(',') {
+                let (k, v) = kv
+                    .split_once('=')
+                    .ok_or_else(|| format!("bad option {kv}"))?;
+                let v: i32 = v.parse().map_err(|e| format!("{kv}: {e}"))?;
+                match want.iter_mut().find(|(wk, _)| wk == k) {
+                    Some(e) => e.1 = v,
+                    None => want.push((k.to_string(), v)),
+                }
+            }
+        }
+        for (k, v) in &want {
+            let name = format!("ZombieLore.{k}");
+            let i = sandbox
+                .defs()
+                .iter()
+                .position(|d| d.name == name)
+                .ok_or_else(|| format!("no sandbox option {name}"))?;
+            sandbox.parse(i, &v.to_string());
+        }
+        let _ = writeln!(sb, "SCENARIO {spec}");
+        let lore = Lore::from_sandbox(&sandbox)?;
+        let get = |n: &str| sandbox.get_int(&format!("ZombieLore.{n}")).unwrap_or(-1);
+        let _ = writeln!(
+            sb,
+            "LORE speed={} sprinterPercentage={} strength={} toughness={} cognition={} doorOpeningPercentage={} crawlUnderVehicle={} memory={} sight={} hearing={} activeOnly={} disableFakeDead={}",
+            get("Speed"),
+            get("SprinterPercentage"),
+            get("Strength"),
+            get("Toughness"),
+            get("Cognition"),
+            get("DoorOpeningPercentage"),
+            get("CrawlUnderVehicle"),
+            get("Memory"),
+            get("Sight"),
+            get("Hearing"),
+            get("ActiveOnly"),
+            get("DisableFakeDead")
+        );
+        if ticks != 0 {
+            return Err(format!(
+                "{spec}: updating a zombie is not ported yet (ticks must be 0)"
+            ));
+        }
+        let mut outfit_rng = OutfitRng::default();
+        outfit_rng.set_seed(seed);
+        let mut world = ZombieWorld {
+            rand: RandAbstract::new(Random::new(seed)),
+            outfit_rng,
+            lore,
+            survivors: survivors.clone(),
+            survivor_id_count: 0,
+        };
+        let b = |v: bool| u8::from(v);
+        for i in 0..count {
+            let z = IsoZombie::new(&mut world)?;
+            let d = z
+                .character
+                .descriptor
+                .as_ref()
+                .ok_or("a zombie has no descriptor")?;
+            let _ = writeln!(
+                sb,
+                "ZOMBIE {i} draws={} outfitSeed={}",
+                world.rand.id(),
+                world.outfit_rng.get_seed()
+            );
+            let _ = writeln!(
+                sb,
+                " desc id+{} forename={} surname={} female={} torso={} voice={} type={}",
+                d.id,
+                d.forename,
+                d.surname,
+                b(d.female),
+                d.torso,
+                d.voice_prefix,
+                d.survivor_type.name()
+            );
+            let _ = writeln!(
+                sb,
+                " stats bravery={} aggressiveness={} compassion={} loner={} temper={} friendliness={} favourindoors={} loyalty={}",
+                fl(d.bravery),
+                fl(d.aggressiveness),
+                fl(d.compassion),
+                fl(d.loner),
+                fl(d.temper),
+                fl(d.friendliness),
+                fl(d.favourindoors),
+                fl(d.loyalty)
+            );
+            let c = &z.character;
+            let _ = writeln!(
+                sb,
+                " body health={} weight={} width={} patience={} dir={} fwd={},{}",
+                fl(c.health),
+                fl(c.moving.weight),
+                fl(c.moving.width),
+                c.patience,
+                c.forward_iso_direction().name(),
+                fl(c.forward_direction.x),
+                fl(c.forward_direction.y)
+            );
+            let _ = writeln!(
+                sb,
+                " look palette={} sprite={} tint={},{},{} zombieId={} hurt={}",
+                z.palette,
+                z.sprite_name,
+                fl(z.tint[0]),
+                fl(z.tint[1]),
+                fl(z.tint[2]),
+                z.zombie_id,
+                z.hurt_sound
+            );
+            let _ = writeln!(
+                sb,
+                " stats2 speedType={} strength={} cognition={} memory={} sight={} hearing={} walkType={} walkVariant={} speedMod={} lunger={} running={} crawling={} inactive={} canCrawlUnder={} turnDelta={}",
+                z.speed_type,
+                z.strength,
+                z.cognition,
+                z.memory,
+                z.sight,
+                z.hearing,
+                z.walk_type.as_deref().unwrap_or("null"),
+                z.walk_variant,
+                fl(z.speed_mod),
+                b(z.lunger),
+                b(z.running),
+                b(z.crawling),
+                b(z.inactive),
+                b(z.can_crawl_under_vehicle),
+                fl(c.turn_delta_normal)
+            );
+            let _ = write!(sb, " blood");
+            for v in &c.human_visual.blood {
+                let _ = write!(sb, " {}", *v as u8);
+            }
+            sb.push('\n');
+        }
+    }
+    Ok(sb)
 }
 
 fn hex(b: &[u8]) -> String {
