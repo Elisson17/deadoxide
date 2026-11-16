@@ -2,6 +2,7 @@
 pub mod base_script_object;
 pub mod craft_recipe_group;
 pub mod craft_recipe_tag;
+pub mod game_sound_script;
 pub mod item_tag;
 pub mod item_tag_table;
 pub mod model_attachment;

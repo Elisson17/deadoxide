@@ -298,6 +298,22 @@ fn mods_matches_original() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// Every sound script and the GameSounds registry as the booted server holds them, then the crafted Load bodies and
+/// GameSounds calls of tests/sounds_cases.txt (the `sounds.ini` they write goes to a scratch folder).
+#[test]
+fn sounds_matches_original() {
+    let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("pz-oracle-sounds");
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/sounds_cases.txt");
+    check(
+        "sounds",
+        &[
+            cases.to_str().expect("utf-8 path"),
+            scratch.to_str().expect("utf-8 path"),
+        ],
+    );
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

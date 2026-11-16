@@ -36,6 +36,15 @@ pub fn try_parse_int(var_str: Option<&str>, default_val: i32) -> i32 {
     java::parse_int(java::trim(var_str.unwrap_or(""))).unwrap_or(default_val)
 }
 
+/// zombie.core.math.PZMath.tryParseFloat: `default_val` for a null or blank string and for a NumberFormatException of
+/// `Float.parseFloat(varStr.trim())` (hexadecimal floating-point text is not ported: see `java::parse_float`).
+pub fn try_parse_float(var_str: Option<&str>, default_val: f32) -> f32 {
+    if string_utils::is_null_or_whitespace(var_str) {
+        return default_val;
+    }
+    java::parse_float(java::trim(var_str.unwrap_or(""))).unwrap_or(default_val)
+}
+
 /// zombie.core.math.PZMath.fastfloor (float).
 pub fn fastfloor(val: f32) -> i32 {
     let xi = val as i32;

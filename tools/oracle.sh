@@ -195,6 +195,10 @@ sel xui && server_case xui XuiProbe
 # mod loading over crafted mod folders in the probe's cache dir: ChooseGameInfo (mod.info, availability), the mod folders
 # and their 42/42.x/common versions, ActiveMods, loadMods' order and the file map the mods' files shadow
 sel mods && game_case mods ModsProbe "$HERE/tests/mods_cases.txt"
+# every sound script (GameSoundScript.Load) and the GameSounds registry as the booted server holds them, then crafted
+# Load bodies and GameSounds calls (tests/sounds_cases.txt); the second argument is the Rust side's scratch folder for
+# the sounds.ini those commands write (the probe writes into the server's own cache folder)
+sel sounds && server_case sounds SoundsProbe "$HERE/tests/sounds_cases.txt" "$HERE/target/oracle/pz-oracle-sounds-rust"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
