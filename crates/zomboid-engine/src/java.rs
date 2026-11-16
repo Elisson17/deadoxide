@@ -104,7 +104,7 @@ pub fn math_max_f32(a: f32, b: f32) -> f32 {
 }
 
 /// java.util.Random: the 48-bit linear congruential generator, bit-for-bit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Random {
     seed: i64,
 }
@@ -116,6 +116,10 @@ impl Random {
         Random {
             seed: (seed ^ MULTIPLIER) & MASK,
         }
+    }
+    /// java.util.Random.setSeed(long): the same scrambling as the constructor.
+    pub fn set_seed(&mut self, seed: i64) {
+        self.seed = (seed ^ MULTIPLIER) & MASK;
     }
     /// java.util.Random.next(int bits).
     pub fn next(&mut self, bits: u32) -> i32 {
@@ -628,6 +632,15 @@ pub fn double_to_string(d: f64) -> String {
             exp = e2;
         }
     }
+    // Of the decimals of that length that read back as `a`, Java takes the closest to `a` and, with two equally
+    // close (a tie of the exact value), the one with the even last digit: the correctly rounded (half-even)
+    // decimal of that length, when it reads back as `a`.
+    let exact = format!("{:.*e}", digits.len() - 1, a);
+    if exact.parse::<f64>().ok() == Some(a) {
+        let (d2, e2) = split_sci(&exact);
+        digits = d2;
+        exp = e2;
+    }
     java_decimal(d < 0.0, &digits, exp)
 }
 
@@ -660,6 +673,15 @@ pub fn float_to_string(f: f32) -> String {
             digits = d2;
             exp = e2;
         }
+    }
+    // Of the decimals of that length that read back as `a`, Java takes the closest to `a` and, with two equally
+    // close (a tie of the exact value), the one with the even last digit: the correctly rounded (half-even)
+    // decimal of that length, when it reads back as `a`.
+    let exact = format!("{:.*e}", digits.len() - 1, a);
+    if exact.parse::<f32>().ok() == Some(a) {
+        let (d2, e2) = split_sci(&exact);
+        digits = d2;
+        exp = e2;
     }
     java_decimal(f < 0.0, &digits, exp)
 }
@@ -952,6 +974,25 @@ mod jdk_string_tests {
         assert_eq!(split_whitespace_regex(" a b "), ["", "a", "b"]);
         assert_eq!(split_whitespace_regex(""), [""]);
         assert_eq!(split_whitespace_regex("   "), Vec::<&str>::new());
+    }
+
+    /// Double.toString of a double whose exact value is halfway between two 17-digit decimals takes the even one
+    /// (the JDK 25 output of ClimateProbe for the world age 2.35019683837890625 hours; the decimal shortest-digit
+    /// routines of other languages round it up).
+    // the literal is the exact value of the tie, on purpose
+    #[allow(clippy::excessive_precision)]
+    #[test]
+    fn double_to_string_tie_takes_the_even_digit() {
+        assert_eq!(
+            double_to_string(2.350_196_838_378_906_25),
+            "2.3501968383789062"
+        );
+        assert_eq!(
+            double_to_string(2.883_491_516_113_281_3),
+            "2.8834915161132812"
+        );
+        assert_eq!(double_to_string(0.1), "0.1");
+        assert_eq!(float_to_string(9.350197), "9.350197");
     }
 
     #[test]

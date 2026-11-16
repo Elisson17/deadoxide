@@ -4,12 +4,12 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 349 of 3432 classes touched, 1424 of 46318 method names cited (3.1%), 965313 decompiled lines.**
+**Total: 355 of 3432 classes touched, 1530 of 46318 method names cited (3.3%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 65 | 7277 | 308 (4.2%) | 144530 |
+| zombie.iso | 346 | 69 | 7277 | 386 (5.3%) | 144530 |
 | zombie.core | 450 | 70 | 5920 | 182 (3.1%) | 93574 |
 | zombie.characters | 200 | 39 | 5028 | 106 (2.1%) | 77144 |
 | zombie.network | 436 | 2 | 3229 | 2 (0.1%) | 60679 |
@@ -17,14 +17,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.entity | 156 | 10 | 2517 | 14 (0.6%) | 36294 |
 | zombie.inventory | 40 | 15 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 13 | 1411 | 14 (1.0%) | 28275 |
-| zombie | 60 | 10 | 1192 | 77 (6.5%) | 22185 |
+| zombie | 60 | 10 | 1192 | 82 (6.9%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 6 | 1328 | 5 (0.4%) | 18604 |
 | zombie.ui | 52 | 5 | 1026 | 27 (2.6%) | 16932 |
 | zombie.Lua | 8 | 4 | 875 | 18 (2.1%) | 14841 |
 | zombie.ai | 99 | 0 | 875 | 0 (0.0%) | 14312 |
-| zombie.erosion | 23 | 3 | 216 | 1 (0.5%) | 13296 |
+| zombie.erosion | 23 | 5 | 216 | 24 (11.1%) | 13296 |
 | se | 70 | 21 | 692 | 207 (29.9%) | 11221 |
 | zombie.gameStates | 19 | 2 | 429 | 12 (2.8%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
@@ -105,7 +105,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.FileGuidPair | 0 / 0 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.FileGuidTable | 5 / 6 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.GameSounds | 9 / 21 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/game_sounds.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
-| zombie.GameTime | 8 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
+| zombie.GameTime | 13 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.GameWindow | 1 / 47 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.Lua.Event | 4 / 6 | crates/zomboid-engine/src/zombie/lua/event.rs |
 | zombie.Lua.LuaEventManager | 4 / 21 | crates/zomboid-engine/src/zombie/lua/lua_event_manager.rs |
@@ -257,6 +257,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.erosion.ErosionData | 0 / 5 | crates/zomboid-engine/src/zombie/erosion/erosion_data.rs |
 | zombie.erosion.ErosionRegions | 0 / 6 | crates/zomboid-engine/src/zombie/erosion/erosion_data.rs |
 | zombie.erosion.categories.ErosionCategory | 1 / 12 | crates/zomboid-engine/src/zombie/erosion/erosion_data.rs |
+| zombie.erosion.season.ErosionSeason | 16 / 49 | crates/zomboid-engine/src/zombie/erosion/season/erosion_season.rs |
+| zombie.erosion.utils.Noise2D | 7 / 7 | crates/zomboid-engine/src/zombie/erosion/utils/noise2d.rs |
 | zombie.gameStates.ChooseGameInfo | 10 / 76 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs |
 | zombie.gameStates.TermsOfServiceState | 2 / 5 | crates/zomboid-engine/src/zombie/game_states/terms_of_service_state.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs |
 | zombie.input.ControllerButtonStyle | 3 / 6 | crates/zomboid-engine/src/zombie/input/controller_button_style.rs |
@@ -332,10 +334,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.sprite.IsoSpriteGrid | 15 / 16 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_grid.rs |
 | zombie.iso.sprite.IsoSpriteManager | 2 / 6 | crates/zomboid-engine/src/zombie/iso/sprite/iso_sprite_manager.rs |
 | zombie.iso.sprite.SpriteGridParseData | 3 / 3 | crates/zomboid-engine/src/zombie/iso/sprite/sprite_grid_parse_data.rs |
-| zombie.iso.weather.ClimateColorInfo | 1 / 15 | crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
-| zombie.iso.weather.ClimateManager | 2 / 221 | crates/zomboid-engine/src/zombie/iso/weather/climate_manager.rs |
-| zombie.iso.weather.ThunderStorm | 1 / 30 | crates/zomboid-engine/src/zombie/iso/weather/thunder_storm.rs |
-| zombie.iso.weather.WeatherPeriod | 5 / 87 | crates/zomboid-engine/src/zombie/iso/weather/weather_period.rs |
+| zombie.iso.weather.ClimateColorInfo | 4 / 15 | crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
+| zombie.iso.weather.ClimateForecaster | 7 / 47 | crates/zomboid-engine/src/zombie/iso/weather/climate_forecaster.rs |
+| zombie.iso.weather.ClimateManager | 35 / 221 | crates/zomboid-engine/src/zombie/iso/weather/climate_manager.rs |
+| zombie.iso.weather.ClimateMoon | 5 / 9 | crates/zomboid-engine/src/zombie/iso/weather/climate_moon.rs |
+| zombie.iso.weather.ClimateValues | 4 / 39 | crates/zomboid-engine/src/zombie/iso/weather/climate_values.rs |
+| zombie.iso.weather.SimplexNoise | 2 / 4 | crates/zomboid-engine/src/zombie/iso/weather/simplex_noise.rs |
+| zombie.iso.weather.ThunderStorm | 8 / 30 | crates/zomboid-engine/src/zombie/iso/weather/thunder_storm.rs |
+| zombie.iso.weather.WeatherPeriod | 22 / 87 | crates/zomboid-engine/src/zombie/iso/weather/weather_period.rs |
 | zombie.iso.worldgen.WorldGenParams | 3 / 15 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_params.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.iso.worldgen.WorldGenUtils | 3 / 16 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_utils.rs |
 | zombie.iso.zones.Zone | 25 / 68 | crates/zomboid-engine/src/zombie/iso/zones/zone.rs |

@@ -289,6 +289,49 @@ pub fn date_to_string(time: i64) -> String {
     )
 }
 
+/// A java.util.GregorianCalendar in the UTC zone, as the climate code uses one: made from date fields (lenient: a
+/// day of 0 is the last day of the month before), moved by whole days or hours, read back by field or as
+/// `getTime().getTime()`. The oracle pins the JVM's default zone to UTC; on a player's machine the original uses
+/// their zone, whose daylight-saving hours this does not model (UNKNOWN).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GregorianCalendar {
+    time: i64,
+}
+
+impl GregorianCalendar {
+    /// GregorianCalendar(int year, int month, int dayOfMonth, int hourOfDay, int minute); also the three-argument
+    /// constructor (hour and minute 0).
+    pub fn new(year: i32, month: i32, day_of_month: i32, hour_of_day: i32, minute: i32) -> Self {
+        GregorianCalendar {
+            time: compute_time(year, month, day_of_month, hour_of_day, minute, 0, 0, false),
+        }
+    }
+
+    /// Calendar.add(Calendar.DAY_OF_MONTH, amount): whole days, the time of day kept.
+    pub fn add_days(&mut self, amount: i32) {
+        self.time = self
+            .time
+            .wrapping_add(i64::from(amount).wrapping_mul(ONE_DAY));
+    }
+
+    /// Calendar.add(Calendar.HOUR_OF_DAY, amount)
+    pub fn add_hours(&mut self, amount: i32) {
+        self.time = self
+            .time
+            .wrapping_add(i64::from(amount).wrapping_mul(3_600_000));
+    }
+
+    /// Calendar.getTime().getTime() (and toInstant().toEpochMilli()).
+    pub fn time_in_millis(&self) -> i64 {
+        self.time
+    }
+
+    /// Calendar.get for the fields: YEAR, MONTH, DAY_OF_MONTH, HOUR_OF_DAY, MINUTE...
+    pub fn fields(&self) -> Fields {
+        compute_fields(self.time)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
