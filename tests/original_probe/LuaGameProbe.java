@@ -26,7 +26,8 @@ import zombie.ui.UIElementInterface;
  *                             CustomPerks, CustomSandboxOptions, ModRegistries, ScriptManager.Load, SpriteModelManager,
  *                             ClothingDecals, BeardStyles, HairStyles, OutfitManager, VoiceStyles, RandStandard/RandLua,
  *                             Mouse.initCustomCursor, TileGeometryManager, TileDepthTextureAssignmentManager,
- *                             SeamManager, SeatingManager, GameInput.initControllers
+ *                             SeamManager, SeatingManager, GameInput.initControllers; after initShared's
+ *                             RandStandard/RandLua.init both get a fixed seed (see seed)
  *   GameWindow.init           LoadDirBase (shared, client), then LuaBootProbe's events (ZomboidGlobals.Load,
  *                             OnLoadSoundBanks, GameWindow.enter's steps (see enter) and OnGameBoot,
  *                             OnGameStateEnter + TermsOfServiceState.enter's rest, OnMainMenuEnter)
@@ -123,6 +124,7 @@ public class LuaGameProbe {
         step("VoiceStyles.init", () -> zombie.core.skinnedmodel.population.VoiceStyles.init());
         step("RandStandard.init", () -> zombie.core.random.RandStandard.INSTANCE.init());
         step("RandLua.init", () -> zombie.core.random.RandLua.INSTANCE.init());
+        seed();
         zombie.core.textures.TexturePackPage.ignoreWorldItemTextures = false;
         step("Mouse.initCustomCursor", () -> zombie.input.Mouse.initCustomCursor());
         step("TileGeometryManager.init", () -> zombie.tileDepth.TileGeometryManager.getInstance().init());
@@ -133,6 +135,19 @@ public class LuaGameProbe {
         // GameWindow.init: LuaManager.LoadDirBase() is initChecksum (nothing for a client not connected) and these
         LuaManager.initChecksum();
         LuaLoadEnvProbe.loadDirs(a);
+    }
+
+    /** The seeds RandStandard and RandLua get from their last init (initShared's): the original's come from
+     * SecureRandom (PZSeedGenerator), so the probe gives both generators the same CellularAutomatonRNG with a fixed
+     * seed instead, which the port uses too (zombie/game_window.rs). Nothing draws between initShared's init and
+     * here. */
+    static final byte[] RAND_STANDARD_SEED = {0, 0, 0, 1}, RAND_LUA_SEED = {0, 0, 0, 2};
+
+    static void seed() throws Exception {
+        java.lang.reflect.Field rf = zombie.core.random.RandAbstract.class.getDeclaredField("rand");
+        rf.setAccessible(true);
+        rf.set(zombie.core.random.RandStandard.INSTANCE, new org.uncommons.maths.random.CellularAutomatonRNG(RAND_STANDARD_SEED));
+        rf.set(zombie.core.random.RandLua.INSTANCE, new org.uncommons.maths.random.CellularAutomatonRNG(RAND_LUA_SEED));
     }
 
     /** GameWindow.enter before its OnGameBoot: the tile texture packs (texture2x is on by default, so the 2x ones),

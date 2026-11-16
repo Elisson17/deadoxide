@@ -59,6 +59,9 @@ pub struct State {
     pub client: RefCell<Option<Rc<crate::zombie::game_window::ClientStartup>>>,
     /// The Item objects handed to Lua, by item index.
     pub items: RefCell<HashMap<usize, Rc<super::exposed_game::ItemObject>>>,
+    /// The option objects of SandboxOptions.instance handed to Lua, by option index.
+    pub sandbox_option_objects:
+        RefCell<HashMap<usize, Rc<super::exposed_game::SandboxOptionObject>>>,
     /// The Texture objects handed to Lua, by texture.
     pub textures: RefCell<HashMap<usize, Rc<super::exposed_game::TextureObject>>>,
     /// The AngelCodeFont objects handed to Lua, by font.

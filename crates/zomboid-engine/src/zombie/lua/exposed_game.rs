@@ -1,18 +1,25 @@
 //! The exposed API the scripts reach in a client whose startup ran (GameWindow.init and initShared before LoadDirBase,
 //! the luagame oracle): the fonts TextManager.Init loaded, as AngelCodeFont objects and through TextManager's
 //! measuring methods. Same conventions as `exposed_methods`.
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
 use super::exposed_client::TextManagerObject;
+use super::exposed_methods::SandboxOptionsObject;
 use super::exposed_methods::{
-    hash, npe, registry_id, ret, ret_int, ret_str, string_arg, want_args, with_this,
+    hash, int_arg, npe, registry_id, ret, ret_int, ret_str, string_arg, want_args, with_this,
 };
 use super::exposed_world::enum_arg;
 use super::exposer::{class_named, Fail, Imp, JavaEnum, JavaStatics, Ret};
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::object::{JavaClass, Object, Throwable, Userdata};
 use crate::zombie::core::textures::texture::{PngSize, Texture, TextureRef};
+use crate::zombie::network::server_options::{
+    Kind as ServerKind, ServerOption, ServerOptions, Value as ServerValue,
+};
+use crate::zombie::sandbox_options::{Kind as SandboxKind, Value as SandboxValue};
+use crate::zombie::sandbox_options_table::OPTIONS;
 use crate::zombie::scripting::item::Value;
 use crate::zombie::ui::text_manager::FontRef;
 use crate::zombie::ui::ui_font::UIFont;
@@ -151,6 +158,267 @@ fn with_item(
     with_this!(cf, ItemObject, o, f(&client.scripts.items[o.0]))
 }
 
+/// zombie.network.ServerOptions as a Lua value, with its option objects (one per option, made on first use).
+pub struct ServerOptionsObject {
+    pub options: Rc<RefCell<ServerOptions>>,
+    objects: RefCell<Vec<Option<Rc<ServerOptionObject>>>>,
+}
+
+impl Userdata for ServerOptionsObject {
+    fn class(&self) -> &'static JavaClass {
+        class_named("zombie.network.ServerOptions")
+    }
+    fn java_to_string(&self) -> String {
+        format!("zombie.network.ServerOptions@{:x}", hash(self))
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl ServerOptionsObject {
+    /// The Lua value of option `i`: the same object each time.
+    fn option(&self, i: usize) -> Object {
+        let mut objects = self.objects.borrow_mut();
+        if objects.len() <= i {
+            objects.resize(i + 1, None);
+        }
+        let o = objects[i].get_or_insert_with(|| {
+            Rc::new(ServerOptionObject {
+                options: self.options.clone(),
+                index: i,
+            })
+        });
+        Object::Userdata(o.clone())
+    }
+}
+
+/// A ServerOptions$*ServerOption of a ServerOptions object.
+pub struct ServerOptionObject {
+    pub options: Rc<RefCell<ServerOptions>>,
+    pub index: usize,
+}
+
+impl Userdata for ServerOptionObject {
+    fn class(&self) -> &'static JavaClass {
+        let o = self.options.borrow();
+        class_named(match o.options[self.index].def.kind {
+            ServerKind::Boolean(_) => "zombie.network.ServerOptions$BooleanServerOption",
+            ServerKind::Double { .. } => "zombie.network.ServerOptions$DoubleServerOption",
+            ServerKind::Integer { .. } => "zombie.network.ServerOptions$IntegerServerOption",
+            ServerKind::Enum { .. } => "zombie.network.ServerOptions$EnumServerOption",
+            ServerKind::Str { .. } => "zombie.network.ServerOptions$StringServerOption",
+            ServerKind::Text { .. } => "zombie.network.ServerOptions$TextServerOption",
+        })
+    }
+    fn java_to_string(&self) -> String {
+        format!("{}@{:x}", self.class().name, hash(self))
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// Runs `f` on a server option receiver.
+fn with_server_option(
+    cf: &FrameRef,
+    f: impl FnOnce(&ServerOption, &ServerOptionObject) -> Ret,
+) -> Ret {
+    with_this!(cf, ServerOptionObject, o, {
+        let options = o.options.borrow();
+        f(&options.options[o.index], o)
+    })
+}
+
+/// The translator of the startup (a server option's tooltip in a Lua state made on its own is not ported).
+fn with_translator<T>(
+    s: &Rc<JavaStatics>,
+    f: impl FnOnce(&mut crate::zombie::core::translator::Translator) -> Result<T, String>,
+) -> Result<T, Fail> {
+    let client = s.state.client.borrow().clone().ok_or_else(|| {
+        Fail::Lua(Throwable::runtime(
+            "not ported: Translator before loadFiles",
+        ))
+    })?;
+    let mut t = client.translator.borrow_mut();
+    f(&mut t).map_err(|e| Fail::Lua(Throwable::runtime(e)))
+}
+
+/// A SandboxOptions$*SandboxOption of SandboxOptions.instance (its index). The two StrongEnumSandboxOption
+/// options are EnumSandboxOption to Lua (the class is not exposed; Kahlua takes the superclass's metatable).
+pub struct SandboxOptionObject(pub usize);
+
+impl Userdata for SandboxOptionObject {
+    fn class(&self) -> &'static JavaClass {
+        class_named(match OPTIONS[self.0].kind {
+            SandboxKind::Boolean(_) => "zombie.SandboxOptions$BooleanSandboxOption",
+            SandboxKind::Double { .. } => "zombie.SandboxOptions$DoubleSandboxOption",
+            SandboxKind::Integer { .. } => "zombie.SandboxOptions$IntegerSandboxOption",
+            SandboxKind::Enum { .. } => "zombie.SandboxOptions$EnumSandboxOption",
+            SandboxKind::Str { .. } => "zombie.SandboxOptions$StringSandboxOption",
+        })
+    }
+    fn java_to_string(&self) -> String {
+        format!("{}@{:x}", self.class().name, hash(self))
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// The Lua value of option `i` of SandboxOptions.instance: the same object each time.
+fn sandbox_option_object(s: &Rc<JavaStatics>, i: usize) -> Object {
+    let o = s
+        .state
+        .sandbox_option_objects
+        .borrow_mut()
+        .entry(i)
+        .or_insert_with(|| Rc::new(SandboxOptionObject(i)))
+        .clone();
+    Object::Userdata(o)
+}
+
+/// SandboxOptions.instance's options for a SandboxOptions receiver; another SandboxOptions object (made by
+/// `SandboxOptions.new()`) is not ported here.
+fn with_sandbox_instance(
+    s: &Rc<JavaStatics>,
+    cf: &FrameRef,
+    f: impl FnOnce(&crate::zombie::sandbox_options::SandboxOptions) -> Ret,
+) -> Ret {
+    let instance = s.state.sandbox_options.borrow().clone().ok_or_else(npe)?;
+    let receiver = super::exposed_methods::this::<SandboxOptionsObject>(cf)?;
+    let same = receiver
+        .as_any()
+        .downcast_ref::<SandboxOptionsObject>()
+        .is_some_and(|r| std::ptr::eq(r, &*instance));
+    if !same {
+        return Err(Fail::Lua(Throwable::runtime(
+            "not ported: the options of a SandboxOptions other than SandboxOptions.instance",
+        )));
+    }
+    let options = instance.0.borrow();
+    f(&options)
+}
+
+/// Runs `f` on a sandbox option receiver: SandboxOptions.instance and the option's index.
+fn with_sandbox_option(
+    s: &Rc<JavaStatics>,
+    cf: &FrameRef,
+    f: impl FnOnce(&crate::zombie::sandbox_options::SandboxOptions, usize) -> Ret,
+) -> Ret {
+    let i = with_this!(cf, SandboxOptionObject, o, o.0);
+    let instance = s.state.sandbox_options.borrow().clone().ok_or_else(npe)?;
+    let options = instance.0.borrow();
+    f(&options, i)
+}
+
+/// The methods every sandbox option class has (from ConfigOption and SandboxOptions.SandboxOption).
+fn sandbox_option_method(name: &str) -> Option<Imp> {
+    Some(match name {
+        "asConfigOption" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, SandboxOptionObject, _o, ret(cf, cf.get(0)))
+        },
+        "getName" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |_, i| ret_str(cf, Some(OPTIONS[i].name)))
+        },
+        "getType" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |o, i| ret_str(cf, Some(o.get_type(i))))
+        },
+        "getValueAsString" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |o, i| ret_str(cf, Some(&o.value_as_string(i))))
+        },
+        // isCustom: only CustomSandboxOptions (mods) sets it
+        "isCustom" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |_, _| ret(cf, Object::Boolean(false)))
+        },
+        // getPageName: only setPageName (custom options) sets it
+        "getPageName" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |_, _| ret(cf, Object::Nil))
+        },
+        "getDefaultValue" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |o, i| match o.default_value(i) {
+                SandboxValue::Boolean(b) => ret(cf, Object::Boolean(*b)),
+                SandboxValue::Double(d) => ret(cf, Object::Number(*d)),
+                SandboxValue::Integer(v) => ret_int(cf, *v),
+                SandboxValue::Str(v) => ret_str(cf, Some(v)),
+            })
+        },
+        "getTranslatedName" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            let i = with_this!(cf, SandboxOptionObject, o, o.0);
+            let instance = s.state.sandbox_options.borrow().clone().ok_or_else(npe)?;
+            let name = with_translator(s, |t| instance.0.borrow().get_translated_name(i, t))?;
+            ret_str(cf, Some(&name))
+        },
+        "getTooltip" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            let i = with_this!(cf, SandboxOptionObject, o, o.0);
+            let instance = s.state.sandbox_options.borrow().clone().ok_or_else(npe)?;
+            let tip = with_translator(s, |t| instance.0.borrow().get_tooltip(i, t))?;
+            ret_str(cf, tip.as_deref())
+        },
+        _ => return None,
+    })
+}
+
+/// The value of a server option class's methods: every ServerOptions$*ServerOption.
+const SERVER_OPTION_CLASSES: [&str; 6] = [
+    "zombie.network.ServerOptions$BooleanServerOption",
+    "zombie.network.ServerOptions$DoubleServerOption",
+    "zombie.network.ServerOptions$IntegerServerOption",
+    "zombie.network.ServerOptions$EnumServerOption",
+    "zombie.network.ServerOptions$StringServerOption",
+    "zombie.network.ServerOptions$TextServerOption",
+];
+
+/// The methods every server option class has (from ConfigOption and ServerOptions.ServerOption).
+fn server_option_method(name: &str) -> Option<Imp> {
+    Some(match name {
+        // asConfigOption: the option itself
+        "asConfigOption" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ServerOptionObject, _o, ret(cf, cf.get(0)))
+        },
+        "getName" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_server_option(cf, |o, _| ret_str(cf, Some(o.def.name)))
+        },
+        "getType" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_server_option(cf, |o, _| ret_str(cf, Some(o.get_type())))
+        },
+        "getValueAsString" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_server_option(cf, |o, _| ret_str(cf, Some(&o.get_value_as_string())))
+        },
+        // getDefaultValue: boolean, double, int (a Lua number) or String
+        "getDefaultValue" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_server_option(cf, |o, _| match &o.default {
+                ServerValue::Boolean(b) => ret(cf, Object::Boolean(*b)),
+                ServerValue::Double(d) => ret(cf, Object::Number(*d)),
+                ServerValue::Integer(i) => ret_int(cf, *i),
+                ServerValue::Str(v) => ret_str(cf, Some(v)),
+            })
+        },
+        "getTooltip" => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            let (options, index) =
+                with_this!(cf, ServerOptionObject, o, (o.options.clone(), o.index));
+            let tip = with_translator(s, |t| options.borrow().options[index].get_tooltip(t))?;
+            ret_str(cf, tip.as_deref())
+        },
+        _ => return None,
+    })
+}
+
 pub fn global(name: &str) -> Option<Imp> {
     Some(match name {
         // Texture.getSharedTexture: the startup's packs and the game folder's files (null without the startup, as
@@ -174,11 +442,40 @@ pub fn global(name: &str) -> Option<Imp> {
     })
 }
 
-pub fn static_method(_class: &str, _name: &str) -> Option<Imp> {
-    None
+pub fn static_method(class: &str, name: &str) -> Option<Imp> {
+    Some(match (class, name) {
+        // ServerOptions(): its random defaults come from Rand (the startup's RandStandard)
+        ("zombie.network.ServerOptions", "new") => |s, _, cf, n| {
+            want_args(n, false, 0)?;
+            let Some(client) = s.state.client.borrow().clone() else {
+                return Err(Fail::Lua(Throwable::runtime(
+                    "not ported: zombie.network.ServerOptions.new",
+                )));
+            };
+            let options = ServerOptions::new(&mut client.rand_standard.borrow_mut());
+            ret(
+                cf,
+                Object::Userdata(Rc::new(ServerOptionsObject {
+                    options: Rc::new(RefCell::new(options)),
+                    objects: RefCell::new(Vec::new()),
+                })),
+            )
+        },
+        _ => return None,
+    })
 }
 
 pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if class.starts_with("zombie.SandboxOptions$") {
+        if let Some(f) = sandbox_option_method(name) {
+            return Some(f);
+        }
+    }
+    if SERVER_OPTION_CLASSES.contains(&class) {
+        if let Some(f) = server_option_method(name) {
+            return Some(f);
+        }
+    }
     Some(match (class, name) {
         // ---- TextManager: the fonts of TextManager.Init (none before it: the NullPointerException) ----
         ("zombie.ui.TextManager", "getFontFromEnum") => |s, _, cf, n| {
@@ -279,6 +576,142 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 _ => Err(Fail::Lua(Throwable::runtime("not ported: Item.useDelta"))),
             })
         },
+        // ---- SandboxOptions: the options of SandboxOptions.instance ----
+        ("zombie.SandboxOptions", "getNumOptions") => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_instance(s, cf, |o| ret_int(cf, o.get_num_options() as i32))
+        },
+        // getOptionByIndex: ArrayList.get (IndexOutOfBoundsException outside the list)
+        ("zombie.SandboxOptions", "getOptionByIndex") => |s, _, cf, n| {
+            want_args(n, true, 1)?;
+            let i = int_arg(cf, 1)?;
+            with_sandbox_instance(s, cf, |o| {
+                let len = o.get_num_options();
+                if i < 0 || i as usize >= len {
+                    return Err(Fail::Java(Throwable::Java {
+                        class: "java.lang.IndexOutOfBoundsException",
+                        message: Some(format!("Index {i} out of bounds for length {len}")),
+                    }));
+                }
+                Ok(0)
+            })?;
+            ret(cf, sandbox_option_object(s, i as usize))
+        },
+        ("zombie.SandboxOptions", "getOptionByName") => |s, _, cf, n| {
+            want_args(n, true, 1)?;
+            let name = string_arg(cf, 1)?;
+            let mut found = None;
+            with_sandbox_instance(s, cf, |o| {
+                found = name.and_then(|name| o.get_option_by_name(&name));
+                Ok(0)
+            })?;
+            match found {
+                Some(i) => ret(cf, sandbox_option_object(s, i)),
+                None => ret(cf, Object::Nil),
+            }
+        },
+        // getFirstYear: 1993
+        ("zombie.SandboxOptions", "getFirstYear") => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_instance(s, cf, |_| Ok(0))?;
+            ret_int(cf, 1993)
+        },
+        ("zombie.SandboxOptions$EnumSandboxOption", "getNumValues") => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |o, i| ret_int(cf, o.get_num_values(i).unwrap_or(0)))
+        },
+        ("zombie.SandboxOptions$EnumSandboxOption", "getValueTranslationByIndex") => {
+            |s, _, cf, n| {
+                want_args(n, true, 1)?;
+                let index = int_arg(cf, 1)?;
+                let i = with_this!(cf, SandboxOptionObject, o, o.0);
+                let instance = s.state.sandbox_options.borrow().clone().ok_or_else(npe)?;
+                let client = s.state.client.borrow().clone().ok_or_else(npe)?;
+                let r = {
+                    let mut t = client.translator.borrow_mut();
+                    instance
+                        .0
+                        .borrow()
+                        .get_value_translation_by_index(i, index, false, &mut t)
+                };
+                match r {
+                    Ok(v) => ret_str(cf, v.as_deref()),
+                    Err(e) if e == "java.lang.ArrayIndexOutOfBoundsException" => {
+                        Err(Fail::Java(Throwable::Java {
+                            class: "java.lang.ArrayIndexOutOfBoundsException",
+                            message: None,
+                        }))
+                    }
+                    Err(e) => Err(Fail::Lua(Throwable::runtime(e))),
+                }
+            }
+        }
+        // StringConfigOption.getValue
+        ("zombie.SandboxOptions$StringSandboxOption", "getValue") => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_sandbox_option(s, cf, |o, i| ret_str(cf, Some(&o.value_as_string(i))))
+        },
+        // ---- ServerOptions ----
+        ("zombie.network.ServerOptions", "getNumOptions") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ServerOptionsObject, o, {
+                let len = o.options.borrow().get_num_options();
+                ret_int(cf, len as i32)
+            })
+        },
+        // getOptionByIndex: ArrayList.get (IndexOutOfBoundsException outside the list)
+        ("zombie.network.ServerOptions", "getOptionByIndex") => |_, _, cf, n| {
+            want_args(n, true, 1)?;
+            let i = int_arg(cf, 1)?;
+            with_this!(cf, ServerOptionsObject, o, {
+                let len = o.options.borrow().get_num_options();
+                if i < 0 || i as usize >= len {
+                    return Err(Fail::Java(Throwable::Java {
+                        class: "java.lang.IndexOutOfBoundsException",
+                        message: Some(format!("Index {i} out of bounds for length {len}")),
+                    }));
+                }
+                ret(cf, o.option(i as usize))
+            })
+        },
+        ("zombie.network.ServerOptions", "getOptionByName") => |_, _, cf, n| {
+            want_args(n, true, 1)?;
+            let name = string_arg(cf, 1)?;
+            with_this!(cf, ServerOptionsObject, o, {
+                let i = name.and_then(|name| o.options.borrow().get_option_by_name(&name));
+                match i {
+                    Some(i) => ret(cf, o.option(i)),
+                    None => ret(cf, Object::Nil),
+                }
+            })
+        },
+        ("zombie.network.ServerOptions$EnumServerOption", "getNumValues") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_server_option(cf, |o, _| ret_int(cf, o.get_num_values().unwrap_or(0)))
+        },
+        ("zombie.network.ServerOptions$EnumServerOption", "getValueTranslationByIndex") => {
+            |s, _, cf, n| {
+                want_args(n, true, 1)?;
+                let index = int_arg(cf, 1)?;
+                let (options, i) =
+                    with_this!(cf, ServerOptionObject, o, (o.options.clone(), o.index));
+                let r = {
+                    let client = s.state.client.borrow().clone().ok_or_else(npe)?;
+                    let mut t = client.translator.borrow_mut();
+                    options.borrow().options[i].get_value_translation_by_index(&mut t, index)
+                };
+                match r {
+                    Ok(v) => ret_str(cf, v.as_deref()),
+                    Err(e) if e == "java.lang.ArrayIndexOutOfBoundsException" => {
+                        Err(Fail::Java(Throwable::Java {
+                            class: "java.lang.ArrayIndexOutOfBoundsException",
+                            message: None,
+                        }))
+                    }
+                    Err(e) => Err(Fail::Lua(Throwable::runtime(e))),
+                }
+            }
+        }
         // ---- GameMode: its strings, made from the id in the constructor ----
         ("zombie.core.GameMode", "getTitle") => |_, _, cf, n| {
             want_args(n, true, 0)?;

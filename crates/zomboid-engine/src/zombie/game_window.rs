@@ -9,12 +9,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::core::core::get_option_font_size_real;
+use super::core::random::rand_abstract::RandAbstract;
 use super::core::textures::texture::Textures;
 use super::core::translator::Translator;
 use super::lua::exposed_methods::CORE_HEIGHT;
 use super::scripting::script_manager::{BucketIndex, ScriptManager};
 use super::ui::text_manager::TextManager;
 use super::zomboid_file_system::ZomboidFileSystem;
+use crate::org::uncommons::maths::random::cellular_automaton_rng::CellularAutomatonRng;
 
 /// What the startup steps leave that the Lua state reads.
 pub struct ClientStartup {
@@ -32,7 +34,15 @@ pub struct ClientStartup {
     pub item_by_full_type: HashMap<String, usize>,
     /// Texture's and GameWindow's texture statics (the packs' index, the shared table).
     pub textures: RefCell<Textures>,
+    /// Rand (RandStandard.INSTANCE) and RandLua.INSTANCE after initShared's `init()`, with the fixed seeds.
+    pub rand_standard: RefCell<RandAbstract<CellularAutomatonRng>>,
+    pub rand_lua: RefCell<RandAbstract<CellularAutomatonRng>>,
 }
+
+/// The seeds of RandStandard and RandLua: the original's come from SecureRandom (PZSeedGenerator); LuaGameProbe
+/// gives both generators these fixed seeds after initShared's `init()`, and so does the port.
+pub const RAND_STANDARD_SEED: [u8; 4] = [0, 0, 0, 1];
+pub const RAND_LUA_SEED: [u8; 4] = [0, 0, 0, 2];
 
 /// Core's options the startup reads, at their defaults (no options.ini on a fresh cache folder).
 const OPTION_FONT_SIZE: i32 = 6;
@@ -60,7 +70,8 @@ impl ClientStartup {
     /// mainThreadInit: `ZomboidFileSystem.instance.init()`;
     /// init: `initFonts()`, the mods (none: `getModIDs` stays empty), `Languages.instance.init()`,
     /// `Translator.language = null`, `initFonts()`, `Translator.loadFiles()`;
-    /// initShared: `ScriptManager.instance.Load()`.
+    /// initShared: the UI texture packs, `ScriptManager.instance.Load()`, RandStandard/RandLua `init()` (seeded, see
+    /// RAND_STANDARD_SEED).
     /// LuaManager.init runs between init and initShared; nothing of initShared reaches the Lua state before
     /// LoadDirBase, so the caller makes the Lua state after this.
     pub fn init(root: &Path) -> Result<ClientStartup, String> {
@@ -101,6 +112,10 @@ impl ClientStartup {
             item_index,
             item_by_full_type,
             textures: RefCell::new(textures),
+            rand_standard: RefCell::new(RandAbstract::new(CellularAutomatonRng::new(
+                RAND_STANDARD_SEED,
+            ))),
+            rand_lua: RefCell::new(RandAbstract::new(CellularAutomatonRng::new(RAND_LUA_SEED))),
         })
     }
 

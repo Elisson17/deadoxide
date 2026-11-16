@@ -12,6 +12,7 @@ pub mod input;
 pub mod inventory;
 pub mod iso;
 pub mod lua;
+pub mod network;
 pub mod pathfind;
 pub mod persistent_outfits;
 pub mod radio;
