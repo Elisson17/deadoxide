@@ -43,6 +43,7 @@ fn main() {
         Some("entitysprites") if a.len() == 3 => entitysprites(Path::new(&a[2])),
         Some("items") if a.len() == 4 => items(Path::new(&a[2]), Path::new(&a[3])),
         Some("recipes") if a.len() == 3 => recipes(Path::new(&a[2])),
+        Some("vehicles") if a.len() == 3 => vehicles(Path::new(&a[2])),
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -2148,6 +2149,551 @@ pub fn recipes(root: &Path) -> Result<String, String> {
     Ok(sb)
 }
 
+/// zombie.scripting.objects.VehicleScript / VehicleTemplate as the server loads them, pairs with VehiclesProbe.java:
+/// every vehicle script sorted by full name, then every vehicle template sorted by full type with the script its
+/// getScript() built (if any); every field in declaration order, one line each.
+pub fn vehicles(root: &Path) -> Result<String, String> {
+    use zomboid_engine::org::joml::vector2f::Vector2f;
+    use zomboid_engine::org::joml::vector3f::Vector3f;
+    use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::{KahluaTable, LuaValue};
+    use zomboid_engine::zombie::core::immutable_color::ImmutableColor;
+    use zomboid_engine::zombie::scripting::objects::vehicle_script::{
+        Anim, Area, Model, Part, Passenger, PhysicsShape, Position, Skin, SwitchSeat,
+        VehicleScript, Wheel,
+    };
+    use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
+    /// VehiclesProbe.esc: '\\', tab, LF, CR and every UTF-16 unit outside 0x20..0x7e escaped.
+    fn esc(s: Option<&str>) -> String {
+        let Some(s) = s else {
+            return "null".into();
+        };
+        let mut sb = String::new();
+        for u in s.encode_utf16() {
+            match u {
+                0x5c => sb.push_str("\\\\"),
+                0x09 => sb.push_str("\\t"),
+                0x0a => sb.push_str("\\n"),
+                0x0d => sb.push_str("\\r"),
+                0x20..=0x7e => sb.push(char::from(u as u8)),
+                _ => {
+                    let _ = write!(sb, "\\u{u:04x}");
+                }
+            }
+        }
+        sb
+    }
+    fn o(s: &Option<String>) -> String {
+        esc(s.as_deref())
+    }
+    fn f(x: f32) -> String {
+        java::float_to_string(x)
+    }
+    fn v3(v: &Vector3f) -> String {
+        format!("({}, {}, {})", f(v.x), f(v.y), f(v.z))
+    }
+    fn v2(v: &Vector2f) -> String {
+        format!("({}, {})", f(v.x), f(v.y))
+    }
+    fn color(c: &Option<ImmutableColor>) -> String {
+        match c {
+            None => "null".into(),
+            Some(c) => format!("rgba({}, {}, {}, {})", f(c.r), f(c.g), f(c.b), f(c.a)),
+        }
+    }
+    fn floats(v: &[f32]) -> String {
+        let l: Vec<String> = v.iter().map(|x| f(*x)).collect();
+        format!("[{}]", l.join(", "))
+    }
+    fn strs(v: &[String]) -> String {
+        let l: Vec<String> = v.iter().map(|x| esc(Some(x))).collect();
+        format!("[{}]", l.join(", "))
+    }
+    fn ostrs(v: &Option<Vec<String>>) -> String {
+        v.as_ref().map_or("null".into(), |v| strs(v))
+    }
+    /// VehiclesProbe.val of a Set: the escaped elements, sorted.
+    fn set(v: &[String]) -> String {
+        let mut l: Vec<String> = v.iter().map(|x| esc(Some(x))).collect();
+        l.sort();
+        format!("[{}]", l.join(", "))
+    }
+    /// VehiclesProbe.val of a Map: "k=v" entries, sorted.
+    fn map(v: &[(String, String)]) -> String {
+        let mut l: Vec<String> = v
+            .iter()
+            .map(|(k, x)| format!("{}={}", esc(Some(k)), esc(Some(x))))
+            .collect();
+        l.sort();
+        format!("{{{}}}", l.join(", "))
+    }
+    /// VehiclesProbe.table: "n:" + Double.toString or "s:" + the escaped key, "=", the value; sorted.
+    fn table(t: &KahluaTable) -> String {
+        let mut l: Vec<String> = t
+            .entries
+            .iter()
+            .map(|(k, v)| {
+                let ks = match k {
+                    LuaValue::Number(d) => format!("n:{}", java::double_to_string(*d)),
+                    LuaValue::String(s) => format!("s:{}", esc(Some(s))),
+                    LuaValue::Boolean(b) => format!("s:{b}"),
+                    LuaValue::Table(_) => "s:table".into(),
+                };
+                let vs = match v {
+                    LuaValue::String(s) => esc(Some(s)),
+                    LuaValue::Number(d) => java::double_to_string(*d),
+                    LuaValue::Boolean(b) => b.to_string(),
+                    LuaValue::Table(t) => table(t),
+                };
+                format!("{ks}={vs}")
+            })
+            .collect();
+        l.sort();
+        format!("{{{}}}", l.join(", "))
+    }
+    fn line(sb: &mut String, path: &str, field: &str, value: &str) {
+        let _ = writeln!(sb, "{path}\t{field}\t{value}");
+    }
+    /// VehiclesProbe.dump of a list of objects: "[]" when empty, else "size N" and one block per element.
+    fn objs<T>(
+        sb: &mut String,
+        path: &str,
+        field: &str,
+        list: &[T],
+        each: fn(&mut String, &str, &T),
+    ) {
+        if list.is_empty() {
+            line(sb, path, field, "[]");
+            return;
+        }
+        line(sb, path, field, &format!("size {}", list.len()));
+        for (i, x) in list.iter().enumerate() {
+            each(sb, &format!("{path}\t{field}[{i}]"), x);
+        }
+    }
+    fn oobjs<T>(
+        sb: &mut String,
+        path: &str,
+        field: &str,
+        list: &Option<Vec<T>>,
+        each: fn(&mut String, &str, &T),
+    ) {
+        match list {
+            None => line(sb, path, field, "null"),
+            Some(l) => objs(sb, path, field, l, each),
+        }
+    }
+    fn model(sb: &mut String, p: &str, m: &Model) {
+        line(sb, p, "id", &o(&m.id));
+        line(sb, p, "file", &o(&m.file));
+        line(sb, p, "scale", &f(m.scale));
+        line(sb, p, "offset", &v3(&m.offset));
+        line(sb, p, "rotate", &v3(&m.rotate));
+        line(sb, p, "attachmentNameParent", &o(&m.attachment_name_parent));
+        line(sb, p, "attachmentNameSelf", &o(&m.attachment_name_self));
+        line(
+            sb,
+            p,
+            "ignoreVehicleScale",
+            &m.ignore_vehicle_scale.to_string(),
+        );
+    }
+    fn anim(sb: &mut String, p: &str, a: &Anim) {
+        line(sb, p, "id", &o(&a.id));
+        line(sb, p, "anim", &o(&a.anim));
+        line(sb, p, "rate", &f(a.rate));
+        line(sb, p, "animate", &a.animate.to_string());
+        line(sb, p, "loop", &a.r#loop.to_string());
+        line(sb, p, "reverse", &a.reverse.to_string());
+        line(sb, p, "offset", &v3(&a.offset));
+        line(sb, p, "angle", &v3(&a.angle));
+        line(sb, p, "sound", &o(&a.sound));
+    }
+    fn switch_seat(sb: &mut String, p: &str, s: &SwitchSeat) {
+        line(sb, p, "id", &o(&s.id));
+        line(sb, p, "seat", &s.seat.to_string());
+        line(sb, p, "anim", &o(&s.anim));
+        line(sb, p, "rate", &f(s.rate));
+        line(sb, p, "sound", &o(&s.sound));
+    }
+    fn position(sb: &mut String, p: &str, x: &Position) {
+        line(sb, p, "id", &o(&x.id));
+        line(sb, p, "offset", &v3(&x.offset));
+        line(sb, p, "rotate", &v3(&x.rotate));
+        line(sb, p, "area", &o(&x.area));
+    }
+    fn passenger(sb: &mut String, p: &str, x: &Passenger) {
+        line(sb, p, "id", &o(&x.id));
+        objs(sb, p, "anims", &x.anims, anim);
+        objs(sb, p, "switchSeats", &x.switch_seats, switch_seat);
+        line(sb, p, "hasRoof", &x.has_roof.to_string());
+        line(sb, p, "showPassenger", &x.show_passenger.to_string());
+        line(sb, p, "door", &o(&x.door));
+        line(sb, p, "door2", &o(&x.door2));
+        line(sb, p, "area", &o(&x.area));
+        objs(sb, p, "positions", &x.positions, position);
+    }
+    fn physics(sb: &mut String, p: &str, x: &PhysicsShape) {
+        line(sb, p, "type", &x.r#type.to_string());
+        line(sb, p, "offset", &v3(&x.offset));
+        line(sb, p, "rotate", &v3(&x.rotate));
+        line(sb, p, "extents", &v3(&x.extents));
+        line(sb, p, "radius", &f(x.radius));
+        line(sb, p, "physicsShapeScript", &o(&x.physics_shape_script));
+    }
+    fn wheel(sb: &mut String, p: &str, x: &Wheel) {
+        line(sb, p, "id", &o(&x.id));
+        line(sb, p, "model", &o(&x.model));
+        line(sb, p, "front", &x.front.to_string());
+        line(sb, p, "offset", &v3(&x.offset));
+        line(sb, p, "radius", &f(x.radius));
+        line(sb, p, "width", &f(x.width));
+    }
+    fn skin(sb: &mut String, p: &str, x: &Skin) {
+        line(sb, p, "texture", &o(&x.texture));
+        line(sb, p, "textureRust", &o(&x.texture_rust));
+        line(sb, p, "textureMask", &o(&x.texture_mask));
+        line(sb, p, "textureLights", &o(&x.texture_lights));
+        line(
+            sb,
+            p,
+            "textureDamage1Overlay",
+            &o(&x.texture_damage1_overlay),
+        );
+        line(sb, p, "textureDamage1Shell", &o(&x.texture_damage1_shell));
+        line(
+            sb,
+            p,
+            "textureDamage2Overlay",
+            &o(&x.texture_damage2_overlay),
+        );
+        line(sb, p, "textureDamage2Shell", &o(&x.texture_damage2_shell));
+        line(sb, p, "textureShadow", &o(&x.texture_shadow));
+        // The Texture objects, never loaded on a server.
+        for t in [
+            "textureData",
+            "textureDataRust",
+            "textureDataMask",
+            "textureDataLights",
+            "textureDataDamage1Overlay",
+            "textureDataDamage1Shell",
+            "textureDataDamage2Overlay",
+            "textureDataDamage2Shell",
+            "textureDataShadow",
+        ] {
+            line(sb, p, t, "null");
+        }
+    }
+    fn area(sb: &mut String, p: &str, x: &Area) {
+        line(sb, p, "id", &o(&x.id));
+        line(sb, p, "x", &f(x.x));
+        line(sb, p, "y", &f(x.y));
+        line(sb, p, "w", &f(x.w));
+        line(sb, p, "h", &f(x.h));
+    }
+    fn part(sb: &mut String, p: &str, x: &Part) {
+        line(sb, p, "id", &o(&x.id));
+        line(sb, p, "parent", &o(&x.parent));
+        line(sb, p, "itemType", &ostrs(&x.item_type));
+        match &x.container {
+            None => line(sb, p, "container", "null"),
+            Some(c) => {
+                line(sb, p, "container", "object");
+                let q = format!("{p}\tcontainer");
+                line(sb, &q, "capacity", &c.capacity.to_string());
+                line(sb, &q, "seat", &c.seat.to_string());
+                line(sb, &q, "seatId", &o(&c.seat_id));
+                line(sb, &q, "luaTest", &o(&c.lua_test));
+                line(sb, &q, "contentType", &o(&c.content_type));
+                line(
+                    sb,
+                    &q,
+                    "conditionAffectsCapacity",
+                    &c.condition_affects_capacity.to_string(),
+                );
+                line(sb, &q, "soundMap", &map(&c.sound_map));
+            }
+        }
+        line(sb, p, "area", &o(&x.area));
+        line(sb, p, "mechanicArea", &o(&x.mechanic_area));
+        line(sb, p, "wheel", &o(&x.wheel));
+        match &x.tables {
+            None => line(sb, p, "tables", "null"),
+            Some(t) if t.is_empty() => line(sb, p, "tables", "{}"),
+            Some(t) => {
+                line(sb, p, "tables", &format!("size {}", t.len()));
+                let mut keys: Vec<&(Option<String>, KahluaTable)> = t.iter().collect();
+                keys.sort_by(|a, b| {
+                    java::string_compare_to(
+                        a.0.as_deref().unwrap_or(""),
+                        b.0.as_deref().unwrap_or(""),
+                    )
+                });
+                for (k, v) in keys {
+                    let _ = writeln!(sb, "{p}\ttables[{}]\t{}", o(k), table(v));
+                }
+            }
+        }
+        line(
+            sb,
+            p,
+            "luaFunctions",
+            &x.lua_functions.as_ref().map_or("null".into(), |m| map(m)),
+        );
+        oobjs(sb, p, "models", &x.models, model);
+        line(
+            sb,
+            p,
+            "setAllModelsVisible",
+            &x.set_all_models_visible.to_string(),
+        );
+        line(
+            sb,
+            p,
+            "door",
+            if x.door.is_some() { "object" } else { "null" },
+        );
+        match &x.window {
+            None => line(sb, p, "window", "null"),
+            Some(w) => {
+                line(sb, p, "window", "object");
+                line(
+                    sb,
+                    &format!("{p}\twindow"),
+                    "openable",
+                    &w.openable.to_string(),
+                );
+            }
+        }
+        oobjs(sb, p, "anims", &x.anims, anim);
+        line(sb, p, "category", &o(&x.category));
+        line(sb, p, "specificItem", &x.specific_item.to_string());
+        line(
+            sb,
+            p,
+            "mechanicRequireKey",
+            &x.mechanic_require_key.to_string(),
+        );
+        line(sb, p, "repairMechanic", &x.repair_mechanic.to_string());
+        line(sb, p, "hasLightsRear", &x.has_lights_rear.to_string());
+        line(sb, p, "durability", &f(x.durability));
+    }
+    fn base(sb: &mut String, p: &str, s: &VehicleScript) {
+        let _ = writeln!(
+            sb,
+            "{p}\tmodule\t{}\tenabled\t{}\tdebugOnly\t{}\tscriptVersion\t{:x}\tbodies\t{}",
+            esc(Some(&s.module)),
+            s.enabled,
+            s.debug_only,
+            s.script_version as u64,
+            s.loaded_script_bodies.len() * 2
+        );
+    }
+    fn dump(sb: &mut String, p: &str, s: &VehicleScript) {
+        line(sb, p, "fileName", &o(&s.file_name));
+        line(sb, p, "name", &o(&s.name));
+        objs(sb, p, "models", &s.models, model);
+        if s.attachments.is_empty() {
+            line(sb, p, "attachments", "[]");
+        } else {
+            line(
+                sb,
+                p,
+                "attachments",
+                &format!("size {}", s.attachments.len()),
+            );
+            for (i, a) in s.attachments.iter().enumerate() {
+                let q = format!("{p}\tattachments[{i}]");
+                line(sb, &q, "owner", if a.owned { "self" } else { "null" });
+                line(sb, &q, "id", &esc(Some(&a.id)));
+                line(sb, &q, "offset", &v3(&a.offset));
+                line(sb, &q, "rotate", &v3(&a.rotate));
+                line(sb, &q, "scale", &f(a.scale));
+                line(sb, &q, "bone", &o(&a.bone));
+                line(sb, &q, "canAttach", &ostrs(&a.can_attach));
+                line(sb, &q, "zoffset", &f(a.zoffset));
+                line(sb, &q, "updateConstraint", &a.update_constraint.to_string());
+            }
+        }
+        for (k, v) in [("mass", s.mass)] {
+            line(sb, p, k, &f(v));
+        }
+        line(sb, p, "centerOfMassOffset", &v3(&s.center_of_mass_offset));
+        for (k, v) in [
+            ("engineForce", s.engine_force),
+            ("engineIdleSpeed", s.engine_idle_speed),
+            ("steeringIncrement", s.steering_increment),
+            ("steeringClamp", s.steering_clamp),
+            ("steeringClampMax", s.steering_clamp_max),
+            ("wheelFriction", s.wheel_friction),
+            ("stoppingMovementForce", s.stopping_movement_force),
+            ("animalTrailerSize", s.animal_trailer_size),
+            ("suspensionStiffness", s.suspension_stiffness),
+            ("suspensionDamping", s.suspension_damping),
+            ("suspensionCompression", s.suspension_compression),
+            ("suspensionRestLength", s.suspension_rest_length),
+            ("maxSuspensionTravelCm", s.max_suspension_travel_cm),
+            ("rollInfluence", s.roll_influence),
+        ] {
+            line(sb, p, k, &f(v));
+        }
+        line(sb, p, "extents", &v3(&s.extents));
+        line(sb, p, "shadowExtents", &v2(&s.shadow_extents));
+        line(sb, p, "shadowOffset", &v2(&s.shadow_offset));
+        line(
+            sb,
+            p,
+            "hadShadowOExtents",
+            &s.had_shadow_o_extents.to_string(),
+        );
+        line(sb, p, "hadShadowOffset", &s.had_shadow_offset.to_string());
+        line(sb, p, "extentsOffset", &v2(&s.extents_offset));
+        line(sb, p, "physicsChassisShape", &v3(&s.physics_chassis_shape));
+        objs(sb, p, "physicsShapes", &s.physics_shapes, physics);
+        objs(sb, p, "wheels", &s.wheels, wheel);
+        objs(sb, p, "crawlThroughWheels", &s.crawl_through_wheels, wheel);
+        objs(sb, p, "passengers", &s.passengers, passenger);
+        line(sb, p, "maxSpeed", &f(s.max_speed));
+        line(
+            sb,
+            p,
+            "useChassisPhysicsCollision",
+            &s.use_chassis_physics_collision.to_string(),
+        );
+        line(sb, p, "maxSpeedReverse", &f(s.max_speed_reverse));
+        line(sb, p, "isSmallVehicle", &s.is_small_vehicle.to_string());
+        for (k, v) in [
+            ("frontEndHealth", s.front_end_health),
+            ("rearEndHealth", s.rear_end_health),
+            ("storageCapacity", s.storage_capacity),
+            ("engineLoudness", s.engine_loudness),
+            ("engineQuality", s.engine_quality),
+            ("seats", s.seats),
+            ("mechanicType", s.mechanic_type),
+            ("engineRepairLevel", s.engine_repair_level),
+        ] {
+            line(sb, p, k, &v.to_string());
+        }
+        for (k, v) in [
+            ("playerDamageProtection", s.player_damage_protection),
+            ("forcedHue", s.forced_hue),
+            ("forcedSat", s.forced_sat),
+            ("forcedVal", s.forced_val),
+        ] {
+            line(sb, p, k, &f(v));
+        }
+        line(sb, p, "leftSirenCol", &color(&s.left_siren_col));
+        line(sb, p, "rightSirenCol", &color(&s.right_siren_col));
+        line(sb, p, "engineRpmType", &esc(Some(&s.engine_rpm_type)));
+        line(sb, p, "offroadEfficiency", &f(s.offroad_efficiency));
+        line(sb, p, "crawlOffsets", &floats(&s.crawl_offsets));
+        line(sb, p, "zombieType", &ostrs(&s.zombie_type));
+        line(sb, p, "specialKeyRing", &ostrs(&s.special_key_ring));
+        line(sb, p, "notKillCrops", &s.not_kill_crops.to_string());
+        line(sb, p, "hasLighter", &s.has_lighter.to_string());
+        line(sb, p, "carMechanicsOverlay", &o(&s.car_mechanics_overlay));
+        line(sb, p, "carModelName", &o(&s.car_model_name));
+        line(
+            sb,
+            p,
+            "specialLootChance",
+            &s.special_loot_chance.to_string(),
+        );
+        line(
+            sb,
+            p,
+            "specialKeyRingChance",
+            &s.special_key_ring_chance.to_string(),
+        );
+        line(sb, p, "neverSpawnKey", &s.never_spawn_key.to_string());
+        line(sb, p, "gearRatioCount", &s.gear_ratio_count.to_string());
+        line(sb, p, "gearRatio", &floats(&s.gear_ratio));
+        line(sb, p, "textures", "object");
+        skin(sb, &format!("{p}\ttextures"), &s.textures);
+        objs(sb, p, "skins", &s.skins, skin);
+        objs(sb, p, "areas", &s.areas, area);
+        objs(sb, p, "parts", &s.parts, part);
+        line(sb, p, "hasSiren", &s.has_siren.to_string());
+        line(sb, p, "lightbar", "object");
+        let q = format!("{p}\tlightbar");
+        line(sb, &q, "enable", &s.lightbar.enable.to_string());
+        line(sb, &q, "soundSiren0", &esc(Some(&s.lightbar.sound_siren0)));
+        line(sb, &q, "soundSiren1", &esc(Some(&s.lightbar.sound_siren1)));
+        line(sb, &q, "soundSiren2", &esc(Some(&s.lightbar.sound_siren2)));
+        line(sb, p, "sound", "object");
+        let q = format!("{p}\tsound");
+        let so = &s.sound;
+        line(sb, &q, "alarmEnable", &so.alarm_enable.to_string());
+        line(sb, &q, "alarm", &strs(&so.alarm));
+        line(sb, &q, "alarmLoop", &strs(&so.alarm_loop));
+        line(sb, &q, "hornEnable", &so.horn_enable.to_string());
+        line(sb, &q, "horn", &o(&so.horn));
+        line(
+            sb,
+            &q,
+            "backSignalEnable",
+            &so.back_signal_enable.to_string(),
+        );
+        line(sb, &q, "backSignal", &o(&so.back_signal));
+        line(sb, &q, "engine", &o(&so.engine));
+        line(sb, &q, "engineStart", &o(&so.engine_start));
+        line(sb, &q, "engineTurnOff", &o(&so.engine_turn_off));
+        line(sb, &q, "handBrake", &o(&so.hand_brake));
+        line(sb, &q, "ignitionFail", &o(&so.ignition_fail));
+        line(
+            sb,
+            &q,
+            "ignitionFailNoPower",
+            &o(&so.ignition_fail_no_power),
+        );
+        line(sb, &q, "specified", &set(&so.specified));
+        line(
+            sb,
+            p,
+            "textureMaskEnable",
+            &s.texture_mask_enable.to_string(),
+        );
+    }
+
+    let m = ScriptManager::load(root)?;
+    for (n, e) in &m.vehicle_errors {
+        eprintln!("dropped {n}: {e}");
+    }
+    for l in &m.vehicle_log {
+        eprintln!("log: {l}");
+    }
+    let mut sb = String::new();
+    let mut vehicles: Vec<&VehicleScript> = m.vehicles.iter().collect();
+    vehicles.sort_by(|a, b| java::string_compare_to(&a.get_full_name(), &b.get_full_name()));
+    for v in vehicles {
+        let p = esc(Some(&v.get_full_name()));
+        base(&mut sb, &p, v);
+        dump(&mut sb, &p, v);
+    }
+    let mut templates: Vec<_> = m.vehicle_templates.iter().collect();
+    templates.sort_by(|a, b| {
+        java::string_compare_to(
+            &a.get_script_object_full_type(),
+            &b.get_script_object_full_type(),
+        )
+    });
+    for t in templates {
+        let p = format!("template:{}", esc(Some(&t.get_script_object_full_type())));
+        let _ = writeln!(
+            sb,
+            "{p}\tname\t{}\tbody\t{}\t{}\tscript\t{}",
+            esc(Some(&t.name)),
+            t.body.encode_utf16().count(),
+            java::string_hash_code(&t.body),
+            if t.script.is_some() { "built" } else { "null" }
+        );
+        if let Some(s) = &t.script {
+            base(&mut sb, &p, s);
+            dump(&mut sb, &p, s);
+        }
+    }
+    Ok(sb)
+}
+
 /// zombie.scripting.ScriptParser over crafted cases, pairs with ScriptParserProbe.java: per case the stripComments
 /// text, its parseTokens, and the tree parse() builds from the case text.
 pub fn scriptparser(cases: &Path) -> Result<String, String> {
@@ -2173,7 +2719,11 @@ pub fn scriptparser(cases: &Path) -> Result<String, String> {
     }
     fn tree(sb: &mut String, b: &Block, depth: usize) {
         // the root block's type is the original's null; a child's is never null
-        let ty = if depth == 0 { None } else { Some(b.r#type.as_str()) };
+        let ty = if depth == 0 {
+            None
+        } else {
+            Some(b.r#type.as_str())
+        };
         let _ = writeln!(
             sb,
             "B\t{depth}\t{}\t{}\tvalues\t{}\tchildren\t{}",

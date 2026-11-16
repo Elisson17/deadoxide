@@ -19,6 +19,17 @@ impl ImmutableColor {
         a: 1.0,
     };
 
+    /// zombie.core.ImmutableColor.<init>(float, float, float): each channel clamped to 0..1, alpha 1.
+    pub fn new_rgb(r: f32, g: f32, b: f32) -> Self {
+        use crate::zombie::core::math::pz_math::clamp;
+        ImmutableColor {
+            r: clamp(r, 0.0, 1.0),
+            g: clamp(g, 0.0, 1.0),
+            b: clamp(b, 0.0, 1.0),
+            a: 1.0,
+        }
+    }
+
     /// zombie.core.ImmutableColor(Color): the colour's channels; a null colour is opaque black.
     pub fn from_color(color: Option<&Color>) -> Self {
         match color {
