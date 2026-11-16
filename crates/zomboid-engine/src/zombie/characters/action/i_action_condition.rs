@@ -1,4 +1,6 @@
 //! zombie.characters.action.IActionCondition
+use super::action_state::ActionState;
+use super::action_state_container::Eval;
 use super::conditions::character_variable_condition::CharacterVariableCondition;
 use crate::zombie::util::pz_xml_util::XmlElement;
 
@@ -33,4 +35,17 @@ pub fn create_instance(node: &XmlElement) -> Result<Option<IActionCondition>, St
         "lua" => Some(IActionCondition::LuaCall),
         _ => None,
     })
+}
+
+impl IActionCondition {
+    /// IActionCondition.passes(context, state): the variable comparison; whether the event (any layer, for the state)
+    /// occurred / did not occur; `LuaCall` is false.
+    pub fn passes(&self, ctx: &Eval, state: &ActionState) -> bool {
+        match self {
+            IActionCondition::CharacterVariable(c) => c.passes(ctx),
+            IActionCondition::EventOccurred(e) => ctx.has_event_occurred(e, &state.name),
+            IActionCondition::EventNotOccurred(e) => !ctx.has_event_occurred(e, &state.name),
+            IActionCondition::LuaCall => false,
+        }
+    }
 }

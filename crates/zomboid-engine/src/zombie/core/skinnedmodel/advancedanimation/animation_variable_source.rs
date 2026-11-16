@@ -62,6 +62,43 @@ impl AnimationVariableSlot {
         }
     }
 
+    /// IAnimationVariableSlot.getValueFloat: the float, 1/0 for a bool, `PZMath.tryParseFloat(value, 0)` for a string.
+    pub fn get_value_float(&self) -> f32 {
+        match &self.value {
+            SlotValue::Bool(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            SlotValue::String(s) => string_utils::try_parse_float(s.as_deref()),
+            SlotValue::Float(f) => *f,
+        }
+    }
+
+    /// IAnimationVariableSlot.getValueBool: the bool, `value != 0` for a float, `StringUtils.tryParseBoolean` for a
+    /// string.
+    pub fn get_value_bool(&self) -> bool {
+        match &self.value {
+            SlotValue::Bool(b) => *b,
+            SlotValue::String(s) => string_utils::try_parse_boolean(s.as_deref()),
+            SlotValue::Float(f) => *f != 0.0,
+        }
+    }
+
+    /// IAnimationVariableSlot.clear (ignored when read-only): false, "" or 0.
+    pub fn clear(&mut self) {
+        if self.read_only {
+            return;
+        }
+        self.value = match self.value {
+            SlotValue::Bool(_) => SlotValue::Bool(false),
+            SlotValue::String(_) => SlotValue::String(Some(String::new())),
+            SlotValue::Float(_) => SlotValue::Float(0.0),
+        };
+    }
+
     /// IAnimationVariableSlot.getType: `AnimationVariableType` name.
     pub fn type_name(&self) -> &'static str {
         match self.value {
@@ -190,6 +227,42 @@ impl AnimationVariableSource {
         if let Some(s) = self.get_or_create(pool, key, SlotValue::Float(0.0)) {
             s.set_float(value);
         }
+    }
+
+    /// AnimationVariableSource.getVariable(AnimationVariableHandle) of the handle `AnimationVariableHandle.alloc(key)`
+    /// names: the slot whose key equals the trimmed name ignoring case (a handle exists per name ignoring case); `None`
+    /// for a blank name or no slot.
+    pub fn get_variable(&self, key: &str) -> Option<&AnimationVariableSlot> {
+        if string_utils::is_null_or_whitespace(Some(key)) {
+            return None;
+        }
+        let key = java::trim(key);
+        self.slots
+            .iter()
+            .flatten()
+            .find(|s| java::equals_ignore_case(&s.key, key))
+    }
+
+    /// AnimationVariableSource.clearVariable: `slot.clear()` of the named slot, if any.
+    pub fn clear_variable(&mut self, key: &str) {
+        if string_utils::is_null_or_whitespace(Some(key)) {
+            return;
+        }
+        let key = java::trim(key).to_string();
+        if let Some(s) = self
+            .slots
+            .iter_mut()
+            .flatten()
+            .find(|s| java::equals_ignore_case(&s.key, &key))
+        {
+            s.clear();
+        }
+    }
+
+    /// AnimationVariableSource.isEmpty: no slot was ever set (the original's flag is never raised back once cleared by
+    /// `setVariable(null)`, which nothing does).
+    pub fn is_empty(&self) -> bool {
+        self.slots.iter().all(Option::is_none)
     }
 
     /// zombie.core.skinnedmodel.advancedanimation.AnimationVariableSource.getGameVariables: the slots in handle order.

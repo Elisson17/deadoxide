@@ -13,5 +13,6 @@ pub mod anim_state;
 pub mod anim_transition;
 pub mod animation_set;
 pub mod animation_variable_reference;
+pub mod i_animation_variable_source;
 pub mod animation_variable_source;
 pub mod grapple_offset_behaviour;

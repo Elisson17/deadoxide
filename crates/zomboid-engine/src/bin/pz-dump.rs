@@ -15,6 +15,7 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
+use std::rc::Rc;
 
 use zomboid_engine::java;
 use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
@@ -70,6 +71,7 @@ fn main() {
         Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
         Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
+        Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -7954,6 +7956,223 @@ pub fn outfitrandom(root: &Path) -> Result<String, String> {
                 }
             }
         }
+    }
+    Ok(sb)
+}
+
+/// The `actioncontext` case: `ActionContextProbe`'s scenarios, run by the port. `ctx:<group>:<seed>:<ticks>` is the
+/// ActionContext of an action group with a scripted owner (see the probe for the script).
+pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    use zomboid_engine::java::Random;
+    use zomboid_engine::zombie::characters::action::action_context::ActionContext;
+    use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
+    use zomboid_engine::zombie::characters::action::conditions::character_variable_condition::Value;
+    use zomboid_engine::zombie::characters::action::i_action_condition::IActionCondition;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_node::float_compare;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
+        AnimationVariableHandlePool, AnimationVariableSlot, AnimationVariableSource,
+    };
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
+    use zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem;
+
+    struct Scripted {
+        vars: AnimationVariableSource,
+    }
+    impl IAnimationVariableSource for Scripted {
+        fn get_variable(&self, key: &str) -> Option<AnimationVariableSlot> {
+            self.vars.get_variable(key).cloned()
+        }
+    }
+    enum Opt {
+        Bool(bool),
+        Float(f32),
+        Str(String),
+    }
+    struct Var {
+        name: String,
+        options: Vec<Opt>,
+    }
+
+    let fs = ZomboidFileSystem::init(root)?;
+    let mut groups = ActionGroups::default();
+    let mut sb = String::new();
+    for spec in scenarios {
+        let p: Vec<&str> = spec.split(':').collect();
+        if p.len() != 4 || p[0] != "ctx" {
+            return Err(format!("unknown scenario {spec}"));
+        }
+        let group_name = p[1];
+        let seed: i64 = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let ticks: usize = p[3].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let group = groups.get_action_group_rc(&fs, group_name);
+        // the domain, from the group's conditions
+        let mut state_names: Vec<String> = Vec::new();
+        let mut events: BTreeSet<String> = BTreeSet::new();
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        let mut strs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut nums: BTreeMap<String, Vec<f32>> = BTreeMap::new();
+        let mut bools: BTreeSet<String> = BTreeSet::new();
+        for st in &group.states {
+            state_names.push(st.name.clone());
+            for t in &st.transitions {
+                for c in &t.conditions {
+                    match c {
+                        IActionCondition::EventOccurred(e) | IActionCondition::EventNotOccurred(e) => {
+                            events.insert(e.clone());
+                        }
+                        IActionCondition::CharacterVariable(c) => {
+                            let Some(Value::Lookup(r)) = &c.lhs_value else {
+                                continue;
+                            };
+                            if r.sub_variable_source_name.is_some() {
+                                continue;
+                            }
+                            let name = r.name.clone();
+                            names.insert(name.clone());
+                            match &c.rhs_value {
+                                Some(Value::Boolean(_)) => {
+                                    bools.insert(name);
+                                }
+                                Some(Value::Integer(i)) => {
+                                    let v = nums.entry(name).or_default();
+                                    let f = *i as f32;
+                                    if !v.iter().any(|x| float_compare(*x, f).is_eq()) {
+                                        v.push(f);
+                                    }
+                                }
+                                Some(Value::Float(f)) => {
+                                    let v = nums.entry(name).or_default();
+                                    if !v.iter().any(|x| float_compare(*x, *f).is_eq()) {
+                                        v.push(*f);
+                                    }
+                                }
+                                Some(Value::String(s)) => {
+                                    strs.entry(name).or_default().insert(s.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                        IActionCondition::LuaCall => {}
+                    }
+                }
+            }
+        }
+        let mut vars: Vec<Var> = Vec::new();
+        let mut kinds: Vec<(String, &str)> = Vec::new();
+        for name in &names {
+            let (kind, options) = if let Some(o) = strs.get(name) {
+                let mut o = o.clone();
+                o.insert(String::new());
+                o.insert("x".to_string());
+                ("string", o.into_iter().map(Opt::Str).collect())
+            } else if let Some(o) = nums.get(name) {
+                let mut o = o.clone();
+                for f in o.clone() {
+                    let g = f + 1.0;
+                    if !o.iter().any(|x| float_compare(*x, g).is_eq()) {
+                        o.push(g);
+                    }
+                }
+                for g in [0.0f32, 1.0] {
+                    if !o.iter().any(|x| float_compare(*x, g).is_eq()) {
+                        o.push(g);
+                    }
+                }
+                o.sort_by(|a, b| float_compare(*a, *b));
+                ("float", o.into_iter().map(Opt::Float).collect())
+            } else {
+                let _ = bools.contains(name);
+                ("bool", vec![Opt::Bool(true), Opt::Bool(false)])
+            };
+            kinds.push((name.clone(), kind));
+            vars.push(Var {
+                name: name.clone(),
+                options,
+            });
+        }
+        let _ = writeln!(sb, "SCENARIO {spec}");
+        let _ = writeln!(
+            sb,
+            "GROUP {group_name} states={} vars={} events={}",
+            state_names.len(),
+            vars.len(),
+            events.len()
+        );
+        let _ = write!(sb, "VARS");
+        for (v, (_, kind)) in vars.iter().zip(&kinds) {
+            let _ = write!(sb, " {}:{}/{}", v.name, kind, v.options.len());
+        }
+        sb.push('\n');
+        let _ = writeln!(
+            sb,
+            "EVENTS [{}]",
+            events.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        let mut pool = AnimationVariableHandlePool::default();
+        let mut owner = Scripted {
+            vars: AnimationVariableSource::default(),
+        };
+        let mut ctx = ActionContext::new();
+        ctx.set_group(Rc::clone(&group));
+        let _ = writeln!(
+            sb,
+            "INIT root={} prev={}",
+            ctx.get_current_state_name(),
+            ctx.peek_previous_state_name()
+        );
+        let mut r = Random::new(seed);
+        let nv = vars.len() as i32;
+        let ne = events.len() as i32;
+        let events: Vec<String> = events.into_iter().collect();
+        for t in 1..=ticks {
+            let changes = 1 + r.next_int_bound(2);
+            for _ in 0..changes {
+                if nv <= 0 {
+                    break;
+                }
+                let v = &vars[r.next_int_bound(nv) as usize];
+                let o = &v.options[r.next_int_bound(v.options.len() as i32) as usize];
+                match o {
+                    Opt::Bool(b) => owner.vars.set_variable_bool(&mut pool, &v.name, *b),
+                    Opt::Float(f) => owner.vars.set_variable_float(&mut pool, &v.name, *f),
+                    Opt::Str(s) => owner.vars.set_variable_string(&mut pool, &v.name, s),
+                }
+            }
+            if ne > 0 && r.next_int_bound(4) == 0 {
+                let e = &events[r.next_int_bound(ne) as usize];
+                if r.next_int_bound(3) == 0 {
+                    let cur = ctx.get_current_state_name();
+                    ctx.report_event_for_state(Some(&cur), e);
+                } else {
+                    ctx.report_event(e);
+                }
+            }
+            if r.next_int_bound(64) == 0 {
+                let forced = &state_names[r.next_int_bound(state_names.len() as i32) as usize];
+                let sr = ctx.find_state_ref(forced);
+                ctx.set_current_state(sr);
+            }
+            let can = &state_names[r.next_int_bound(state_names.len() as i32) as usize];
+            let changed = u8::from(ctx.update(&owner));
+            let next = ctx.peek_next_state(&owner).map(|s| s.name.clone());
+            let _ = writeln!(
+                sb,
+                "T {t} root={} child=[{}] prev={} next={} changed={changed} can({can})={}{} ev={}",
+                ctx.get_current_state_name(),
+                ctx.get_child_state_names().join(","),
+                ctx.peek_previous_state_name(),
+                next.as_deref().unwrap_or("-"),
+                u8::from(ctx.can_transition_to_state(&owner, can, true)),
+                u8::from(ctx.can_transition_to_state(&owner, can, false)),
+                if ne > 0 {
+                    u8::from(ctx.has_event_occurred(&events[t % ne as usize]))
+                } else {
+                    0
+                }
+            );
+        }
+        let _ = writeln!(sb, "END {spec}");
     }
     Ok(sb)
 }

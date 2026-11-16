@@ -1,4 +1,6 @@
 //! zombie.characters.action.ActionTransition
+use super::action_state::ActionState;
+use super::action_state_container::Eval;
 use super::i_action_condition::{create_instance, IActionCondition};
 use crate::java;
 use crate::zombie::core::math::pz_math;
@@ -77,5 +79,10 @@ impl ActionTransition {
             }
         }
         t
+    }
+
+    /// zombie.characters.action.ActionTransition.passes: every condition passes for the state.
+    pub fn passes(&self, ctx: &Eval, state: &ActionState) -> bool {
+        self.conditions.iter().all(|c| c.passes(ctx, state))
     }
 }

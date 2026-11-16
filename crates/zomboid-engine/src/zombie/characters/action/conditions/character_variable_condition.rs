@@ -1,7 +1,10 @@
 //! zombie.characters.action.conditions.CharacterVariableCondition
 use crate::java;
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
+use crate::zombie::core::skinnedmodel::advancedanimation::anim_node::float_compare;
+use crate::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
 use crate::zombie::util::pz_xml_util::XmlElement;
+use std::cmp::Ordering;
 
 /// zombie.characters.action.conditions.CharacterVariableCondition.Operator
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,5 +178,97 @@ impl CharacterVariableCondition {
         c.lhs_value = Some(parse_value(lhs, true)?);
         c.rhs_value = Some(parse_value(rhs, false)?);
         Ok(Some(c))
+    }
+
+    /// CharacterVariableCondition.resolveValue: a lookup is the variable's string (null without a slot or with a null
+    /// string) read again by `parseValue(.., false)`; another value is itself.
+    fn resolve_value(value: Option<&Value>, owner: &dyn IAnimationVariableSource) -> Option<Value> {
+        match value? {
+            Value::Lookup(reference) => {
+                let slot = reference.get_variable(owner)?;
+                let variable_value = slot.get_value_string()?;
+                parse_value(&variable_value, false).ok()
+            }
+            other => Some(other.clone()),
+        }
+    }
+
+    /// CharacterVariableCondition.resolveCompareTo
+    fn resolve_compare_to(&self, result: Ordering) -> bool {
+        match self.op {
+            Some(Operator::Equal) => result == Ordering::Equal,
+            Some(Operator::NotEqual) => result != Ordering::Equal,
+            Some(Operator::Less) => result == Ordering::Less,
+            Some(Operator::Greater) => result == Ordering::Greater,
+            Some(Operator::LessEqual) => result != Ordering::Greater,
+            Some(Operator::GreaterEqual) => result != Ordering::Less,
+            None => false,
+        }
+    }
+
+    /// CharacterVariableCondition.passes: both sides resolved against the owner; a null left side against an empty
+    /// string is `Equal` true / `NotEqual` false; two values of one class compare as that class
+    /// (`String.compareTo`, `Integer`, `Float.compareTo`, `Boolean`); an int and a float compare as floats when both
+    /// sides are lookups or neither is, else the side that is not a lookup is converted to the type of the lookup
+    /// (a float to an int by truncation when the lookup is an int); anything else, or a null side, is false.
+    pub fn passes(&self, owner: &dyn IAnimationVariableSource) -> bool {
+        let lhs = Self::resolve_value(self.lhs_value.as_ref(), owner);
+        let rhs = Self::resolve_value(self.rhs_value.as_ref(), owner);
+        if lhs.is_none() {
+            if let Some(Value::String(s)) = &rhs {
+                if s.is_empty() {
+                    match self.op {
+                        Some(Operator::Equal) => return true,
+                        Some(Operator::NotEqual) => return false,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        let (Some(lhs), Some(rhs)) = (lhs, rhs) else {
+            return false;
+        };
+        match (&lhs, &rhs) {
+            (Value::String(a), Value::String(b)) => {
+                return self.resolve_compare_to(java::string_compare_to(a, b))
+            }
+            (Value::Integer(a), Value::Integer(b)) => return self.resolve_compare_to(a.cmp(b)),
+            (Value::Float(a), Value::Float(b)) => {
+                return self.resolve_compare_to(float_compare(*a, *b))
+            }
+            (Value::Boolean(a), Value::Boolean(b)) => return self.resolve_compare_to(a.cmp(b)),
+            _ => {}
+        }
+        let numeric = |v: &Value| matches!(v, Value::Integer(_) | Value::Float(_));
+        if !(numeric(&lhs) && numeric(&rhs)) {
+            return false;
+        }
+        let as_float = |v: &Value| match v {
+            Value::Float(f) => *f,
+            Value::Integer(i) => *i as f32,
+            _ => 0.0,
+        };
+        let as_int = |v: &Value| match v {
+            Value::Float(f) => *f as i32,
+            Value::Integer(i) => *i,
+            _ => 0,
+        };
+        let lhs_was_lookup = matches!(self.lhs_value, Some(Value::Lookup(_)));
+        let rhs_was_lookup = matches!(self.rhs_value, Some(Value::Lookup(_)));
+        let rhs_is_float = matches!(rhs, Value::Float(_));
+        let lhs_is_float = matches!(lhs, Value::Float(_));
+        if lhs_was_lookup == rhs_was_lookup {
+            self.resolve_compare_to(float_compare(as_float(&lhs), as_float(&rhs)))
+        } else if lhs_was_lookup {
+            if rhs_is_float {
+                self.resolve_compare_to(float_compare(as_float(&lhs), as_float(&rhs)))
+            } else {
+                self.resolve_compare_to(as_int(&lhs).cmp(&as_int(&rhs)))
+            }
+        } else if lhs_is_float {
+            self.resolve_compare_to(float_compare(as_float(&lhs), as_float(&rhs)))
+        } else {
+            self.resolve_compare_to(as_int(&lhs).cmp(&as_int(&rhs)))
+        }
     }
 }
