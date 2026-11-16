@@ -423,15 +423,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 ret_str(cf, Some(c.get_option_controller_button_style_string()))
             )
         },
-        ("zombie.core.Core", "getOptionGamepadBindingPreset") => |_, _, cf, n| {
-            want_self_args(n, 0)?;
-            with_this!(
-                cf,
-                CoreObject,
-                c,
-                ret_str(cf, Some(&c.option_gamepad_binding_preset))
-            )
-        },
         // ---- CharacterJoypadButtonBinding ----
         ("zombie.characters.CharacterJoypadButtonBinding", "setBinding") => {
             |s, _, cf, n| set_binding(s, cf, n)

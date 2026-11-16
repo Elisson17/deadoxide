@@ -24,6 +24,7 @@ use crate::zombie::characters::attached_items::attached_locations::{
 use crate::zombie::characters::worn_items::body_locations::{
     BodyLocation, BodyLocationGroup, BodyLocations,
 };
+use crate::zombie::core::core_options::CoreOptions;
 use crate::zombie::core::textures::color_info::ColorInfo;
 use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::lua::exposer::class_named;
@@ -70,6 +71,15 @@ pub struct State {
     pub use_texture_filtering: std::cell::Cell<bool>,
     /// GameWindow.doRenderEvent (private: whether a frame fires OnRenderTick/OnPostRender).
     pub do_render_event: std::cell::Cell<bool>,
+    /// The Language objects handed to Lua (a Language is one object in Java: found again by identity) and
+    /// `Translator.availableLanguage`, the list `getAvailableLanguage` returns.
+    pub language_objects: RefCell<
+        Vec<(
+            Rc<crate::zombie::core::language::Language>,
+            Rc<super::exposed_game::LanguageObject>,
+        )>,
+    >,
+    pub available_language: RefCell<Option<Rc<ArrayListObject>>>,
     /// UIManager's element lists.
     pub ui_manager: RefCell<crate::zombie::ui::ui_manager::UIManager>,
     /// The AngelCodeFont objects handed to Lua, by font.
@@ -99,19 +109,28 @@ impl Userdata for SandboxOptionsObject {
 /// zombie.core.Core, the part the scripts reach so far: the highlight colours and the options below (at their
 /// defaults, as no options.ini is read in this state).
 pub struct CoreObject {
+    /// `options` and `fakeOptions` of the Core (`newOption`, `newFakeOption`).
+    pub options: RefCell<CoreOptions>,
+    /// objectHighlitedColor, worldItemHighlightColor, workstationHighlitedColor, goodHighlitedColor,
+    /// badHighlitedColor, targetColor, noTargetColor: the objects `getXxxColor` returns after setting them from the
+    /// option.
+    pub object_highlited_color: Rc<ColorInfo>,
+    pub world_item_highlight_color: Rc<ColorInfo>,
+    pub workstation_highlited_color: Rc<ColorInfo>,
     pub good_highlited_color: Rc<ColorInfo>,
     pub bad_highlited_color: Rc<ColorInfo>,
-    /// optionGoodHighlightColor ("0.0,1.0,0.0") and optionBadHighlightColor ("1.0,0.0,0.0")
-    pub option_good_highlight_color: [f64; 3],
-    pub option_bad_highlight_color: [f64; 3],
-    /// optionFontSize: `newOption("fontSize", 1, 6, 6)`, 6 is "automatic"
-    pub option_font_size: i32,
-    /// optionControllerButtonStyle: `newOption("controllerButtonStyle", 1, 3, 1, ...)`
-    pub option_controller_button_style: i32,
-    /// optionGamepadBindingPreset: `newOption("gamepadBindingPreset", "Original", ...)`
-    pub option_gamepad_binding_preset: String,
-    /// optionTermsOfServiceVersion: `newFakeOption("termsOfServiceVersion", -1, 1000, -1)`
-    pub option_terms_of_service_version: i32,
+    pub target_color: Rc<ColorInfo>,
+    pub no_target_color: Rc<ColorInfo>,
+    /// mpTextColor: null until `getMpTextColor` or `setMpTextColor`.
+    pub mp_text_color: RefCell<Option<Rc<ColorInfo>>>,
+    /// `isAzerty` (false).
+    pub is_azerty: std::cell::Cell<bool>,
+    /// `iPerfSkybox` (1), `perfReflections` (true) and `iPerfPuddles` (0): what the options file held at load.
+    pub i_perf_skybox: std::cell::Cell<i32>,
+    pub perf_reflections: std::cell::Cell<bool>,
+    pub i_perf_puddles: std::cell::Cell<i32>,
+    /// `keyMaps` and `keyBindingByKeyValue`.
+    pub key_maps: RefCell<crate::zombie::core::core::KeyMaps>,
 }
 
 /// zombie.core.Core.height (public static, 720 until the display is created).
@@ -123,26 +142,38 @@ impl CoreObject {
     /// zombie.core.Core.<init>, the fields above.
     fn new() -> CoreObject {
         CoreObject {
+            options: RefCell::new(CoreOptions::new()),
+            object_highlited_color: Rc::new(ColorInfo::new(0.98, 0.56, 0.11, 1.0)),
+            world_item_highlight_color: Rc::new(ColorInfo::new(0.5, 1.0, 1.0, 1.0)),
+            workstation_highlited_color: Rc::new(ColorInfo::new(0.56, 0.98, 0.11, 1.0)),
             good_highlited_color: Rc::new(ColorInfo::new(0.0, 1.0, 0.0, 1.0)),
             bad_highlited_color: Rc::new(ColorInfo::new(1.0, 0.0, 0.0, 1.0)),
-            option_good_highlight_color: [0.0, 1.0, 0.0],
-            option_bad_highlight_color: [1.0, 0.0, 0.0],
-            option_font_size: 6,
-            option_controller_button_style: 1,
-            option_gamepad_binding_preset: "Original".into(),
-            option_terms_of_service_version: -1,
+            target_color: Rc::new(ColorInfo::new(1.0, 1.0, 1.0, 1.0)),
+            no_target_color: Rc::new(ColorInfo::new(1.0, 1.0, 1.0, 1.0)),
+            mp_text_color: RefCell::new(None),
+            is_azerty: std::cell::Cell::new(false),
+            i_perf_skybox: std::cell::Cell::new(1),
+            perf_reflections: std::cell::Cell::new(true),
+            i_perf_puddles: std::cell::Cell::new(0),
+            key_maps: RefCell::new(Default::default()),
         }
     }
 
     /// zombie.core.Core.getOptionFontSizeReal, with `getScreenHeight()` = Core.height.
     pub fn get_option_font_size_real(&self) -> i32 {
-        crate::zombie::core::core::get_option_font_size_real(self.option_font_size, CORE_HEIGHT)
+        let size = self.options.borrow().get("optionFontSize").int_value();
+        crate::zombie::core::core::get_option_font_size_real(size, CORE_HEIGHT)
     }
 
     /// zombie.core.Core.getOptionControllerButtonStyleString
     pub fn get_option_controller_button_style_string(&self) -> &'static str {
+        let style = self
+            .options
+            .borrow()
+            .get("optionControllerButtonStyle")
+            .int_value();
         crate::zombie::input::controller_button_style::ControllerButtonStyle::from_option_code(
-            self.option_controller_button_style,
+            style,
         )
         .get_label()
     }
@@ -158,13 +189,6 @@ impl Userdata for CoreObject {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-}
-
-/// zombie.config.ArrayConfigOption.getValueAsColorInfo for a fixed-size-3 double option: the colour object set
-/// from the three elements (cast to float) and alpha 1 (a missing fourth element), then returned.
-fn value_as_color_info(option: &[f64; 3], color: &Rc<ColorInfo>) -> Rc<ColorInfo> {
-    color.set(option[0] as f32, option[1] as f32, option[2] as f32, 1.0);
-    color.clone()
 }
 
 /// zombie.scripting.ScriptManager.instance with no scripts loaded.
@@ -872,6 +896,9 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 }
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_core::instance_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_ui::instance_method(class, name) {
         return Some(f);
     }
@@ -1234,20 +1261,6 @@ fn instance_method(class: &str, name: &str) -> Option<Imp> {
             ret(cf, Object::Nil)
         },
         // ---- Core ----
-        ("zombie.core.Core", "getGoodHighlitedColor") => |_, _, cf, _| {
-            with_this!(cf, CoreObject, c, {
-                let col =
-                    value_as_color_info(&c.option_good_highlight_color, &c.good_highlited_color);
-                ret(cf, ud(col))
-            })
-        },
-        ("zombie.core.Core", "getBadHighlitedColor") => |_, _, cf, _| {
-            with_this!(cf, CoreObject, c, {
-                let col =
-                    value_as_color_info(&c.option_bad_highlight_color, &c.bad_highlited_color);
-                ret(cf, ud(col))
-            })
-        },
         // ---- ColorInfo ----
         ("zombie.core.textures.ColorInfo", "getR") => {
             |_, _, cf, _| with_this!(cf, ColorInfo, c, ret_float(cf, c.r.get()))

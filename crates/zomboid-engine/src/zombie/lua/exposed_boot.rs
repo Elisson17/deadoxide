@@ -8,9 +8,9 @@ use std::rc::Rc;
 
 use super::exposed_client::static_args;
 use super::exposed_methods::{
-    core, hash, npe, ret, ret_bool, ret_int, ret_str, singleton, string_arg, translator_get_text,
-    type_error, ud, want_args, with_this, ArrayListObject, CoreObject, ScriptManagerObject,
-    CORE_HEIGHT, CORE_WIDTH,
+    arg_count_error, core, float_arg, hash, npe, ret, ret_bool, ret_float, ret_int, ret_str,
+    singleton, string_arg, this, translator_get_text, type_error, ud, want_args, with_this,
+    ArrayListObject, ScriptManagerObject, CORE_HEIGHT, CORE_WIDTH,
 };
 use super::exposer::{class_named, Fail, Imp, JavaObject, JavaStatics, Ret};
 use crate::java::float_to_string;
@@ -246,6 +246,27 @@ pub fn global(name: &str) -> Option<Imp> {
 /// The static methods this module owns.
 pub fn static_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
+        // Color(float, float, float, float) (MultiLuaJavaInvoker tries the float constructor before the all-int one
+        // for Lua numbers): the channels clamped to [0, 1]; Color(float, float, float): not clamped, alpha 1
+        ("zombie.core.Color", "new") => |_, _, cf, n| {
+            let c = match n {
+                4 => Color::new_clamped(
+                    float_arg(cf, 0)?,
+                    float_arg(cf, 1)?,
+                    float_arg(cf, 2)?,
+                    float_arg(cf, 3)?,
+                ),
+                3 => Color {
+                    r: float_arg(cf, 0)?,
+                    g: float_arg(cf, 1)?,
+                    b: float_arg(cf, 2)?,
+                    a: 1.0,
+                },
+                0 => Color::default(),
+                _ => return Err(arg_count_error(4, n)),
+            };
+            ret(cf, ud(Rc::new(ColorObject(RefCell::new(c)))))
+        },
         // `new ArrayList<>(characterTraitDefinitions.values())`: the map is filled by ScriptManager.Load (the
         // character_trait scripts), which this state does not run, so the list is new and empty.
         ("zombie.characters.traits.CharacterTraitDefinition", "getTraits")
@@ -341,6 +362,90 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
 /// The instance methods this module owns.
 pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
+        // zombie.core.Color.set(Color) / set(float, float, float) / set(float, float, float, float): returns this
+        ("zombie.core.Color", "set") => |_, _, cf, n| {
+            let me = this::<ColorObject>(cf)?;
+            let c = me.as_any().downcast_ref::<ColorObject>().ok_or_else(npe)?;
+            let v = match n {
+                2 => match cf.get(1) {
+                    Object::Userdata(u) => match u.as_any().downcast_ref::<ColorObject>() {
+                        Some(o) => *o.0.borrow(),
+                        None => return Err(type_error("Color", &Object::Userdata(u))),
+                    },
+                    Object::Nil => return Err(npe()),
+                    o => return Err(type_error("Color", &o)),
+                },
+                4 => Color {
+                    r: float_arg(cf, 1)?,
+                    g: float_arg(cf, 2)?,
+                    b: float_arg(cf, 3)?,
+                    a: 1.0,
+                },
+                5 => Color {
+                    r: float_arg(cf, 1)?,
+                    g: float_arg(cf, 2)?,
+                    b: float_arg(cf, 3)?,
+                    a: float_arg(cf, 4)?,
+                },
+                _ => return Err(arg_count_error(4, n - 1)),
+            };
+            *c.0.borrow_mut() = v;
+            ret(cf, Object::Userdata(me))
+        },
+        // zombie.core.Color getR/getG/getB/getRedFloat/getGreenFloat/getBlueFloat/getAlphaFloat: the channel
+        ("zombie.core.Color", "getR" | "getRedFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().r))
+        },
+        ("zombie.core.Color", "getG" | "getGreenFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().g))
+        },
+        ("zombie.core.Color", "getB" | "getBlueFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().b))
+        },
+        ("zombie.core.Color", "getAlphaFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().a))
+        },
+        // getRed/getRedByte etc.: `(int)(channel * 255.0F)`
+        ("zombie.core.Color", "getRed" | "getRedByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().r * 255.0) as i32)
+            )
+        },
+        ("zombie.core.Color", "getGreen" | "getGreenByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().g * 255.0) as i32)
+            )
+        },
+        ("zombie.core.Color", "getBlue" | "getBlueByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().b * 255.0) as i32)
+            )
+        },
+        ("zombie.core.Color", "getAlpha" | "getAlphaByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().a * 255.0) as i32)
+            )
+        },
         // ScriptManager.getItemsTag: getAllItemsWithTag, the list cached per tag: the items of getAllItems that
         // `hasTag(itemTag)`; with no scripts loaded (no client startup) every list is empty.
         ("zombie.scripting.ScriptManager", "getItemsTag") => |s, _, cf, n| {
@@ -433,15 +538,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
             want_args(n, true, 0)?;
             let _ = core(s);
             ret_int(cf, CORE_HEIGHT)
-        },
-        ("zombie.core.Core", "getTermsOfServiceVersion") => |_, _, cf, n| {
-            want_args(n, true, 0)?;
-            with_this!(
-                cf,
-                CoreObject,
-                c,
-                ret_int(cf, c.option_terms_of_service_version)
-            )
         },
         ("zombie.gameStates.TermsOfServiceState", "fromLua0") => |_, _, cf, n| {
             want_args(n, true, 1)?;

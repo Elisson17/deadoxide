@@ -168,6 +168,12 @@ impl LuaManager {
         let mut thread = KahluaThread::new(platform.clone(), env.clone());
         let events = EventRegistry::register("Events", &env)?;
         let hooks = EventRegistry::register("Hook", &env)?;
+        // zombie.core.raknet.VoiceManager.LuaRegister (a client that ran GameWindow.init has Core.soundDisabled)
+        crate::zombie::core::raknet::voice_manager::lua_register(
+            &platform,
+            &env,
+            startup.is_some(),
+        );
         let loader = Rc::new(RefCell::new(Loader::new(game_root)));
         KahluaTableImpl::rawset(
             &env,

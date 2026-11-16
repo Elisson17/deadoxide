@@ -469,6 +469,35 @@ pub fn global(name: &str) -> Option<Imp> {
 
 pub fn static_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
+        // ---- Translator ----
+        // Translator.getAvailableLanguage: `Languages.instance.getLanguages()`, the same list every time
+        ("zombie.core.Translator", "getAvailableLanguage") => |s, _, cf, n| {
+            want_args(n, false, 0)?;
+            let client = s.state.client.borrow().clone().ok_or_else(|| {
+                Fail::Lua(Throwable::runtime(
+                    "not ported: zombie.core.Translator.getAvailableLanguage".to_string(),
+                ))
+            })?;
+            if let Some(list) = s.state.available_language.borrow().clone() {
+                return ret(cf, ud(list));
+            }
+            let languages = client.translator.borrow_mut().get_available_language();
+            let items = languages.iter().map(|l| language_object(s, l)).collect();
+            let list = Rc::new(super::exposed_methods::ArrayListObject(RefCell::new(items)));
+            *s.state.available_language.borrow_mut() = Some(list.clone());
+            ret(cf, ud(list))
+        },
+        // Translator.getLanguage
+        ("zombie.core.Translator", "getLanguage") => |s, _, cf, n| {
+            want_args(n, false, 0)?;
+            let client = s.state.client.borrow().clone().ok_or_else(|| {
+                Fail::Lua(Throwable::runtime(
+                    "not ported: zombie.core.Translator.getLanguage".to_string(),
+                ))
+            })?;
+            let language = client.translator.borrow_mut().get_language();
+            ret(cf, language_object(s, &language))
+        },
         // ---- SystemDisabler ----
         ("zombie.SystemDisabler", "setDoCharacterStats") => |s, _, cf, n| {
             want_args(n, false, 1)?;
@@ -612,6 +641,9 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
 }
 
 pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if class == "zombie.core.Language" {
+        return language_method(name);
+    }
     if class.starts_with("zombie.SandboxOptions$") {
         if let Some(f) = sandbox_option_method(name) {
             return Some(f);
@@ -1201,4 +1233,66 @@ impl Userdata for StartupMapObject {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+/// zombie.core.Language as a Lua value.
+pub struct LanguageObject(pub Rc<crate::zombie::core::language::Language>);
+
+impl Userdata for LanguageObject {
+    fn class(&self) -> &'static JavaClass {
+        class_named("zombie.core.Language")
+    }
+    /// Language.toString: its name.
+    fn java_to_string(&self) -> String {
+        self.0.name.clone()
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// The one Language object of `language` (a Language is a single object in Java, equal to itself by identity).
+fn language_object(
+    s: &Rc<JavaStatics>,
+    language: &Rc<crate::zombie::core::language::Language>,
+) -> Object {
+    let mut objects = s.state.language_objects.borrow_mut();
+    if let Some((_, o)) = objects.iter().find(|(l, _)| Rc::ptr_eq(l, language)) {
+        return ud(o.clone());
+    }
+    let o = Rc::new(LanguageObject(language.clone()));
+    objects.push((language.clone(), o.clone()));
+    ud(o)
+}
+
+/// zombie.core.Language's methods.
+fn language_method(name: &str) -> Option<Imp> {
+    Some(match name {
+        "name" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, LanguageObject, l, ret_str(cf, Some(&l.0.name)))
+        },
+        "text" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, LanguageObject, l, ret_str(cf, l.0.text.as_deref()))
+        },
+        "base" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, LanguageObject, l, ret_str(cf, l.0.base.as_deref()))
+        },
+        "isAzerty" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                LanguageObject,
+                l,
+                super::exposed_methods::ret_bool(cf, l.0.azerty)
+            )
+        },
+        "toString" => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, LanguageObject, l, ret_str(cf, Some(&l.0.name)))
+        },
+        _ => return None,
+    })
 }

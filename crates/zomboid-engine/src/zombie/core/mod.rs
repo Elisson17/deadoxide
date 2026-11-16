@@ -1,6 +1,8 @@
 pub mod color;
 #[allow(clippy::module_inception)] // zombie.core.Core
 pub mod core;
+pub mod core_options;
+pub mod core_options_table;
 pub mod fonts;
 pub mod immutable_color;
 pub mod input;
@@ -9,6 +11,7 @@ pub mod language_file;
 pub mod languages;
 pub mod math;
 pub mod properties;
+pub mod raknet;
 pub mod random;
 pub mod skinnedmodel;
 pub mod stash;
