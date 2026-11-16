@@ -368,8 +368,7 @@ impl ClimateValues {
             self.night_strength = self.lerp_night;
         }
         if env.day_night_cycle == 2 {
-            self.day_light_strength =
-                1.0 - 0.15 * day_perc_time_now - 0.2 * self.wind_intensity;
+            self.day_light_strength = 1.0 - 0.15 * day_perc_time_now - 0.2 * self.wind_intensity;
             self.night_strength = 0.0;
         } else {
             self.day_light_strength_base = 1.0 - self.night_strength;
@@ -381,8 +380,7 @@ impl ClimateValues {
         let desat_curr_day = (1.0 - cur_season.get_cur_day_percent()) * 0.4;
         let desat_next_day = (1.0 - next_season.get_cur_day_percent()) * 0.4;
         self.desaturation = climate_manager::lerp(day_lerp_val, desat_curr_day, desat_next_day);
-        self.cloudy_t =
-            1.0 - climate_manager::clamp01((self.air_mass_temperature + 0.8) * 0.625);
+        self.cloudy_t = 1.0 - climate_manager::clamp01((self.air_mass_temperature + 0.8) * 0.625);
         self.cloudy_t *= 0.8;
         self.cloudy_t = climate_manager::clamp01(self.cloudy_t + self.wind_intensity);
         self.cloud_intensity = climate_manager::clamp01(self.wind_intensity * 2.0);

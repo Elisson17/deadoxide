@@ -132,12 +132,18 @@ pub fn apply_climate_main(cm: &mut ClimateManager, text: &str) -> Result<(), Str
             if lhs == "c" {
                 if let Some(name) = rhs.strip_prefix("_clim:") {
                     let name = name.trim_end_matches("()");
-                    c = Some(manager_getter(name).ok_or(format!("ClimateMain.lua: unknown getter: {line}"))?);
+                    c = Some(
+                        manager_getter(name)
+                            .ok_or(format!("ClimateMain.lua: unknown getter: {line}"))?,
+                    );
                     continue;
                 }
                 if let Some(name) = rhs.strip_prefix("w:") {
                     let name = name.trim_end_matches("()");
-                    c = Some(period_getter(name).ok_or(format!("ClimateMain.lua: unknown getter: {line}"))?);
+                    c = Some(
+                        period_getter(name)
+                            .ok_or(format!("ClimateMain.lua: unknown getter: {line}"))?,
+                    );
                     continue;
                 }
             }
@@ -183,13 +189,41 @@ pub fn apply_climate_main(cm: &mut ClimateManager, text: &str) -> Result<(), Str
                 other => return Err(format!("ClimateMain.lua: {other}")),
             };
             match seg {
-                0 => cm.set_season_color_dawn(temperature, season, v[0], v[1], v[2], v[3], exterior),
+                0 => {
+                    cm.set_season_color_dawn(temperature, season, v[0], v[1], v[2], v[3], exterior)
+                }
                 1 => cm.set_season_color_day(temperature, season, v[0], v[1], v[2], v[3], exterior),
-                _ => cm.set_season_color_dusk(temperature, season, v[0], v[1], v[2], v[3], exterior),
+                _ => {
+                    cm.set_season_color_dusk(temperature, season, v[0], v[1], v[2], v[3], exterior)
+                }
             }
             continue;
         }
         return Err(format!("ClimateMain.lua: unknown statement: {line}"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The colours and season colours a handler of the file's shape sets land on the manager; a statement of
+    /// another shape is an error rather than a silent skip.
+    #[test]
+    fn replays_calls_and_refuses_unknown_statements() {
+        let mut cm = ClimateManager::default();
+        let lua = "local WARM,CLOUDY = 0,2;\nlocal SUMMER,FALL = 0,1;\nfunction ClimateMain.onClimateManagerInit(_clim)\n\
+            local c;\nc = _clim:getColFog();\nc:setExterior(0.25,0.5,0.75,1.0);\nc:setInterior(0.1,0.2,0.3,0.4); -- x\n\
+            local w = _clim:getWeatherPeriod();\nc = w:getCloudColorBlizzard();\nc:setExterior(0.5,0.5,0.5,0.5);\n\
+            _clim:setSeasonColorDay(CLOUDY,FALL,0.9,0.8,0.7,0.6,true);\nend";
+        apply_climate_main(&mut cm, lua).unwrap();
+        assert_eq!(cm.col_fog.exterior, [0.25, 0.5, 0.75, 1.0]);
+        assert_eq!(cm.col_fog.interior, [0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(cm.weather_period.cloud_color_blizzard.exterior, [0.5; 4]);
+        let day = cm.get_season_color(1, 2, 1).unwrap();
+        assert_eq!(day.exterior, [0.9, 0.8, 0.7, 0.6]);
+        assert!(apply_climate_main(&mut cm, "os.execute('x')").is_err());
+        assert!(apply_climate_main(&mut cm, "c:setExterior(1,1,1,1)").is_err());
+    }
 }

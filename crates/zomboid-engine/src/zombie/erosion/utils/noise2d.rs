@@ -43,16 +43,8 @@ impl Noise2D {
         let bb = layer_p[x as usize + 1] + y + 1;
         Self::lerp(
             fy,
-            Self::lerp(
-                fx,
-                perm(layer_p[aa as usize]),
-                perm(layer_p[ba as usize]),
-            ),
-            Self::lerp(
-                fx,
-                perm(layer_p[ab as usize]),
-                perm(layer_p[bb as usize]),
-            ),
+            Self::lerp(fx, perm(layer_p[aa as usize]), perm(layer_p[ba as usize])),
+            Self::lerp(fx, perm(layer_p[ab as usize]), perm(layer_p[bb as usize])),
         )
     }
 
@@ -69,7 +61,8 @@ impl Noise2D {
 
     /// zombie.erosion.utils.Noise2D.addLayer: the permutation rotated by the seed (modulo 256, through float).
     pub fn add_layer(&mut self, seed: i32, freq: f32, amp: f32) {
-        let seed = (f64::from(seed) - f64::from(seed as f32 / 256.0).floor() * 256.0).floor() as i32;
+        let seed =
+            (f64::from(seed) - f64::from(seed as f32 / 256.0).floor() * 256.0).floor() as i32;
         let mut p = vec![0i32; 512];
         for i in 0..256 {
             let s = seed + i;

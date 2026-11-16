@@ -250,7 +250,8 @@ impl ErosionSeason {
         for v in self.rain {
             total += v;
         }
-        self.rain_year_average = f64::from(365.0f32 * (total / self.rain.len() as f32)).floor() as i32 as f32;
+        self.rain_year_average =
+            f64::from(365.0f32 * (total / self.rain.len() as f32)).floor() as i32 as f32;
     }
 
     /// zombie.erosion.season.ErosionSeason.clone: a new season init'ed with the same settings (the noon is the
@@ -406,7 +407,13 @@ impl ErosionSeason {
 
     /// zombie.erosion.season.ErosionSeason.setSeasonData: which season the date is in (comparing milliseconds
     /// as floats, as the original does), its progress, the day's mean and noisy temperature, rain, thunder and sun.
-    fn set_season_data(&mut self, day_value: f32, day_date: &GregorianCalendar, _year: i32, month: i32) {
+    fn set_season_data(
+        &mut self,
+        day_value: f32,
+        day_date: &GregorianCalendar,
+        _year: i32,
+        month: i32,
+    ) {
         let [y0, y1, y2] = self.year_data;
         let (sd, ed);
         if day_value < Self::unx(&y0.winter_end_day) {
@@ -441,12 +448,14 @@ impl ErosionSeason {
             temp_b = self.temp_min as f32 + half * y1.last_winter_str;
             day_perc = Self::day_diff(day_date, &y0.hottest_day)
                 / Self::day_diff(&y0.hottest_day, &y0.coldest_day);
-        } else if day_value < Self::unx(&y1.hottest_day) && day_value >= Self::unx(&y0.coldest_day) {
+        } else if day_value < Self::unx(&y1.hottest_day) && day_value >= Self::unx(&y0.coldest_day)
+        {
             temp_a = self.temp_min as f32 + half * y1.last_winter_str;
             temp_b = self.temp_max as f32 + half * y1.summer_str;
             day_perc = Self::day_diff(day_date, &y0.coldest_day)
                 / Self::day_diff(&y1.hottest_day, &y0.coldest_day);
-        } else if day_value < Self::unx(&y1.coldest_day) && day_value >= Self::unx(&y1.hottest_day) {
+        } else if day_value < Self::unx(&y1.coldest_day) && day_value >= Self::unx(&y1.hottest_day)
+        {
             temp_a = self.temp_max as f32 + half * y1.summer_str;
             temp_b = self.temp_min as f32 + half * y1.winter_str;
             day_perc = Self::day_diff(day_date, &y1.hottest_day)
@@ -507,9 +516,11 @@ impl ErosionSeason {
             Self::day_diff(day_date, &cycle_start) / Self::day_diff(&cycle_start, &cycle_end);
         let mut perc2 = h_cycle_perc;
         if self.is_h1 {
-            self.day_daylight = Self::clerp(f64::from(h_cycle_perc), self.wi_sol, self.su_sol) as f32;
+            self.day_daylight =
+                Self::clerp(f64::from(h_cycle_perc), self.wi_sol, self.su_sol) as f32;
         } else {
-            self.day_daylight = Self::clerp(f64::from(h_cycle_perc), self.su_sol, self.wi_sol) as f32;
+            self.day_daylight =
+                Self::clerp(f64::from(h_cycle_perc), self.su_sol, self.wi_sol) as f32;
             perc2 = 1.0 - h_cycle_perc;
         }
         self.cur_day_percent = perc2;

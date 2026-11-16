@@ -401,7 +401,9 @@ impl ClimateColor {
                     .interp(&self.modded_value, self.mod_interpolate);
             }
             if self.is_override && self.interpolate > 0.0 {
-                self.final_value = self.internal_value.interp(&self.override_, self.interpolate);
+                self.final_value = self
+                    .internal_value
+                    .interp(&self.override_, self.interpolate);
             } else {
                 self.final_value = self.internal_value;
             }
@@ -564,12 +566,28 @@ impl SeasonColor {
     }
 
     /// zombie.iso.weather.ClimateManager.SeasonColor.setColorInterior
-    pub fn set_color_interior(&mut self, temperature: usize, season: usize, r: f32, g: f32, b: f32, a: f32) {
+    pub fn set_color_interior(
+        &mut self,
+        temperature: usize,
+        season: usize,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    ) {
         self.colors[temperature][season].interior = [r, g, b, a];
     }
 
     /// zombie.iso.weather.ClimateManager.SeasonColor.setColorExterior
-    pub fn set_color_exterior(&mut self, temperature: usize, season: usize, r: f32, g: f32, b: f32, a: f32) {
+    pub fn set_color_exterior(
+        &mut self,
+        temperature: usize,
+        season: usize,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+    ) {
         self.colors[temperature][season].exterior = [r, g, b, a];
     }
 
@@ -654,7 +672,9 @@ pub fn get_time_lerp(cur: f32, min: f32, max: f32, do_clerp: bool) -> f32 {
     };
     let adjust = min > max;
     if !adjust {
-        if !(cur < min) && !(cur > max) {
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        let inside = !(cur < min) && !(cur > max);
+        if inside {
             let c = cur - min;
             let len = max - min;
             let mid = len * 0.5;
@@ -666,7 +686,11 @@ pub fn get_time_lerp(cur: f32, min: f32, max: f32, do_clerp: bool) -> f32 {
         0.0
     } else {
         let minoffset = 1.0 - min;
-        let c = if cur >= min { cur - min } else { cur + minoffset };
+        let c = if cur >= min {
+            cur - min
+        } else {
+            cur + minoffset
+        };
         let len = max + minoffset;
         let mid = len * 0.5;
         up(c, mid)
@@ -1193,8 +1217,8 @@ impl ClimateManager {
     fn update_wind_tick(&mut self, gt: &GameTime, env: &ClimateEnv) {
         if !env.server {
             let mut wind = self.climate_floats[FLOAT_WIND_INTENSITY].final_value;
-            self.wind_noise_offset += (4.0E-4 + 6.0E-4 * f64::from(wind))
-                * f64::from(gt.get_multiplier());
+            self.wind_noise_offset +=
+                (4.0E-4 + 6.0E-4 * f64::from(wind)) * f64::from(gt.get_multiplier());
             self.wind_noise_base = simplex_noise::noise(0.0, self.wind_noise_offset);
             self.wind_noise_final = self.wind_noise_base;
             if self.wind_noise_final > 0.0 {
@@ -1300,8 +1324,7 @@ impl ClimateManager {
             let air_type = if self.air_mass < 0.0 { -1 } else { 1 };
             if self.current_front.type_ != air_type {
                 if !self.disable_weather_generation
-                    && (!self.winter_is_coming
-                        || self.winter_is_coming && gt.get_world_age_hours() > 96.0)
+                    && (!self.winter_is_coming || gt.get_world_age_hours() > 96.0)
                 {
                     let mut front = self.current_front;
                     if self.the_descending_fog {
@@ -1345,8 +1368,7 @@ impl ClimateManager {
             let age = gt.get_world_age_hours();
             if !self.winter_is_coming
                 && !self.the_descending_fog
-                && age >= 72.0
-                && age <= 96.0
+                && (72.0..=96.0).contains(&age)
                 && !self.disable_weather_generation
                 && !self.weather_period.is_running
             {
@@ -1428,9 +1450,9 @@ impl ClimateManager {
         self.col_dawn =
             self.season_color_dawn
                 .update(cloudy_t, tval, lerp_from_season, lerp_to_season);
-        self.col_day = self
-            .season_color_day
-            .update(cloudy_t, tval, lerp_from_season, lerp_to_season);
+        self.col_day =
+            self.season_color_day
+                .update(cloudy_t, tval, lerp_from_season, lerp_to_season);
         self.col_dusk =
             self.season_color_dusk
                 .update(cloudy_t, tval, lerp_from_season, lerp_to_season);
@@ -1447,8 +1469,7 @@ impl ClimateManager {
                 && time > dawn - 2.0
                 && time < dawn + fog_duration
             {
-                let mut lerpfog =
-                    get_time_lerp_hours(time, dawn - 2.0, dawn + fog_duration, true);
+                let mut lerpfog = get_time_lerp_hours(time, dawn - 2.0, dawn + fog_duration, true);
                 lerpfog = clamp(0.0, 1.0, lerpfog * (fog_duration / 3.0));
                 self.fog_lerp_value = lerpfog;
                 fl[FLOAT_CLOUD_INTENSITY].internal_value =
@@ -1456,21 +1477,19 @@ impl ClimateManager {
                 let fog_val = self.day_fog_strength;
                 fl[FLOAT_FOG_INTENSITY].internal_value = clerp(lerpfog, 0.0, fog_val);
                 let desat = fl[FLOAT_DESATURATION].internal_value;
-                fl[FLOAT_DESATURATION].internal_value = if !env.weather_shader || env.fog_quality == 2 {
-                    clerp(lerpfog, desat, 0.8 * fog_val)
-                } else {
-                    clerp(lerpfog, desat, 0.65 * fog_val)
-                };
+                fl[FLOAT_DESATURATION].internal_value =
+                    if !env.weather_shader || env.fog_quality == 2 {
+                        clerp(lerpfog, desat, 0.8 * fog_val)
+                    } else {
+                        clerp(lerpfog, desat, 0.65 * fog_val)
+                    };
             } else {
                 fl[FLOAT_FOG_INTENSITY].internal_value = 0.0;
             }
         } else {
             let age = gt.get_world_age_hours();
-            fl[FLOAT_FOG_INTENSITY].internal_value = if age < 72.0 {
-                age as f32 / 72.0
-            } else {
-                1.0
-            };
+            fl[FLOAT_FOG_INTENSITY].internal_value =
+                if age < 72.0 { age as f32 / 72.0 } else { 1.0 };
             fl[FLOAT_CLOUD_INTENSITY].internal_value = math_min_f32(
                 fl[FLOAT_CLOUD_INTENSITY].internal_value,
                 1.0 - fl[FLOAT_FOG_INTENSITY].internal_value,
@@ -1558,23 +1577,74 @@ impl ClimateManager {
 
     /// zombie.iso.weather.ClimateManager.setSeasonColorDawn
     #[allow(clippy::too_many_arguments)]
-    pub fn set_season_color_dawn(&mut self, temperature: usize, season: usize, r: f32, g: f32, b: f32, a: f32, exterior: bool) {
-        Self::set_season_color(&mut self.season_color_dawn, temperature, season, [r, g, b, a], exterior);
+    pub fn set_season_color_dawn(
+        &mut self,
+        temperature: usize,
+        season: usize,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+        exterior: bool,
+    ) {
+        Self::set_season_color(
+            &mut self.season_color_dawn,
+            temperature,
+            season,
+            [r, g, b, a],
+            exterior,
+        );
     }
 
     /// zombie.iso.weather.ClimateManager.setSeasonColorDay
     #[allow(clippy::too_many_arguments)]
-    pub fn set_season_color_day(&mut self, temperature: usize, season: usize, r: f32, g: f32, b: f32, a: f32, exterior: bool) {
-        Self::set_season_color(&mut self.season_color_day, temperature, season, [r, g, b, a], exterior);
+    pub fn set_season_color_day(
+        &mut self,
+        temperature: usize,
+        season: usize,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+        exterior: bool,
+    ) {
+        Self::set_season_color(
+            &mut self.season_color_day,
+            temperature,
+            season,
+            [r, g, b, a],
+            exterior,
+        );
     }
 
     /// zombie.iso.weather.ClimateManager.setSeasonColorDusk
     #[allow(clippy::too_many_arguments)]
-    pub fn set_season_color_dusk(&mut self, temperature: usize, season: usize, r: f32, g: f32, b: f32, a: f32, exterior: bool) {
-        Self::set_season_color(&mut self.season_color_dusk, temperature, season, [r, g, b, a], exterior);
+    pub fn set_season_color_dusk(
+        &mut self,
+        temperature: usize,
+        season: usize,
+        r: f32,
+        g: f32,
+        b: f32,
+        a: f32,
+        exterior: bool,
+    ) {
+        Self::set_season_color(
+            &mut self.season_color_dusk,
+            temperature,
+            season,
+            [r, g, b, a],
+            exterior,
+        );
     }
 
-    fn set_season_color(s: &mut SeasonColor, temperature: usize, season: usize, c: [f32; 4], exterior: bool) {
+    fn set_season_color(
+        s: &mut SeasonColor,
+        temperature: usize,
+        season: usize,
+        c: [f32; 4],
+        exterior: bool,
+    ) {
         if exterior {
             s.set_color_exterior(temperature, season, c[0], c[1], c[2], c[3]);
         } else {
@@ -1583,7 +1653,12 @@ impl ClimateManager {
     }
 
     /// zombie.iso.weather.ClimateManager.getSeasonColor: segment 0 dawn, 1 day, 2 dusk.
-    pub fn get_season_color(&self, segment: i32, temperature: usize, season: usize) -> Option<&ClimateColorInfo> {
+    pub fn get_season_color(
+        &self,
+        segment: i32,
+        temperature: usize,
+        season: usize,
+    ) -> Option<&ClimateColorInfo> {
         let s = match segment {
             0 => &self.season_color_dawn,
             1 => &self.season_color_day,

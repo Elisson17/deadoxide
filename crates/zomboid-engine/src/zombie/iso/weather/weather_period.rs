@@ -7,11 +7,11 @@
 //! (stage 10, made by mods).
 use super::climate_color_info::ClimateColorInfo;
 use super::climate_manager::{
-    clamp, clamp01, clerp, AirFront, ClimateEnv, ClimateManager, FLOAT_AMBIENT,
-    FLOAT_CLOUD_INTENSITY, FLOAT_DAYLIGHT_STRENGTH, FLOAT_DESATURATION, FLOAT_FOG_INTENSITY,
-    FLOAT_GLOBAL_LIGHT_INTENSITY, FLOAT_NIGHT_STRENGTH, FLOAT_PRECIPITATION_INTENSITY,
-    FLOAT_TEMPERATURE, FLOAT_WIND_ANGLE_INTENSITY, FLOAT_WIND_INTENSITY, COLOR_GLOBAL_LIGHT,
-    COLOR_NEW_FOG, BOOL_IS_SNOW,
+    clamp, clamp01, clerp, AirFront, ClimateEnv, ClimateManager, BOOL_IS_SNOW, COLOR_GLOBAL_LIGHT,
+    COLOR_NEW_FOG, FLOAT_AMBIENT, FLOAT_CLOUD_INTENSITY, FLOAT_DAYLIGHT_STRENGTH,
+    FLOAT_DESATURATION, FLOAT_FOG_INTENSITY, FLOAT_GLOBAL_LIGHT_INTENSITY, FLOAT_NIGHT_STRENGTH,
+    FLOAT_PRECIPITATION_INTENSITY, FLOAT_TEMPERATURE, FLOAT_WIND_ANGLE_INTENSITY,
+    FLOAT_WIND_INTENSITY,
 };
 use super::climate_values::{ClimateValues, ValuesEnv};
 use super::simplex_noise;
@@ -365,7 +365,9 @@ impl WeatherPeriod {
             cloud_color_blueish: ClimateColorInfo::new(0.16, 0.48, 0.48, 0.4),
             cloud_color_purplish: ClimateColorInfo::new(0.66, 0.12, 0.66, 0.4),
             cloud_color_tropical: ClimateColorInfo::new(0.4, 0.2, 0.2, 0.4),
-            cloud_color_blizzard: ClimateColorInfo::new8(0.12, 0.13, 0.21, 0.5, 0.38, 0.4, 0.5, 0.8),
+            cloud_color_blizzard: ClimateColorInfo::new8(
+                0.12, 0.13, 0.21, 0.5, 0.38, 0.4, 0.5, 0.8,
+            ),
             weather_stages: Vec::new(),
             stages_pool: vec![WeatherStage::default(); 30],
             current_stage: None,
@@ -450,6 +452,7 @@ impl WeatherPeriod {
     /// `startInit` accepts the front (strength 0.1 or more, nothing running), a pattern made and the period
     /// started. `ctx` is what the manager gives; Lua event OnWeatherPeriodStart and the climate packet are not
     /// modelled.
+    #[allow(clippy::too_many_arguments)]
     pub fn init(
         &mut self,
         front: &AirFront,
@@ -461,7 +464,18 @@ impl WeatherPeriod {
         gt: &GameTime,
         env: &ClimateEnv,
     ) {
-        self.init_stage(front, hours_since_start, year, month, day, -1, -1.0, ctx, gt, env);
+        self.init_stage(
+            front,
+            hours_since_start,
+            year,
+            month,
+            day,
+            -1,
+            -1.0,
+            ctx,
+            gt,
+            env,
+        );
     }
 
     /// zombie.iso.weather.WeatherPeriod.init(..., doThisStageOnly, singleStageDuration)
@@ -484,7 +498,7 @@ impl WeatherPeriod {
         self.reseed(year, month, day, ctx);
         self.has_started_init = false;
         if self.start_init(front, hours_since_start, env) {
-            if do_this_stage_only >= 0 && do_this_stage_only < STAGE_MAX {
+            if (0..STAGE_MAX).contains(&do_this_stage_only) {
                 self.create_single_stage(do_this_stage_only, single_stage_duration);
             } else {
                 self.create_weather_pattern(ctx, env);
@@ -529,12 +543,17 @@ impl WeatherPeriod {
 
     /// zombie.iso.weather.WeatherPeriod.startInit: nothing running, a front of strength 0.1 or more (not on a
     /// client): the front copied, the wind direction modifier set.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
     fn start_init(&mut self, front: &AirFront, hours_since_start: f64, env: &ClimateEnv) -> bool {
         if !self.is_running && !env.client && !(front.strength < 0.1) {
             self.start_time = hours_since_start;
             self.front_cache.copy_from(front);
             let angle = self.front_cache.front_wind_angle_degrees;
-            self.wind_angle_dir_mod = if angle >= 90.0 && angle < 270.0 { 1.0 } else { -1.0 };
+            self.wind_angle_dir_mod = if (90.0..270.0).contains(&angle) {
+                1.0
+            } else {
+                -1.0
+            };
             self.has_started_init = true;
             true
         } else {
@@ -544,7 +563,11 @@ impl WeatherPeriod {
 
     /// zombie.iso.weather.WeatherPeriod.endInit: the period runs, when it has stages.
     fn end_init(&mut self, env: &ClimateEnv) -> bool {
-        if self.has_started_init && !self.is_running && !env.client && !self.weather_stages.is_empty() {
+        if self.has_started_init
+            && !self.is_running
+            && !env.client
+            && !self.weather_stages.is_empty()
+        {
             self.current_strength = 0.0;
             self.total_progress = 0.0;
             self.stage_progress = 0.0;
@@ -684,7 +707,11 @@ impl WeatherPeriod {
                     blizzard_chance = 0.0;
                 }
                 if winter_is_coming {
-                    blizzard_chance = if self.front_cache.strength > 0.75 { 100.0 } else { 75.0 };
+                    blizzard_chance = if self.front_cache.strength > 0.75 {
+                        100.0
+                    } else {
+                        75.0
+                    };
                     if self.front_cache.strength > 0.5 {
                         rain_time_multiplier = 1.45;
                     }
@@ -692,7 +719,8 @@ impl WeatherPeriod {
             }
             _ => {}
         }
-        rain_time_multiplier *= ClimateManager::get_rain_time_multiplier_mod(ctx.values_env.rain_modifier);
+        rain_time_multiplier *=
+            ClimateManager::get_rain_time_multiplier_mod(ctx.values_env.rain_modifier);
         let strength = self.front_cache.strength;
         let mut stages: Vec<WeatherStage> = Vec::new();
         if self.front_cache.type_ == 1 {
@@ -991,7 +1019,10 @@ impl WeatherPeriod {
                 let str_night_fix = current_darkness * (1.0 - night);
                 let mut val_cloud = 0.5f32;
                 val_cloud += 0.5 * (1.0 - night);
-                val_cloud = math_max_f32(val_cloud, cm.climate_floats[FLOAT_CLOUD_INTENSITY].internal_value);
+                val_cloud = math_max_f32(
+                    val_cloud,
+                    cm.climate_floats[FLOAT_CLOUD_INTENSITY].internal_value,
+                );
                 let mut base_amb_mod = 0.55f32;
                 let stage_id = self.weather_stages[cs].stage_id;
                 let parabolic_t = self.weather_stages[cs].parabolic_t;
@@ -1048,14 +1079,26 @@ impl WeatherPeriod {
         self.is_tropical_storm = false;
         let (stage_id, linear_t, parabolic_t, stage_start, stage_end, stage_duration, fog_strength) = {
             let s = &self.weather_stages[cs];
-            (s.stage_id, s.linear_t, s.parabolic_t, s.stage_start, s.stage_end, s.stage_duration, s.fog_strength)
+            (
+                s.stage_id,
+                s.linear_t,
+                s.parabolic_t,
+                s.stage_start,
+                s.stage_end,
+                s.stage_duration,
+                s.fog_strength,
+            )
         };
         let fs = self.front_cache.strength;
         // The push-up of the weather noise at the start and end of a stage (heavy precipitation, blizzard, storm).
         let pushup = |current_time: f64| -> f32 {
             let mut p = fs * 0.5;
             if linear_t < 0.1 {
-                p = clerp(((current_time - stage_start) / (stage_duration * 0.1)) as f32, 0.0, fs * 0.5);
+                p = clerp(
+                    ((current_time - stage_start) / (stage_duration * 0.1)) as f32,
+                    0.0,
+                    fs * 0.5,
+                );
             } else if linear_t > 0.9 {
                 p = clerp(
                     1.0 - ((stage_end - current_time) / (stage_duration * 0.1)) as f32,
@@ -1073,7 +1116,8 @@ impl WeatherPeriod {
             STAGE_SHOWERS => {
                 cm.climate_floats[FLOAT_FOG_INTENSITY].set_override(0.0, 1.0);
                 let lerpmod = clamp01(parabolic_t * 3.0);
-                cm.climate_floats[FLOAT_WIND_INTENSITY].set_override(0.1 * self.weather_noise, lerpmod);
+                cm.climate_floats[FLOAT_WIND_INTENSITY]
+                    .set_override(0.1 * self.weather_noise, lerpmod);
                 cm.climate_floats[FLOAT_WIND_ANGLE_INTENSITY].set_override(0.0, lerpmod);
             }
             STAGE_HEAVY_PRECIP => {
@@ -1081,7 +1125,8 @@ impl WeatherPeriod {
                 self.weather_noise = p + self.weather_noise * (1.0 - p);
                 cm.climate_floats[FLOAT_FOG_INTENSITY].set_override(0.0, 1.0);
                 let lerpmod = clamp01(parabolic_t * 3.0);
-                cm.climate_floats[FLOAT_WIND_INTENSITY].set_override(0.5 * self.weather_noise, lerpmod);
+                cm.climate_floats[FLOAT_WIND_INTENSITY]
+                    .set_override(0.5 * self.weather_noise, lerpmod);
                 cm.climate_floats[FLOAT_WIND_ANGLE_INTENSITY]
                     .set_override(0.7 * self.weather_noise * self.wind_angle_dir_mod, lerpmod);
             }

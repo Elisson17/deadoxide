@@ -238,10 +238,8 @@ impl ThunderStorm {
                     c.suspend_timer.update(gt);
                     self.has_active_thunder_clouds = true;
                     if c.suspend_timer.finished() {
-                        let suspend_next = rand.next_float(
-                            3.5 - 3.0 * c.strength,
-                            24.0 - 20.0 * c.strength,
-                        );
+                        let suspend_next =
+                            rand.next_float(3.5 - 3.0 * c.strength, 24.0 - 20.0 * c.strength);
                         c.suspend_timer.init((suspend_next * 60.0) as i32);
                         let r = rand.next_float(0.0, 1.0);
                         let (radius, strength_thunder_ratio, cx, cy) =

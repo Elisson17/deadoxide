@@ -976,6 +976,23 @@ mod jdk_string_tests {
         assert_eq!(split_whitespace_regex("   "), Vec::<&str>::new());
     }
 
+    /// Double.toString of a double whose exact value is halfway between two 17-digit decimals takes the even one
+    /// (the JDK 25 output of ClimateProbe for the world age 2.35019683837890625 hours; the decimal shortest-digit
+    /// routines of other languages round it up).
+    #[test]
+    fn double_to_string_tie_takes_the_even_digit() {
+        assert_eq!(
+            double_to_string(2.350_196_838_378_906_25),
+            "2.3501968383789062"
+        );
+        assert_eq!(
+            double_to_string(2.883_491_516_113_281_3),
+            "2.8834915161132812"
+        );
+        assert_eq!(double_to_string(0.1), "0.1");
+        assert_eq!(float_to_string(9.350197), "9.350197");
+    }
+
     #[test]
     fn round_is_half_up_like_the_jdk() {
         assert_eq!(math_round_f32(0.5), 1);

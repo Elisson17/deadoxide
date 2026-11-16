@@ -24,12 +24,7 @@ impl ClimateMoon {
             self.last_month = month;
             self.last_day = day;
             self.current_phase = Self::get_moon_phase(year, month, day);
-            if self.current_phase > 7 {
-                self.current_phase = 7;
-            }
-            if self.current_phase < 0 {
-                self.current_phase = 0;
-            }
+            self.current_phase = self.current_phase.clamp(0, 7);
             self.current_float = UNITS[self.current_phase as usize];
         }
     }
@@ -60,7 +55,7 @@ impl ClimateMoon {
         if epact == 25 && golden > 11 || epact == 24 {
             epact += 1;
         }
-        ((diy + epact) * 6 + 11) % 177 / 22 & 7
+        (((diy + epact) * 6 + 11) % 177 / 22) & 7
     }
 
     /// zombie.iso.weather.ClimateMoon.isLeapYearP

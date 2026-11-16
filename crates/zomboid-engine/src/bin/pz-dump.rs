@@ -5211,7 +5211,8 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
     use zomboid_engine::zombie::iso::weather::weather_period::WeatherPeriod;
 
     let lua_path = root.join("media/lua/server/Climate/ClimateMain.lua");
-    let lua = std::fs::read_to_string(&lua_path).map_err(|e| format!("{}: {e}", lua_path.display()))?;
+    let lua =
+        std::fs::read_to_string(&lua_path).map_err(|e| format!("{}: {e}", lua_path.display()))?;
     let b = |v: bool| u8::from(v);
     let col = |c: &ClimateColorInfo| {
         format!(
@@ -5257,7 +5258,11 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
         .join(",")
     };
     let stages = |wp: &WeatherPeriod| {
-        let l: Vec<String> = wp.weather_stages.iter().map(|s| s.stage_id.to_string()).collect();
+        let l: Vec<String> = wp
+            .weather_stages
+            .iter()
+            .map(|s| s.stage_id.to_string())
+            .collect();
         format!("[{}]", l.join(","))
     };
     let forecasts = |sb: &mut String, cm: &ClimateManager| {
@@ -5326,17 +5331,19 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
         let _ = writeln!(sb, "SCENARIO {spec}");
 
         let mut rand = RandAbstract::new(java::Random::new(seed));
-        let mut gt = GameTime::default();
-        gt.year = year;
-        gt.month = month;
-        gt.day = day;
-        gt.time_of_day = hour;
-        gt.nights_survived = 0;
-        gt.minutes_per_day = 60.0;
-        gt.multiplier = 1.0;
-        gt.fps_multiplier = 2.0;
-        gt.multiplier_bias = 1.0;
-        gt.per_object_multiplier = 1.0;
+        let mut gt = GameTime {
+            year,
+            month,
+            day,
+            time_of_day: hour,
+            nights_survived: 0,
+            minutes_per_day: 60.0,
+            multiplier: 1.0,
+            fps_multiplier: 2.0,
+            multiplier_bias: 1.0,
+            per_object_multiplier: 1.0,
+            ..GameTime::default()
+        };
         gt.set_minutes_stamp();
 
         // The optional options field (rain, climate, fog, daynight, mode), as ClimateProbe reads it.
@@ -5409,16 +5416,7 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
 
         let mut cm = ClimateManager::new(&mut rand);
         apply_climate_main(&mut cm, &lua)?;
-        cm.init(
-            season,
-            grid[0],
-            grid[1],
-            grid[2],
-            grid[3],
-            &mode,
-            &gt,
-            &env,
-        );
+        cm.init(season, grid[0], grid[1], grid[2], grid[3], &mode, &gt, &env);
         let ts = &cm.thunder_storm;
         let _ = writeln!(
             sb,
@@ -5476,8 +5474,7 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
         }
         forecasts(&mut sb, &cm);
 
-        let mut minutes_mod =
-            ((gt.time_of_day - gt.time_of_day as i32 as f32) * 60.0) as i32 / 10;
+        let mut minutes_mod = ((gt.time_of_day - gt.time_of_day as i32 as f32) * 60.0) as i32 / 10;
         let mut last_start = f64::NAN;
         let mut last_running = false;
         let mut last_event = "0 0 000".to_string();
