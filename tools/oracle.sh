@@ -185,4 +185,6 @@ sel items && { python3 tools/gen_item_params.py >/dev/null; server_case items It
 # every craftRecipe script (ScriptManager craftRecipe buckets: CraftRecipe.Load, OnScriptsLoaded, the ported part of
 # OnPostWorldDictionaryInit) as the booted server holds it
 sel recipes && server_case recipes RecipesProbe
+# zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
+sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

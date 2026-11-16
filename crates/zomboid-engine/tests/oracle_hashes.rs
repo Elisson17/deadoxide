@@ -261,6 +261,13 @@ fn recipes_matches_original() {
     check("recipes", &[]);
 }
 
+/// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
+#[test]
+fn scriptparser_matches_original() {
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/script_parser_cases.txt");
+    check("scriptparser", &[cases.to_str().expect("utf-8 path")]);
+}
+
 #[test]
 fn luacompile_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/lua_compile_cases.txt");

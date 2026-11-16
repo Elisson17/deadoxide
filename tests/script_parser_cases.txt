@@ -1,0 +1,58 @@
+Cases for the ScriptParser oracle (ScriptParserProbe / pz-dump scriptparser). Each case follows a line "@@case" and
+runs up to the newline before the next one. This header is not parsed.
+@@case
+item Nails { Weight = 0.01, Type = Normal, }
+@@case
+module Base { item A { x = 1, } item B { y = 2, } }
+@@case
+a { x = 1, }, b = 2,
+@@case
+a { x = 1, }{ y = 2, } c = 3,
+@@case
+outer { inner { x = 1, }} after = 1, }
+tail = 2,
+@@case
+outer { inner { x = 1, }}, after = 1, } tail = 2,
+@@case
+outer { inner { x = 1, }} }
+@@case
+a {}, b {}{ c {} }
+@@case
+a{b{c{d=1,}}}e=2,f{}
+@@case
+x = 1, y = = 2, = 3, z,
+,,,
+@@case
+  vehicle   Car	 extra  words  {
+    part Door* { area = A, anim Open { anim = x, rate = 1.5, }, }
+    template! = Seats/4,
+}
+@@case
+/* comment */ item A { /* inner */ x = 1, }
+@@case
+/* a /* nested */ b */ item C { y = 2, /* x */ } /* tail
+@@case
+item D { x = 1, } /* unterminated
+@@case
+*/ item E { z = 3, } /*
+@@case
+unterminated { x = 1,
+@@case
+} x = 1, {
+@@case
+block with  tabs	and
+newlines { v = 1, }
+@@case
+item U { DisplayName = Café   nbsp, Name = a b, Emoji = 😀, }
+@@case
+item NB X { v = 1, }
+@@case
+  lead  { w = 2, }
+@@case
+vt { u = 1, }
+@@case
+template vehicle Base { mass = 800, wheel FrontLeft { front = true, offset = 0.5 -0.3 0.8, }, }
+@@case
+{ x = 1, }
+@@case
+id_only {

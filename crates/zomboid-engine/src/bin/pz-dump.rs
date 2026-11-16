@@ -43,6 +43,7 @@ fn main() {
         Some("entitysprites") if a.len() == 3 => entitysprites(Path::new(&a[2])),
         Some("items") if a.len() == 4 => items(Path::new(&a[2]), Path::new(&a[3])),
         Some("recipes") if a.len() == 3 => recipes(Path::new(&a[2])),
+        Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
             specialcollide(Path::new(&a[2]), &a[3..], false)
@@ -2143,6 +2144,75 @@ pub fn recipes(root: &Path) -> Result<String, String> {
         for line in lines {
             let _ = writeln!(sb, "{ft}\t{line}");
         }
+    }
+    Ok(sb)
+}
+
+/// zombie.scripting.ScriptParser over crafted cases, pairs with ScriptParserProbe.java: per case the stripComments
+/// text, its parseTokens, and the tree parse() builds from the case text.
+pub fn scriptparser(cases: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::scripting::script_parser::{self, Block, BlockElement};
+    fn esc(s: Option<&str>) -> String {
+        let Some(s) = s else {
+            return "null".into();
+        };
+        let mut sb = String::new();
+        for u in s.encode_utf16() {
+            match u {
+                0x5c => sb.push_str("\\\\"),
+                0x09 => sb.push_str("\\t"),
+                0x0a => sb.push_str("\\n"),
+                0x0d => sb.push_str("\\r"),
+                0x20..=0x7e => sb.push(char::from(u as u8)),
+                _ => {
+                    let _ = write!(sb, "\\u{u:04x}");
+                }
+            }
+        }
+        sb
+    }
+    fn tree(sb: &mut String, b: &Block, depth: usize) {
+        // the root block's type is the original's null; a child's is never null
+        let ty = if depth == 0 { None } else { Some(b.r#type.as_str()) };
+        let _ = writeln!(
+            sb,
+            "B\t{depth}\t{}\t{}\tvalues\t{}\tchildren\t{}",
+            esc(ty),
+            esc(b.id.as_deref()),
+            b.values.len(),
+            b.children.len()
+        );
+        for e in &b.elements {
+            match e {
+                BlockElement::Block(i) => tree(sb, &b.children[*i], depth + 1),
+                BlockElement::Value(v) => {
+                    let _ = writeln!(
+                        sb,
+                        "V\t{}\t{}\tkey\t{}\tvalue\t{}",
+                        depth + 1,
+                        esc(Some(&v.string)),
+                        esc(Some(v.get_key())),
+                        esc(Some(v.get_value()))
+                    );
+                }
+            }
+        }
+    }
+    let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    // text.split("(^|\n)@@case\n", -1)
+    let text = match text.strip_prefix("@@case\n") {
+        Some(rest) => format!("\n@@case\n{rest}"),
+        None => text,
+    };
+    let mut sb = String::new();
+    for (n, c) in text.split("\n@@case\n").enumerate().skip(1) {
+        let _ = writeln!(sb, "case\t{n}");
+        let stripped = script_parser::strip_comments(c);
+        let _ = writeln!(sb, "strip\t{}", esc(Some(&stripped)));
+        for t in script_parser::parse_tokens(&stripped) {
+            let _ = writeln!(sb, "token\t{}", esc(Some(&t)));
+        }
+        tree(&mut sb, &script_parser::parse(c), 0);
     }
     Ok(sb)
 }
