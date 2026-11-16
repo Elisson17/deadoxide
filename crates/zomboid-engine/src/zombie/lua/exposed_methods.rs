@@ -64,6 +64,10 @@ pub struct State {
         RefCell<HashMap<usize, Rc<super::exposed_game::SandboxOptionObject>>>,
     /// The Texture objects handed to Lua, by texture.
     pub textures: RefCell<HashMap<usize, Rc<super::exposed_game::TextureObject>>>,
+    /// GameWindow.doRenderEvent (private: whether a frame fires OnRenderTick/OnPostRender).
+    pub do_render_event: std::cell::Cell<bool>,
+    /// UIManager's element lists.
+    pub ui_manager: RefCell<crate::zombie::ui::ui_manager::UIManager>,
     /// The AngelCodeFont objects handed to Lua, by font.
     pub fonts: RefCell<
         Vec<(
@@ -748,6 +752,9 @@ pub(super) fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
 }
 
 fn static_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_ui::static_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_game::static_method(class, name) {
         return Some(f);
     }
@@ -844,6 +851,9 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 }
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_ui::instance_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_game::instance_method(class, name) {
         return Some(f);
     }

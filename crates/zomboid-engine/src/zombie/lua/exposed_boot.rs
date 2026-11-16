@@ -15,15 +15,12 @@ use super::exposed_methods::{
 use super::exposer::{class_named, Fail, Imp, JavaObject, JavaStatics, Ret};
 use crate::java::float_to_string;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
-use crate::se::krka::kahlua::vm::object::{
-    classes, JavaClass, Object, TableRef, Throwable, Userdata,
-};
+use crate::se::krka::kahlua::vm::object::{classes, JavaClass, Object, Throwable, Userdata};
 use crate::zombie::characters::traits::observation_factory::ObservationFactory;
 use crate::zombie::core::color::Color;
 use crate::zombie::core::immutable_color::ImmutableColor;
 use crate::zombie::core::textures::color_info::ColorInfo;
 use crate::zombie::game_states::terms_of_service_state::TermsOfServiceState;
-use crate::zombie::ui::ui_element::UIElement;
 
 static COLOR_CLASS: JavaClass = JavaClass {
     name: "zombie.core.Color",
@@ -115,23 +112,6 @@ impl Userdata for TermsOfServiceStateObject {
     }
 }
 
-/// zombie.ui.UIElement as a Lua value. It holds its Lua table (as the Java object does; the table usually holds it
-/// back as `javaObject`, a cycle Rc does not free). UIElement.toString (`tostring` of the table) is not reproduced:
-/// this prints Object.toString.
-pub struct UIElementObject(pub RefCell<UIElement>);
-
-impl Userdata for UIElementObject {
-    fn class(&self) -> &'static JavaClass {
-        class_named("zombie.ui.UIElement")
-    }
-    fn java_to_string(&self) -> String {
-        format!("zombie.ui.UIElement@{:x}", hash(self))
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 /// The ObservationFactory state (the object in ObservationFactory.observationMap).
 fn observations(s: &Rc<JavaStatics>) -> Result<Rc<dyn Userdata>, Fail> {
     match s.field(
@@ -181,22 +161,6 @@ fn color_info_arg(cf: &FrameRef, i: i32) -> Result<Option<Rc<dyn Userdata>>, Fai
         Object::Nil => Ok(None),
         Object::Userdata(u) if u.as_any().is::<ColorInfo>() => Ok(Some(u)),
         o => Err(type_error("ColorInfo", &o)),
-    }
-}
-
-/// A double parameter: a Lua number.
-fn double_arg(cf: &FrameRef, i: i32) -> Result<f64, Fail> {
-    match cf.get(i) {
-        Object::Number(d) => Ok(d),
-        o => Err(type_error("double", &o)),
-    }
-}
-
-/// A boolean parameter: a Lua boolean.
-fn boolean_arg(cf: &FrameRef, i: i32) -> Result<bool, Fail> {
-    match cf.get(i) {
-        Object::Boolean(b) => Ok(b),
-        o => Err(type_error("boolean", &o)),
     }
 }
 
@@ -369,25 +333,6 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
             };
             ret(cf, Object::str(&name))
         },
-        // UIElement() and UIElement(KahluaTable) (a MultiLuaJavaInvoker: the table one for one argument).
-        ("zombie.ui.UIElement", "new") => |_, _, cf, n| {
-            let table: Option<TableRef> = match (n, cf.get(0)) {
-                (0, _) => None,
-                (1, Object::Nil) => None,
-                (1, Object::Table(t)) => Some(t),
-                _ => {
-                    return Err(Fail::Lua(Throwable::runtime(
-                        "not ported: UIElement.new with these arguments",
-                    )))
-                }
-            };
-            ret(
-                cf,
-                ud(Rc::new(UIElementObject(RefCell::new(UIElement::new(
-                    table,
-                ))))),
-            )
-        },
         _ => return None,
     })
 }
@@ -448,98 +393,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                     .map_err(Fail::Java)?;
                 ret(cf, Object::Nil)
             })
-        },
-        ("zombie.ui.UIElement", "setX") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_x(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setY") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_y(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setWidth") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_width(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setHeight") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_height(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorTop") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_anchor_top(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorLeft") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_anchor_left(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorRight") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_anchor_right(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorBottom") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().set_anchor_bottom(v)
-            );
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setWantKeyEvents") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().want_key_events = v);
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setWantExtraMouseEvents") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().want_extra_mouse_events = v
-            );
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setForceCursorVisible") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().force_cursor_visible = v
-            );
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setConsumeMouseEvents") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().consume_mouse_events = v
-            );
-            Ok(0)
         },
         _ => return None,
     })

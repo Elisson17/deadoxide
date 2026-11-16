@@ -110,6 +110,11 @@ pub fn global(name: &str) -> Option<Imp> {
             static_args(n, 0)?;
             ret_bool(cf, false)
         },
+        // SteamUtils.isOverlayEnabled: `steamEnabled && n_IsOverlayEnabled()`; false without Steam.
+        "isSteamOverlayEnabled" => |_, _, cf, n| {
+            static_args(n, 0)?;
+            ret_bool(cf, false)
+        },
         "isDemo" => |_, _, cf, n| {
             static_args(n, 0)?;
             ret_bool(cf, false)
