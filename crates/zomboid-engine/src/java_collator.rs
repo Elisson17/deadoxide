@@ -166,7 +166,10 @@ mod tests {
     /// primary difference overrides, and a longer string with the same base letters sorts after.
     #[test]
     fn english_collator_orders() {
-        assert_eq!(compare_english("corpseDraggedLegs-onback.xml", "corpseDragged-onback.xml"), Some(Less));
+        assert_eq!(
+            compare_english("corpseDraggedLegs-onback.xml", "corpseDragged-onback.xml"),
+            Some(Less)
+        );
         assert_eq!(compare_english("AA", "aB"), Some(Less));
         assert_eq!(compare_english("a", "A"), Some(Less));
         assert_eq!(compare_english("ab", "a-b"), Some(Less));

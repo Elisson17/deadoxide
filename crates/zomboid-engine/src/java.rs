@@ -246,6 +246,51 @@ impl<V> JavaHashMap<V> {
     }
 }
 
+/// java.util.List.sort / Arrays.sort(T[], Comparator) for fewer than 32 elements: java.util.TimSort's short path
+/// (`countRunAndMakeAscending`, then `binarySort`), as written, so an inconsistent comparator gives the original's
+/// order. `Err` for 32 or more elements (the merging path is not ported).
+pub fn list_sort<T>(
+    a: &mut [T],
+    mut c: impl FnMut(&T, &T) -> std::cmp::Ordering,
+) -> Result<(), String> {
+    use std::cmp::Ordering::Less;
+    let hi = a.len();
+    if hi < 2 {
+        return Ok(());
+    }
+    if hi >= 32 {
+        return Err("TimSort of 32 or more elements is not ported".into());
+    }
+    // countRunAndMakeAscending
+    let mut run_hi = 2usize;
+    if c(&a[1], &a[0]) == Less {
+        while run_hi < hi && c(&a[run_hi], &a[run_hi - 1]) == Less {
+            run_hi += 1;
+        }
+        a[..run_hi].reverse();
+    } else {
+        while run_hi < hi && c(&a[run_hi], &a[run_hi - 1]) != Less {
+            run_hi += 1;
+        }
+    }
+    // binarySort
+    let mut start = run_hi;
+    while start < hi {
+        let (mut left, mut right) = (0usize, start);
+        while left < right {
+            let mid = (left + right) >> 1;
+            if c(&a[start], &a[mid]) == Less {
+                right = mid;
+            } else {
+                left = mid + 1;
+            }
+        }
+        a[left..=start].rotate_right(1);
+        start += 1;
+    }
+    Ok(())
+}
+
 /// java.util.zip.CRC32 over `data` (the IEEE polynomial, reflected, as `getValue()` returns it).
 pub fn crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;

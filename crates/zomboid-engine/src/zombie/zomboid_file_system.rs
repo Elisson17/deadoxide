@@ -161,7 +161,10 @@ impl ZomboidFileSystem {
         let mut result: Vec<String> = Vec::new();
         self.walk_game_files(rel_path, recursive, &mut |file, rel2| {
             if file.is_dir() && filter(file) {
-                let name = file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+                let name = file
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default();
                 let rel3 = format!("{rel2}/{name}");
                 if !result.contains(&rel3) {
                     result.push(rel3);
@@ -182,7 +185,10 @@ impl ZomboidFileSystem {
         let mut result: Vec<String> = Vec::new();
         self.walk_game_files(rel_path, recursive, &mut |file, rel2| {
             if file.is_file() && filter(file) {
-                let name = file.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+                let name = file
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default();
                 let rel3 = format!("{rel2}/{name}");
                 if !result.contains(&rel3) {
                     result.push(rel3);

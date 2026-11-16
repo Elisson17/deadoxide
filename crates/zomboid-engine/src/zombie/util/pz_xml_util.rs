@@ -126,7 +126,8 @@ fn parse_document(text: &str) -> Result<XmlElement, String> {
 /// directory) parsed and normalized. `Err` is the original's IOException or SAXException.
 pub fn parse_xml_internal(fs: &ZomboidFileSystem, file_name: &str) -> Result<XmlElement, String> {
     let path = fs.base().join(file_name);
-    let bytes = std::fs::read(&path).map_err(|e| format!("java.io.IOException: {file_name}: {e}"))?;
+    let bytes =
+        std::fs::read(&path).map_err(|e| format!("java.io.IOException: {file_name}: {e}"))?;
     let text = String::from_utf8(bytes).map_err(|e| format!("{file_name}: {e}"))?;
     parse_document(text.strip_prefix('\u{feff}').unwrap_or(&text))
 }
@@ -136,9 +137,8 @@ pub fn parse_xml_internal(fs: &ZomboidFileSystem, file_name: &str) -> Result<Xml
 /// this file; parsed the same way, recursively). `Err` is PZXmlParserException.
 pub fn parse_xml_resolved(fs: &ZomboidFileSystem, source: &str) -> Result<XmlElement, String> {
     let file_name = fs.resolve_file_or_guid(source);
-    let root = parse_xml_internal(fs, &file_name).map_err(|e| {
-        format!("Exception thrown while parsing XML file \"{file_name}\": {e}")
-    })?;
+    let root = parse_xml_internal(fs, &file_name)
+        .map_err(|e| format!("Exception thrown while parsing XML file \"{file_name}\": {e}"))?;
     let root = include_another_file(fs, root, &file_name)?;
     let extends_source = root.attribute("x_extends");
     if java::trim(extends_source).is_empty() {
@@ -362,7 +362,7 @@ fn jaxb_is_white_space(ch: u16) -> bool {
 }
 
 /// com.sun.xml.bind.WhiteSpaceProcessor.trim
-fn xml_trim(s: &str) -> &str {
+pub fn xml_trim(s: &str) -> &str {
     s.trim_matches(|c| matches!(c, ' ' | '\t' | '\n' | '\r'))
 }
 
