@@ -62,8 +62,9 @@ fn main() {
         Some("javachars") if a.len() == 3 => javachars(),
         Some("fdlibm") if a.len() == 3 => fdlibm(),
         Some("luaload" | "luaserver" | "luaclient") if a.len() >= 4 => {
-            luaload(Path::new(&a[2]), &a[3], &a[4..])
+            luaload(Path::new(&a[2]), &a[3], &a[4..], false)
         }
+        Some("luaboot") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[3], &a[4..], true),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -4416,7 +4417,13 @@ pub fn fdlibm() -> Result<String, String> {
 }
 
 /// `tests/original_probe/LuaLoadEnvProbe.java` on the port: the game's own Lua loaded by the ported LuaManager.
-pub fn luaload(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, String> {
+/// LuaLoadEnvProbe (`boot` false) and LuaBootProbe (`boot` true) on the port.
+pub fn luaload(
+    root: &Path,
+    cache_dir: &str,
+    dirs: &[String],
+    boot: bool,
+) -> Result<String, String> {
     use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
     use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
@@ -4526,27 +4533,17 @@ pub fn luaload(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, 
     d.init_tables.insert(addr(&env), "_G".into());
     let init_collections: HashMap<String, String> = luaload_static_collections(&env)
         .into_values()
-        .map(|(name, v)| {
-            let l = match &v {
-                Object::Userdata(u) => u
-                    .as_any()
-                    .downcast_ref::<zomboid_engine::zombie::lua::exposed_methods::ArrayListObject>()
-                    .map(|l| {
-                        format!(
-                            "[{}]",
-                            l.0.borrow().iter().map(value).collect::<Vec<_>>().join(",")
-                        )
-                    })
-                    .unwrap_or_default(),
-                _ => String::new(),
-            };
-            (name, l)
-        })
+        .map(|(name, v)| (name, static_collection_text(&v, &value).unwrap_or_default()))
         .collect();
     for dir in dirs {
         lm.load_dir_base(dir)
             .map_err(|e| format!("LoadDirBase {dir}: {e:?}"))?;
     }
+    let boot_state = if boot {
+        Some(luaboot_events(&mut lm, &value).map_err(|e| format!("boot: {e:?}"))?)
+    } else {
+        None
+    };
     for line in &lm.loader.borrow().log {
         eprintln!("LOG {line}");
     }
@@ -4607,11 +4604,178 @@ pub fn luaload(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, 
         }
     }
     luaload_java_state(&lm, &init_collections, &mut d.sb, &value);
+    if let Some((boot_sb, tos)) = boot_state {
+        d.sb.push_str(&boot_sb);
+        luaboot_java_state(&lm, &tos, &mut d.sb, &value);
+    }
     Ok(d.sb)
 }
 
-/// The ArrayLists public static fields hold, by "<class>.<field>", from the statics tables globals hold
-/// (LuaLoadEnvProbe.staticCollections; the port's maps are opaque and never change).
+/// LuaBootProbe's steps after LoadDirBase on the port: ZomboidGlobals.Load, then the events the original fires on
+/// its way to the main menu, each through Event.trigger; returns the BOOT lines and the TermsOfServiceState given
+/// to OnGameStateEnter.
+fn luaboot_events(
+    lm: &mut zomboid_engine::zombie::lua::lua_manager::LuaManager,
+    value: &dyn Fn(&zomboid_engine::se::krka::kahlua::vm::object::Object) -> String,
+) -> Result<
+    (
+        String,
+        std::rc::Rc<zomboid_engine::zombie::lua::exposed_boot::TermsOfServiceStateObject>,
+    ),
+    zomboid_engine::se::krka::kahlua::vm::object::Throwable,
+> {
+    use std::rc::Rc;
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::lua::exposed_boot::TermsOfServiceStateObject;
+    let mut sb = String::new();
+    let mut fire = |lm: &mut zomboid_engine::zombie::lua::lua_manager::LuaManager,
+                    name: &str,
+                    params: &[Object]|
+     -> Result<(), zomboid_engine::se::krka::kahlua::vm::object::Throwable> {
+        let e = lm.events.add_event(name, &lm.env)?;
+        let n = e.callbacks.borrow().len();
+        let _ = writeln!(sb, "BOOT {name} {n}");
+        for (c, r) in e.trigger(&mut lm.thread, params)? {
+            let ok = matches!(r.first(), Some(Object::Boolean(true)));
+            let _ = write!(sb, "  {} {ok}", value(&Object::Closure(c)));
+            if !ok {
+                let _ = write!(sb, " {}", value(r.get(1).unwrap_or(&Object::Nil)));
+            }
+            sb.push('\n');
+        }
+        Ok(())
+    };
+    lm.statics
+        .state
+        .zomboid_globals
+        .borrow_mut()
+        .load(&lm.env)?;
+    fire(lm, "OnLoadSoundBanks", &[])?;
+    fire(lm, "OnGameBoot", &[])?;
+    let tos = Rc::new(TermsOfServiceStateObject::default());
+    fire(lm, "OnGameStateEnter", &[Object::Userdata(tos.clone())])?;
+    // the rest of TermsOfServiceState.enter
+    tos.0.borrow_mut().after_enter_event();
+    fire(lm, "OnMainMenuEnter", &[])?;
+    Ok((sb, tos))
+}
+
+/// The rest of LuaBootProbe's report: ZomboidGlobals, ObservationFactory, SurvivorDesc's colours and the
+/// TermsOfServiceState.
+fn luaboot_java_state(
+    lm: &zomboid_engine::zombie::lua::lua_manager::LuaManager,
+    tos: &zomboid_engine::zombie::lua::exposed_boot::TermsOfServiceStateObject,
+    sb: &mut String,
+    value: &dyn Fn(&zomboid_engine::se::krka::kahlua::vm::object::Object) -> String,
+) {
+    let state = &lm.statics.state;
+    for (name, bits) in state.zomboid_globals.borrow().fields() {
+        let _ = writeln!(sb, "ZOMBOIDGLOBALS {name} {bits}");
+    }
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::lua::exposed_boot::{
+        ColorObject, ImmutableColorObject, ObservationMapObject,
+    };
+    use zomboid_engine::zombie::lua::exposed_methods::ArrayListObject;
+    let s = |t: &Option<String>| {
+        t.as_deref()
+            .map_or("nil".to_string(), |x| value(&Object::str(x)))
+    };
+    if let Object::Userdata(u) = lm.statics.field(
+        "zombie.characters.traits.ObservationFactory",
+        "observationMap",
+    ) {
+        if let Some(m) = u.as_any().downcast_ref::<ObservationMapObject>() {
+            let m = m.0.borrow();
+            // TreeMap<String, ...>: UTF-16 order (a null key would throw there; none is added)
+            let mut keys: Vec<&Option<String>> = m.observation_map.keys().collect();
+            keys.sort_by(|a, b| {
+                let a: Vec<u16> = a.as_deref().unwrap_or("").encode_utf16().collect();
+                let b: Vec<u16> = b.as_deref().unwrap_or("").encode_utf16().collect();
+                a.cmp(&b)
+            });
+            for k in keys {
+                let o = &m.observation_map[k];
+                let me: Vec<String> = o.mutually_exclusive.iter().map(s).collect();
+                let _ = writeln!(
+                    sb,
+                    "OBSERVATION {} {} {} {} [{}]",
+                    s(k),
+                    s(&o.trait_id),
+                    s(&o.name),
+                    s(&o.description),
+                    me.join(",")
+                );
+            }
+        }
+    }
+    let list = |field: &str| -> Vec<Object> {
+        match lm.statics.field("zombie.characters.SurvivorDesc", field) {
+            Object::Userdata(u) => u
+                .as_any()
+                .downcast_ref::<ArrayListObject>()
+                .map(|l| l.0.borrow().clone())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    };
+    for o in list("TrouserCommonColors") {
+        if let Object::Userdata(u) = o {
+            if let Some(c) = u.as_any().downcast_ref::<ColorObject>() {
+                let c = *c.0.borrow();
+                let _ = writeln!(
+                    sb,
+                    "TROUSERCOLOR {:x} {:x} {:x} {:x}",
+                    c.r.to_bits(),
+                    c.g.to_bits(),
+                    c.b.to_bits(),
+                    c.a.to_bits()
+                );
+            }
+        }
+    }
+    for o in list("HairCommonColors") {
+        if let Object::Userdata(u) = o {
+            if let Some(c) = u.as_any().downcast_ref::<ImmutableColorObject>() {
+                let c = c.0;
+                let _ = writeln!(
+                    sb,
+                    "HAIRCOLOR {:x} {:x} {:x} {:x}",
+                    c.r.to_bits(),
+                    c.g.to_bits(),
+                    c.b.to_bits(),
+                    c.a.to_bits()
+                );
+            }
+        }
+    }
+    let t = *tos.0.borrow();
+    let _ = writeln!(sb, "TOSSTATE {} {}", t.created, t.exit);
+}
+
+/// LuaLoadEnvProbe's text of a static collection: a list's elements, a map's size (the port's other maps are
+/// opaque and never change, so they are left out on both sides of the comparison).
+fn static_collection_text(
+    v: &zomboid_engine::se::krka::kahlua::vm::object::Object,
+    value: &dyn Fn(&zomboid_engine::se::krka::kahlua::vm::object::Object) -> String,
+) -> Option<String> {
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::lua::exposed_boot::ObservationMapObject;
+    use zomboid_engine::zombie::lua::exposed_methods::ArrayListObject;
+    let Object::Userdata(u) = v else { return None };
+    if let Some(l) = u.as_any().downcast_ref::<ArrayListObject>() {
+        return Some(format!(
+            "[{}]",
+            l.0.borrow().iter().map(value).collect::<Vec<_>>().join(",")
+        ));
+    }
+    u.as_any()
+        .downcast_ref::<ObservationMapObject>()
+        .map(|m| format!("size {}", m.0.borrow().observation_map.len()))
+}
+
+/// The ArrayLists (and the maps the port keeps) public static fields hold, by "<class>.<field>", from the statics
+/// tables globals hold (LuaLoadEnvProbe.staticCollections).
 fn luaload_static_collections(
     env: &zomboid_engine::se::krka::kahlua::vm::object::TableRef,
 ) -> std::collections::BTreeMap<
@@ -4632,7 +4796,10 @@ fn luaload_static_collections(
         };
         for (k, v) in KahluaTableImpl::iterate_snapshot(&t) {
             if let Object::Userdata(u) = &v {
-                if u.as_any().is::<ArrayListObject>() {
+                if u.as_any().is::<ArrayListObject>()
+                    || u.as_any()
+                        .is::<zomboid_engine::zombie::lua::exposed_boot::ObservationMapObject>()
+                {
                     let name = format!("{}.{}", c.0.name, k.java_to_string());
                     r.insert(name.encode_utf16().collect(), (name, v.clone()));
                 }
@@ -4687,11 +4854,9 @@ fn luaload_java_state(
         if name.ends_with("Texture.nullTextures") {
             continue;
         }
-        let Object::Userdata(u) = &v else { continue };
-        let Some(l) = u.as_any().downcast_ref::<ArrayListObject>() else {
+        let Some(is) = static_collection_text(&v, value) else {
             continue;
         };
-        let is = objects(l);
         if init_collections.get(&name) != Some(&is) {
             let _ = writeln!(sb, "STATIC {name} {is}");
         }

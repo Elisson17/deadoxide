@@ -75,6 +75,36 @@ impl Event {
         );
         KahluaTableImpl::rawset(table, Object::str(&self.name), Object::Table(t));
     }
+
+    /// zombie.Lua.Event.trigger: each callback in order, protected (LuaCaller.protectedCallVoid on LuaManager.thread;
+    /// the arguments are Lua values already), the index stepped back when the callback removed itself
+    /// (`ArrayList.contains`, identity). The original drops each call's results; they are returned here (`true` and
+    /// the results, or `false`, the message, the stack trace and the exception, as KahluaThread.pcall leaves them) so
+    /// a caller can report the handlers' errors. The slowLuaEvents timing and the profiler do not change Lua state.
+    pub fn trigger(
+        &self,
+        thread: &mut KahluaThread,
+        params: &[Object],
+    ) -> R<Vec<(Rc<LuaClosure>, Vec<Object>)>> {
+        let mut results = Vec::new();
+        let mut n = 0usize;
+        loop {
+            let Some(closure) = self.callbacks.borrow().get(n).cloned() else {
+                break;
+            };
+            let r = thread.pcall_args(&Object::Closure(closure.clone()), params)?;
+            results.push((closure.clone(), r));
+            let still = self
+                .callbacks
+                .borrow()
+                .iter()
+                .any(|c| Rc::ptr_eq(c, &closure));
+            if still {
+                n += 1;
+            }
+        }
+        Ok(results)
+    }
 }
 
 /// zombie.Lua.Event.Add: appends the first argument when it is a Lua function (anything else is ignored).

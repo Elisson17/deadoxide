@@ -300,3 +300,9 @@ fn luaclient_matches_original() {
     // media/lua/shared then media/lua/client, as the game's client loads them
     check("luaclient", &["-", "shared", "client"]);
 }
+
+#[test]
+fn luaboot_matches_original() {
+    // the client load, then ZomboidGlobals.Load and the events the game fires on its way to the main menu
+    check("luaboot", &["-", "shared", "client"]);
+}

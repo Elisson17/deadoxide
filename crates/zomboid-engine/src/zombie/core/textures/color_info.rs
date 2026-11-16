@@ -25,6 +25,26 @@ impl ColorInfo {
         }
     }
 
+    /// zombie.core.textures.ColorInfo.toColor: `new Color(r, g, b, a)` (clamped to [0, 1]).
+    pub fn to_color(&self) -> crate::zombie::core::color::Color {
+        crate::zombie::core::color::Color::new_clamped(
+            self.r.get(),
+            self.g.get(),
+            self.b.get(),
+            self.a.get(),
+        )
+    }
+
+    /// zombie.core.textures.ColorInfo.toImmutableColor: `new ImmutableColor(r, g, b, a)`.
+    pub fn to_immutable_color(&self) -> crate::zombie::core::immutable_color::ImmutableColor {
+        crate::zombie::core::immutable_color::ImmutableColor::new(
+            self.r.get(),
+            self.g.get(),
+            self.b.get(),
+            self.a.get(),
+        )
+    }
+
     /// zombie.core.textures.ColorInfo.set(float, float, float, float)
     pub fn set(&self, r: f32, g: f32, b: f32, a: f32) {
         self.r.set(r);

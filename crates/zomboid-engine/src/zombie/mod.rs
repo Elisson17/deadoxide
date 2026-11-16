@@ -21,3 +21,4 @@ pub mod util;
 pub mod vehicles;
 pub mod world;
 pub mod world_map;
+pub mod zomboid_globals;

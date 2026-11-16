@@ -7,6 +7,8 @@ use std::rc::Rc;
 use super::event::Event;
 use super::lua_events_table::{EVENTS, HOOKS};
 use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
+use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
+use crate::se::krka::kahlua::vm::lua_closure::LuaClosure;
 use crate::se::krka::kahlua::vm::object::{Object, TableRef, R};
 
 /// The event list of LuaEventManager (global `Events`) or LuaHookManager (global `Hook`).
@@ -61,5 +63,35 @@ impl EventRegistry {
     /// The event called `name`, if registered.
     pub fn get(&self, name: &str) -> Option<Rc<Event>> {
         self.event_map.borrow().get(name).cloned()
+    }
+
+    /// zombie.Lua.LuaEventManager.checkEvent: the event, added when unknown (the original logs that on
+    /// DebugType.Lua); `None` when it has no callbacks.
+    pub fn check_event(&self, name: &str, env: &TableRef) -> R<Option<Rc<Event>>> {
+        let e = match self.get(name) {
+            Some(e) => e,
+            None => self.add_event(name, env)?,
+        };
+        Ok(if e.callbacks.borrow().is_empty() {
+            None
+        } else {
+            Some(e)
+        })
+    }
+
+    /// zombie.Lua.LuaEventManager.triggerEvent (on the main thread, LuaManager.env set): checkEvent, then
+    /// Event.trigger with `params`. Returns each callback's protected-call results (see Event.trigger), empty when
+    /// nothing was called.
+    pub fn trigger_event(
+        &self,
+        name: &str,
+        env: &TableRef,
+        thread: &mut KahluaThread,
+        params: &[Object],
+    ) -> R<Vec<(Rc<LuaClosure>, Vec<Object>)>> {
+        match self.check_event(name, env)? {
+            Some(e) => e.trigger(thread, params),
+            None => Ok(Vec::new()),
+        }
     }
 }
