@@ -145,7 +145,8 @@ details	ModU
 details	ModS
 details	undefined_id
 state
-read	$S/ws/Contents/mods/LowerWs
+read	$S/ws/contents/mods/LowerWs
+read	$S/ws/Contents/mods/../mods//WsMod
 read	$S/ws/123456789/mods/SteamMod
 read	$S/ws/18446744073709551616/mods/BigMod
 read	$S/ws/18446744073709551615/mods/MaxMod

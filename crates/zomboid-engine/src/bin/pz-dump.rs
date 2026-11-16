@@ -46,6 +46,7 @@ fn main() {
         Some("recipes") if a.len() == 3 => recipes(Path::new(&a[2])),
         Some("vehicles") if a.len() == 3 => vehicles(Path::new(&a[2])),
         Some("xui") if a.len() == 3 => xui(Path::new(&a[2])),
+        Some("mods") if a.len() == 5 => mods(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -3158,6 +3159,486 @@ pub fn xui(root: &Path) -> Result<String, String> {
         let _ = writeln!(sb, "CB[{i}]\t{}\t{c}", e(n));
     }
     Ok(sb)
+}
+
+/// Mod loading over the crafted mods of tests/mods_cases.txt, pairs with ModsProbe.java: the commands run against
+/// ChooseGameInfo, ZomboidFileSystem's mod side and ActiveMods, with `<scratch>/rust` as the cache dir (the probe's is
+/// `<scratch>/java`; this one is pz-dump's own and is made afresh).
+pub fn mods(root: &Path, scratch: &Path, commands: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::core::game_version::{core_game_version, GameVersion};
+    use zomboid_engine::zombie::core::translator::Translator;
+    use zomboid_engine::zombie::game_states::choose_game_info::{
+        get_min_required_version, ChooseGameInfo, Mod, TEXTURE_ID_USE_COMPRESSION_OPTION,
+    };
+    use zomboid_engine::zombie::modding::active_mods::{
+        ActiveMods, ActiveModsError, ActiveModsState,
+    };
+    use zomboid_engine::zombie::zomboid_file_system::{
+        canonical_path, PzFolder, PzModFolder, ZomboidFileSystem, CORE_OPTION_MODS_ENABLED,
+    };
+
+    struct Out {
+        sb: String,
+        cache: String,
+        cache_canon: String,
+        base: String,
+    }
+    impl Out {
+        fn line(&mut self, s: &str) {
+            self.sb.push_str(s);
+            self.sb.push('\n');
+        }
+        fn p(&self, s: Option<&str>) -> String {
+            let Some(s) = s else {
+                return "null".into();
+            };
+            let mut s = s.replace(&self.cache, "$S");
+            if self.cache_canon != self.cache {
+                s = s.replace(&self.cache_canon, "$S");
+            }
+            let s = s.replace(&self.base, "$G");
+            let mut b = String::from("\"");
+            for c in s.encode_utf16() {
+                if (0x20..0x7f).contains(&c) && c != 0x22 && c != 0x5c {
+                    b.push(c as u8 as char);
+                } else {
+                    let _ = write!(b, "\\u{c:04x}");
+                }
+            }
+            b.push('"');
+            b
+        }
+        fn list<S: AsRef<str>>(&self, l: Option<&[S]>) -> String {
+            let Some(l) = l else {
+                return "null".into();
+            };
+            let items: Vec<String> = l.iter().map(|s| self.p(Some(s.as_ref()))).collect();
+            format!("[{}]", items.join(", "))
+        }
+        fn sorted<'a>(&self, l: impl Iterator<Item = &'a String>) -> String {
+            let mut v: Vec<&String> = l.collect();
+            v.sort_by(|a, b| java::string_compare_to(a, b));
+            self.list(Some(&v))
+        }
+        fn version(&self, v: Option<&GameVersion>) -> String {
+            v.map_or("null".into(), |v| {
+                format!("{} {}", self.p(Some(&v.to_string())), v.get_int())
+            })
+        }
+        fn folder(&self, f: &PzFolder) -> String {
+            format!(
+                "{} {}",
+                self.p(f.absolute_file.as_deref()),
+                self.p(f.canonical_file.as_deref())
+            )
+        }
+        fn mod_folder(&mut self, label: &str, f: &PzModFolder) {
+            let l = format!(
+                " {label} common {} version {}",
+                self.folder(&f.common),
+                self.folder(&f.version)
+            );
+            self.line(&l);
+        }
+        fn dump_mod(&mut self, m: &Mod) {
+            let lines = vec![
+                format!("MOD {}", self.p(Some(&m.dir))),
+                format!(" commonDir {}", self.p(Some(&m.common_dir))),
+                format!(" versionDir {}", self.p(Some(&m.version_dir))),
+            ];
+            for l in lines {
+                self.line(&l);
+            }
+            self.mod_folder("baseFile", &m.base_file);
+            self.mod_folder("mediaFile", &m.media_file);
+            self.mod_folder("actionGroupsFile", &m.action_groups_file);
+            self.mod_folder("animSetsFile", &m.anim_sets_file);
+            self.mod_folder("animsXFile", &m.anims_x_file);
+            let packs: Vec<String> = m
+                .packs
+                .iter()
+                .map(|pf| format!("{} {}", self.p(Some(&pf.name)), pf.flags))
+                .collect();
+            let defs: Vec<String> = m
+                .tile_defs
+                .iter()
+                .map(|td| format!("{} {}", self.p(Some(&td.name)), td.file_number))
+                .collect();
+            let lines = vec![
+                format!(" posters {}", self.list(Some(&m.posters))),
+                format!(" require {}", self.list(m.require.as_deref())),
+                format!(" incompatible {}", self.list(m.incompatible.as_deref())),
+                format!(" loadAfter {}", self.list(m.load_after.as_deref())),
+                format!(" loadBefore {}", self.list(m.load_before.as_deref())),
+                format!(" name {}", self.p(Some(&m.name))),
+                format!(" desc {}", self.p(Some(&m.desc))),
+                format!(" id {}", self.p(Some(&m.id))),
+                format!(" url {}", self.p(m.url.as_deref())),
+                format!(" author {}", self.p(m.author.as_deref())),
+                format!(" modVersion {}", self.p(m.mod_version.as_deref())),
+                format!(" icon {}", self.p(m.icon.as_deref())),
+                format!(" category {}", self.p(m.category.as_deref())),
+                format!(" workshopId {}", self.p(Some(&m.workshop_id))),
+                format!(" source {}", self.p(Some(&m.source))),
+                format!(" availableDone {}", m.available_done),
+                format!(" available {}", m.available),
+                format!(" versionMin {}", self.version(m.version_min.as_ref())),
+                format!(" versionMax {}", self.version(m.version_max.as_ref())),
+                format!(" packs [{}]", packs.join(", ")),
+                format!(" tileDefs [{}]", defs.join(", ")),
+                format!(" read {}", m.read),
+                format!(" valid {}", m.valid),
+            ];
+            for l in lines {
+                self.line(&l);
+            }
+        }
+        fn active_text(&self, a: &ActiveMods) -> String {
+            format!(
+                "{} mods {} maps {}",
+                self.p(Some(a.id())),
+                self.list(Some(a.get_mods())),
+                self.list(Some(a.get_map_order()))
+            )
+        }
+    }
+    // the command file's escapes, as bytes (\xHH a raw byte, the rest UTF-8; \u a UTF-16 unit in 3-byte form)
+    fn unescape(s: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            if c != '\\' {
+                let mut buf = [0u8; 4];
+                out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+                continue;
+            }
+            match it.next() {
+                Some('n') => out.push(b'\n'),
+                Some('t') => out.push(b'\t'),
+                Some('r') => out.push(b'\r'),
+                Some('\\') => out.push(b'\\'),
+                Some('x') => {
+                    let h: String = it.by_ref().take(2).collect();
+                    out.push(u8::from_str_radix(&h, 16).unwrap_or(0));
+                }
+                Some('u') => {
+                    let h: String = it.by_ref().take(4).collect();
+                    let u = u32::from_str_radix(&h, 16).unwrap_or(0);
+                    if u < 0x80 {
+                        out.push(u as u8);
+                    } else if u < 0x800 {
+                        out.extend_from_slice(&[0xc0 | (u >> 6) as u8, 0x80 | (u & 0x3f) as u8]);
+                    } else {
+                        out.extend_from_slice(&[
+                            0xe0 | (u >> 12) as u8,
+                            0x80 | ((u >> 6) & 0x3f) as u8,
+                            0x80 | (u & 0x3f) as u8,
+                        ]);
+                    }
+                }
+                Some(e) => {
+                    out.push(b'\\');
+                    let mut buf = [0u8; 4];
+                    out.extend_from_slice(e.encode_utf8(&mut buf).as_bytes());
+                }
+                None => out.push(b'\\'),
+            }
+        }
+        out
+    }
+    type Exc = (&'static str, String);
+    fn am(e: ActiveModsError) -> Exc {
+        (e.class, e.message)
+    }
+
+    let cache_path = scratch.join("rust");
+    if cache_path.exists() {
+        std::fs::remove_dir_all(&cache_path)
+            .map_err(|e| format!("{}: {e}", cache_path.display()))?;
+    }
+    std::fs::create_dir_all(&cache_path).map_err(|e| format!("{}: {e}", cache_path.display()))?;
+    let mut fs = ZomboidFileSystem::init(root)?;
+    fs.set_cache_dir(&cache_path.to_string_lossy());
+    let mut tr = Translator::new(fs.base());
+    let base_path = fs.base().to_path_buf();
+    tr.languages.init(&base_path);
+    let mut cgi = ChooseGameInfo::default();
+    let mut active = ActiveModsState::default();
+    let cache = fs.get_cache_dir().unwrap_or_default().to_string();
+    let mut o = Out {
+        sb: String::new(),
+        cache_canon: canonical_path(&cache).unwrap_or_else(|| cache.clone()),
+        cache,
+        base: base_path.to_string_lossy().into_owned(),
+    };
+    let header = format!(
+        "GAME version {} min {} compression {} modsEnabled {}",
+        o.version(Some(&core_game_version())),
+        o.version(Some(&get_min_required_version())),
+        TEXTURE_ID_USE_COMPRESSION_OPTION,
+        CORE_OPTION_MODS_ENABLED
+    );
+    o.line(&header);
+    let text =
+        std::fs::read_to_string(commands).map_err(|e| format!("{}: {e}", commands.display()))?;
+    let cache = o.cache.clone();
+    for l in java::buffered_reader_lines(&text) {
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = l.split('\t').collect();
+        let arg = |field: Option<&&str>| {
+            String::from_utf8_lossy(&unescape(field.copied().unwrap_or(""))).replace("$S", &cache)
+        };
+        let (a1, a2) = (arg(f.get(1)), arg(f.get(2)));
+        let r: Result<(), Exc> = (|| {
+            match f[0] {
+                "lang" => {
+                    let l = tr.languages.get_by_name(Some(&a1));
+                    tr.set_language(l);
+                    let name = tr.get_language().name.clone();
+                    let s = format!("LANG {} -> {}", o.p(Some(&a1)), o.p(Some(&name)));
+                    o.line(&s);
+                }
+                "gv" => {
+                    let v = GameVersion::parse(&a1).map_err(|e| ("IllegalArgumentException", e))?;
+                    let s = format!("GV {} -> {}", o.p(Some(&a1)), o.version(Some(&v)));
+                    o.line(&s);
+                }
+                "vint" => {
+                    let s = format!(
+                        "VINT {} -> {}",
+                        o.p(Some(&a1)),
+                        fs.get_game_version_int_from_name(&a1)
+                    );
+                    o.line(&s);
+                }
+                "file" => {
+                    let path = cache_path.join(f[1]);
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| ("IOException", e.to_string()))?;
+                    }
+                    std::fs::write(&path, unescape(f.get(2).copied().unwrap_or("")))
+                        .map_err(|e| ("IOException", e.to_string()))?;
+                }
+                "dir" => {
+                    std::fs::create_dir_all(cache_path.join(f[1]))
+                        .map_err(|e| ("IOException", e.to_string()))?;
+                }
+                "order" => {
+                    fs.set_mod_folders_order(&a1);
+                    fs.reset_mod_folders();
+                    let s = format!("ORDER {}", o.p(Some(&a1)));
+                    o.line(&s);
+                }
+                "folders" => {
+                    let out = fs.get_all_mod_folders();
+                    let s = format!("FOLDERS {}", out.len());
+                    o.line(&s);
+                    for d in &out {
+                        let s = format!(" {}", o.p(Some(d)));
+                        o.line(&s);
+                    }
+                }
+                "details" | "available" | "read" => {
+                    let m = match f[0] {
+                        "details" => cgi.get_mod_details(&mut fs, &mut tr, &a1),
+                        "available" => cgi.get_available_mod_details(&mut fs, &mut tr, &a1),
+                        _ => cgi.read_mod_info(&mut fs, &mut tr, Some(&a1)),
+                    };
+                    let dir = m.map(|m| fs.mod_info(m).dir.clone());
+                    let s = format!(
+                        "{} {} -> {}",
+                        f[0].to_uppercase(),
+                        o.p(Some(&a1)),
+                        o.p(dir.as_deref())
+                    );
+                    o.line(&s);
+                }
+                "verdir" => {
+                    let d = fs.get_mod_version_dir_name(&java::file_normalize(&a1));
+                    let s = format!("VERDIR {} -> {}", o.p(Some(&a1)), o.p(Some(&d)));
+                    o.line(&s);
+                }
+                "active" => {
+                    let i = active.get_by_id(&a1).map_err(am)?;
+                    let b = java::equals_ignore_case(&arg(f.get(3)), "true");
+                    active.get_mut(i).set_mod_active(&a2, b);
+                    let s = format!(
+                        "ACTIVE {} {} {} -> {}",
+                        o.p(Some(&a1)),
+                        o.p(Some(&a2)),
+                        f.get(3).copied().unwrap_or(""),
+                        o.active_text(active.get(i))
+                    );
+                    o.line(&s);
+                }
+                "isactive" => {
+                    let i = active.get_by_id(&a1).map_err(am)?;
+                    let s = format!(
+                        "ISACTIVE {} {} -> {}",
+                        o.p(Some(&a1)),
+                        o.p(Some(&a2)),
+                        active.get(i).is_mod_active(&a2)
+                    );
+                    o.line(&s);
+                }
+                "remove" => {
+                    let i = active.get_by_id(&a1).map_err(am)?;
+                    active.get_mut(i).remove_mod(&a2);
+                    let s = format!(
+                        "REMOVE {} {} -> {}",
+                        o.p(Some(&a1)),
+                        o.p(Some(&a2)),
+                        o.active_text(active.get(i))
+                    );
+                    o.line(&s);
+                }
+                "checkmissing" => {
+                    let i = active.get_by_id(&a1).map_err(am)?;
+                    active.check_missing_mods(i, &mut cgi, &mut fs, &mut tr);
+                    let s = format!(
+                        "CHECKMISSING {} -> {}",
+                        o.p(Some(&a1)),
+                        o.active_text(active.get(i))
+                    );
+                    o.line(&s);
+                }
+                "lists" => {
+                    let s = format!("LISTS {}", active.count());
+                    o.line(&s);
+                    for a in active.all() {
+                        let s = format!(" {}", o.active_text(a));
+                        o.line(&s);
+                    }
+                    let s = format!(" loaded {}", o.active_text(active.loaded()));
+                    o.line(&s);
+                }
+                "load" => {
+                    let i = active.get_by_id(&a1).map_err(am)?;
+                    let list = active.get(i).get_mods().to_vec();
+                    fs.load_mods(&mut cgi, &mut tr, &list);
+                    let s = format!(
+                        "LOAD {} -> {}",
+                        o.p(Some(&a1)),
+                        o.list(Some(fs.get_mod_ids()))
+                    );
+                    o.line(&s);
+                }
+                "loadstr" => {
+                    fs.load_mods_by_id(&mut cgi, &mut tr, &mut active, &a1)
+                        .map_err(am)?;
+                    let s = format!(
+                        "LOADSTR {} -> {}",
+                        o.p(Some(&a1)),
+                        o.list(Some(fs.get_mod_ids()))
+                    );
+                    o.line(&s);
+                }
+                "get" => {
+                    let s = match fs.get_string(&a1) {
+                        None => format!("GET {} unchanged", o.p(Some(&a1))),
+                        Some(r) => format!("GET {} -> {}", o.p(Some(&a1)), o.p(Some(r))),
+                    };
+                    o.line(&s);
+                }
+                "dirget" => {
+                    let s = format!(
+                        "DIRGET {} -> {}",
+                        o.p(Some(&a1)),
+                        o.p(Some(&fs.get_directory_string(&a1)))
+                    );
+                    o.line(&s);
+                }
+                "known" => {
+                    let s = format!("KNOWN {} {}", o.p(Some(&a1)), fs.is_known_file(&a1));
+                    o.line(&s);
+                }
+                "abs" => {
+                    let s = format!(
+                        "ABS {} -> {}",
+                        o.p(Some(&a1)),
+                        o.p(fs.get_absolute_path(&a1))
+                    );
+                    o.line(&s);
+                }
+                "map" => {
+                    let s = format!(
+                        "MAP size {} abs {}",
+                        fs.active_file_map.len(),
+                        fs.all_absolute_paths_len()
+                    );
+                    o.line(&s);
+                    let mut entries: Vec<(&String, &String)> = fs
+                        .active_file_map
+                        .iter()
+                        .filter(|(_, v)| v.starts_with(&o.cache))
+                        .collect();
+                    entries.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+                    for (k, v) in entries {
+                        let s = format!(" {} -> {}", o.p(Some(k)), o.p(Some(v)));
+                        o.line(&s);
+                    }
+                }
+                "state" => {
+                    o.line("STATE");
+                    let s = format!(" Mods {}", cgi.mods.len());
+                    o.line(&s);
+                    let mut ids: Vec<(&String, &usize)> = cgi.mods.iter().collect();
+                    ids.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+                    for (k, m) in ids {
+                        let s =
+                            format!("  {} -> {}", o.p(Some(k)), o.p(Some(&fs.mod_info(*m).dir)));
+                        o.line(&s);
+                    }
+                    let s = format!(" MissingMods {}", o.sorted(cgi.missing_mods.iter()));
+                    o.line(&s);
+                    let s = format!(" tempStrings {}", o.list(Some(&cgi.temp_strings)));
+                    o.line(&s);
+                    let s = format!(" modIdToDir {}", fs.mod_id_to_dir().len());
+                    o.line(&s);
+                    let mut dirs: Vec<(&String, &String)> = fs.mod_id_to_dir().iter().collect();
+                    dirs.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+                    for (k, d) in dirs {
+                        let s = format!("  {} -> {}", o.p(Some(k)), o.p(Some(d)));
+                        o.line(&s);
+                    }
+                    let s = format!(" modDirToMod {}", o.sorted(fs.mod_dir_to_mod().keys()));
+                    o.line(&s);
+                    let s = format!(" mods {}", o.list(Some(fs.get_mod_ids())));
+                    o.line(&s);
+                    let s = format!(" modFolders {}", o.list(fs.mod_folders()));
+                    o.line(&s);
+                    let s = format!(" modFoldersOrder {}", o.list(fs.mod_folders_order()));
+                    o.line(&s);
+                }
+                "mods" => {
+                    let s = format!("MODS {}", fs.mod_dir_to_mod().len());
+                    o.line(&s);
+                    let mut dirs: Vec<(&String, &usize)> = fs.mod_dir_to_mod().iter().collect();
+                    dirs.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+                    let handles: Vec<usize> = dirs.into_iter().map(|(_, h)| *h).collect();
+                    for h in handles {
+                        let m = fs.mod_info(h).clone();
+                        o.dump_mod(&m);
+                    }
+                }
+                other => {
+                    return Err((
+                        "IllegalArgumentException",
+                        format!("unknown command {other}"),
+                    ))
+                }
+            }
+            Ok(())
+        })();
+        if let Err((class, message)) = r {
+            let s = format!("EXC {} {class}: {}", f[0], o.p(Some(&message)));
+            o.line(&s);
+        }
+    }
+    Ok(o.sb)
 }
 
 /// zombie.scripting.ScriptParser over crafted cases, pairs with ScriptParserProbe.java: per case the stripComments

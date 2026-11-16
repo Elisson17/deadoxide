@@ -410,7 +410,8 @@ impl Mod {
         flags |= 64;
         let p = java::string_index_of(&pack, "type=");
         if p != -1 {
-            let r#type = java::string_substring_from(&pack, p + "type=".len() as i32).map_err(|_| ())?;
+            let r#type =
+                java::string_substring_from(&pack, p + "type=".len() as i32).map_err(|_| ())?;
             if r#type == "ui" {
                 flags = 2;
             }
@@ -524,9 +525,7 @@ impl ChooseGameInfo {
             Some(exists) if exists != m => {
                 self.temp_strings = fs.get_all_mod_folders();
                 let index_of = |dir: &str, list: &[String]| {
-                    list.iter()
-                        .position(|s| s == dir)
-                        .map_or(-1, |i| i as i64)
+                    list.iter().position(|s| s == dir).map_or(-1, |i| i as i64)
                 };
                 let index1 = index_of(&fs.mod_info(m).dir, &self.temp_strings);
                 let index2 = index_of(&fs.mod_info(exists).dir, &self.temp_strings);
@@ -580,7 +579,12 @@ impl ChooseGameInfo {
 
     /// zombie.gameStates.ChooseGameInfo.Mod.isAvailable: once per mod, `isAvailableSelf` and every required mod
     /// (found, available itself, and its own required mods, each id checked once).
-    pub fn is_available(&mut self, fs: &mut ZomboidFileSystem, tr: &mut Translator, m: usize) -> bool {
+    pub fn is_available(
+        &mut self,
+        fs: &mut ZomboidFileSystem,
+        tr: &mut Translator,
+        m: usize,
+    ) -> bool {
         if fs.mod_info(m).available_done {
             return fs.mod_info(m).available;
         }

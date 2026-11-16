@@ -77,7 +77,12 @@ pub struct PzModFolder {
 
 impl PzModFolder {
     /// zombie.ZomboidFileSystem.PZModFolder.setWithCatch
-    pub fn set_with_catch(&mut self, fs: &ZomboidFileSystem, common_file: &str, version_file: &str) {
+    pub fn set_with_catch(
+        &mut self,
+        fs: &ZomboidFileSystem,
+        common_file: &str,
+        version_file: &str,
+    ) {
         self.common.set_with_catch(fs, common_file);
         self.version.set_with_catch(fs, version_file);
     }

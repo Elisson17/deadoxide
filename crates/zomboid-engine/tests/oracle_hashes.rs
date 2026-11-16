@@ -281,6 +281,23 @@ fn xui_matches_original() {
     check("xui", &[]);
 }
 
+/// Mod loading over the crafted mods of tests/mods_cases.txt (written by pz-dump under its own cache dir in the
+/// scratch folder): mod.info fields, availability, the version folders, ActiveMods, the load order and the file map.
+#[test]
+fn mods_matches_original() {
+    let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("pz-oracle-mods");
+    let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/mods_cases.txt");
+    check(
+        "mods",
+        &[
+            scratch.to_str().expect("utf-8 path"),
+            cases.to_str().expect("utf-8 path"),
+        ],
+    );
+    // pz-dump's cache dir there holds only the crafted mods
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {
