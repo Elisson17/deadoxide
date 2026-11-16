@@ -32,7 +32,11 @@ pub struct ActionGroups {
 
 impl ActionGroups {
     /// `getActionGroup` as the shared object an `ActionContext` keeps: the same `Rc` for the same lower-cased name.
-    pub fn get_action_group_rc(&mut self, fs: &ZomboidFileSystem, group_name: &str) -> Rc<ActionGroup> {
+    pub fn get_action_group_rc(
+        &mut self,
+        fs: &ZomboidFileSystem,
+        group_name: &str,
+    ) -> Rc<ActionGroup> {
         let key = java::to_lower_case(group_name);
         if let Some(g) = self.shared.get(&key) {
             return Rc::clone(g);

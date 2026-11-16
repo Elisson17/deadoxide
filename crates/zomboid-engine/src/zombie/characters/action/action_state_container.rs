@@ -47,8 +47,7 @@ impl<'a> Eval<'a> {
 
     /// ActionContext.hasEventOccurred(eventName, stateName)
     pub fn has_event_occurred(&self, event_name: &str, state_name: &str) -> bool {
-        self.events
-            .contains_any_layer(event_name, Some(state_name))
+        self.events.contains_any_layer(event_name, Some(state_name))
     }
 }
 
@@ -114,12 +113,10 @@ impl ActionStateContainer {
     }
 
     fn find_state(ctx: &Eval, name: &str) -> Option<StateRef> {
-        ctx.action_group()
-            .find_state(name)
-            .map(|state| StateRef {
-                group: ctx.group,
-                state,
-            })
+        ctx.action_group().find_state(name).map(|state| StateRef {
+            group: ctx.group,
+            state,
+        })
     }
 
     /// ActionStateContainer.peekNextState
@@ -394,7 +391,10 @@ impl ActionStateContainer {
         key: &str,
     ) -> Option<AnimationVariableSlot> {
         for r in self.child_states.iter().rev() {
-            if let Some(s) = groups[r.group].states[r.state].state_variables.get_variable(key) {
+            if let Some(s) = groups[r.group].states[r.state]
+                .state_variables
+                .get_variable(key)
+            {
                 return Some(s.clone());
             }
         }

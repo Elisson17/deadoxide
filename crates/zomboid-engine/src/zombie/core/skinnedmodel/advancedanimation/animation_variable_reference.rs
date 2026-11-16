@@ -42,7 +42,10 @@ impl AnimationVariableReference {
     /// zombie.core.skinnedmodel.advancedanimation.AnimationVariableReference.getVariable: null for a blank name;
     /// else the slot of the owner, or of its sub variable source when the reference has one (null when the owner has
     /// no such source).
-    pub fn get_variable(&self, var_source: &dyn IAnimationVariableSource) -> Option<AnimationVariableSlot> {
+    pub fn get_variable(
+        &self,
+        var_source: &dyn IAnimationVariableSource,
+    ) -> Option<AnimationVariableSlot> {
         if self.name.chars().all(java::is_whitespace) {
             return None;
         }

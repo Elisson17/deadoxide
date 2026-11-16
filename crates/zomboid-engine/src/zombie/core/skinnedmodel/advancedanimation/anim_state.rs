@@ -1,6 +1,7 @@
 //! zombie.core.skinnedmodel.advancedanimation.AnimState
 use super::anim_node::AnimNode;
 use super::anim_node_asset_manager::AnimNodeAssetManager;
+use super::i_animation_variable_source::IAnimationVariableSource;
 use crate::zombie::zomboid_file_system::ZomboidFileSystem;
 
 /// zombie.core.skinnedmodel.advancedanimation.AnimState: the nodes of a state folder, the selectable ones ordered by
@@ -58,5 +59,32 @@ impl AnimState {
             .position(|node| AnimNode::compare_selection_conditions(&new_node, node) > 0)
             .unwrap_or(self.nodes.len());
         self.nodes.insert(insert_at, new_node);
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimState.getAnimNodes: the indexes (into `nodes`) of the nodes that
+    /// play: the first node whose conditions pass, then the following ones that do not compare below it, stopping at
+    /// the first node the best one compares greater than (the debug override `dbgForceAnim` is off outside the debug
+    /// build).
+    pub fn get_anim_nodes(
+        &self,
+        var_source: &dyn IAnimationVariableSource,
+    ) -> Result<Vec<usize>, String> {
+        let mut nodes = Vec::new();
+        if self.nodes.is_empty() {
+            return Ok(nodes);
+        }
+        let mut best: Option<usize> = None;
+        for (i, node) in self.nodes.iter().enumerate() {
+            if let Some(b) = best {
+                if AnimNode::compare_selection_conditions(&self.nodes[b], node) > 0 {
+                    break;
+                }
+            }
+            if node.check_conditions(var_source)? {
+                best = Some(i);
+                nodes.push(i);
+            }
+        }
+        Ok(nodes)
     }
 }

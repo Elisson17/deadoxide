@@ -1,7 +1,7 @@
 //! zombie.characters.action.conditions.CharacterVariableCondition
 use crate::java;
-use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
 use crate::zombie::core::skinnedmodel::advancedanimation::anim_node::float_compare;
+use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
 use crate::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
 use crate::zombie::util::pz_xml_util::XmlElement;
 use std::cmp::Ordering;

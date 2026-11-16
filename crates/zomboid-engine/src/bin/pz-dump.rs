@@ -7165,6 +7165,11 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
             // ZombieProbe's ENV line: the booted server's GameTime multiplier and RainManager.isRaining()
             multiplier: 0.8,
             raining: false,
+            anim_assets: if ticks > 0 {
+                Some(zombie_anim_assets(root)?)
+            } else {
+                None
+            },
         };
         let b = |v: bool| u8::from(v);
         for i in 0..count {
@@ -7258,6 +7263,27 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
         }
     }
     Ok(sb)
+}
+
+/// The game's own zombie action group, "zombie" animation set and the human skeleton's animation clips.
+fn zombie_anim_assets(
+    root: &Path,
+) -> Result<zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets, String> {
+    use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSets;
+    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+    use zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem;
+    let fs = ZomboidFileSystem::init(root)?;
+    let mut groups = ActionGroups::default();
+    let mut sets = AnimationSets::default();
+    let (clips, _dups) = AnimationClips::load(&fs, "Human")?;
+    Ok(
+        zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets {
+            action_group: groups.get_action_group_rc(&fs, "zombie"),
+            anim_set: sets.get_animation_set_rc(&fs, "zombie", false)?,
+            clips: std::rc::Rc::new(clips),
+        },
+    )
 }
 
 /// The chunks 1034..=1035 x 1458..=1459 of the real map as ZombieProbe loads them, with their squares' properties.
@@ -7998,6 +8024,27 @@ pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String
     let mut groups = ActionGroups::default();
     let mut sb = String::new();
     for spec in scenarios {
+        if spec == "clips" {
+            use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+            let (clips, _dups) = AnimationClips::load(&fs, "Human")?;
+            let mut names: Vec<&String> = clips.clips.keys().collect();
+            names.sort();
+            let _ = writeln!(sb, "SCENARIO clips");
+            let _ = writeln!(sb, "READY true");
+            let _ = writeln!(sb, "CLIPS {}", names.len());
+            for n in names {
+                let c = &clips.clips[n];
+                let _ = writeln!(
+                    sb,
+                    "CLIP {} {} {}",
+                    n,
+                    c.name,
+                    zomboid_engine::java::float_to_string(c.duration)
+                );
+            }
+            let _ = writeln!(sb, "END clips");
+            continue;
+        }
         let p: Vec<&str> = spec.split(':').collect();
         if p.len() != 4 || p[0] != "ctx" {
             return Err(format!("unknown scenario {spec}"));
@@ -8018,7 +8065,8 @@ pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String
             for t in &st.transitions {
                 for c in &t.conditions {
                     match c {
-                        IActionCondition::EventOccurred(e) | IActionCondition::EventNotOccurred(e) => {
+                        IActionCondition::EventOccurred(e)
+                        | IActionCondition::EventNotOccurred(e) => {
                             events.insert(e.clone());
                         }
                         IActionCondition::CharacterVariable(c) => {

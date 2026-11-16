@@ -1,6 +1,7 @@
 //! Package `zombie.core.skinnedmodel.advancedanimation`: animation sets (`media/AnimSets`), their states and nodes
 //! as the game loads them. The skinning and playback runtime (`AdvancedAnimator`, `AnimLayer`, `LiveAnimNode`) is not
 //! ported.
+pub mod advanced_animator;
 pub mod anim_2d_blend;
 pub mod anim_2d_blend_picker;
 pub mod anim_2d_blend_triangle;
@@ -13,6 +14,6 @@ pub mod anim_state;
 pub mod anim_transition;
 pub mod animation_set;
 pub mod animation_variable_reference;
-pub mod i_animation_variable_source;
 pub mod animation_variable_source;
 pub mod grapple_offset_behaviour;
+pub mod i_animation_variable_source;

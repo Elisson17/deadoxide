@@ -85,4 +85,16 @@ impl AnimTransition {
         }
         t
     }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimTransition.parse: once, every condition is parsed against the
+    /// from-node and the to-node (names).
+    pub fn parse(&mut self, from_node_name: &str, to_node_name: &str) -> Result<(), String> {
+        if !self.is_parsed {
+            for condition in &mut self.conditions {
+                condition.parse(from_node_name, Some(to_node_name))?;
+            }
+            self.is_parsed = true;
+        }
+        Ok(())
+    }
 }

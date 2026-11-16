@@ -203,11 +203,27 @@ public class ActionContextProbe {
         out.println("END " + spec);
     }
 
+    // Scenario "clips": the clips of a zombie's AnimationPlayer (the human skeleton's SkinningData.animationClips), sorted
+    // by name: name and duration. The zombie is only made for its player; it is not put in the world.
+    static void clipsScenario(PrintStream out) throws Exception {
+        zombie.characters.IsoZombie z = new zombie.characters.IsoZombie(zombie.iso.IsoWorld.instance.currentCell);
+        zombie.core.skinnedmodel.animation.AnimationPlayer p = z.getAnimationPlayer();
+        out.println("SCENARIO clips");
+        out.println("READY " + p.isReady());
+        TreeMap<String, zombie.core.skinnedmodel.animation.AnimationClip> m = new TreeMap<>(p.getSkinningData().animationClips);
+        out.println("CLIPS " + m.size());
+        for (Map.Entry<String, zombie.core.skinnedmodel.animation.AnimationClip> e : m.entrySet()) {
+            out.println("CLIP " + e.getKey() + " " + e.getValue().name + " " + e.getValue().getDuration());
+        }
+        out.println("END clips");
+    }
+
     public static void main(String[] a) throws Exception {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         ServerHarness.run(a[0], out -> {
             for (int i = 1; i < a.length; i++) {
                 if (a[i].startsWith("ctx:")) ctxScenario(out, a[i]);
+                else if (a[i].equals("clips")) clipsScenario(out);
                 else throw new IllegalArgumentException("unknown scenario " + a[i]);
             }
         });

@@ -194,7 +194,10 @@ impl ActionContext {
 
     /// ActionContext.getCurrentStateName: the root state's name, else the group's default state's.
     pub fn get_current_state_name(&self) -> String {
-        match self.action_state_container.get_current_state_name(&self.groups) {
+        match self
+            .action_state_container
+            .get_current_state_name(&self.groups)
+        {
             Some(n) => n,
             None => self.get_group().map(default_state_name).unwrap_or_default(),
         }
@@ -260,7 +263,8 @@ impl ActionContext {
 
     /// ActionContext.hasEventOccurred(eventName)
     pub fn has_event_occurred(&self, event_name: &str) -> bool {
-        self.occurred_anim_events.contains_any_layer(event_name, None)
+        self.occurred_anim_events
+            .contains_any_layer(event_name, None)
     }
 
     /// ActionContext.hasEventOccurred(eventName, stateName)

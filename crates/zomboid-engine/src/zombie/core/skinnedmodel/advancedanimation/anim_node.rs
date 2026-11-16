@@ -10,8 +10,11 @@ use super::anim_condition::{AnimCondition, Type};
 use super::anim_event::AnimEvent;
 use super::anim_transition::AnimTransition;
 use super::grapple_offset_behaviour::GrappleOffsetBehaviour;
+use super::i_animation_variable_source::IAnimationVariableSource;
 use crate::java;
+use crate::java::Random;
 use crate::zombie::core::math::interpolators::xml::interpolator_slot::InterpolatorSlot;
+use crate::zombie::core::random::rand_abstract::RandAbstract;
 use crate::zombie::core::skinnedmodel::animation::bone_axis::BoneAxis;
 use crate::zombie::util::pz_xml_util::{
     jaxb_parse_boolean, jaxb_parse_float, jaxb_parse_int, parse_xml_resolved, xml_trim, XmlElement,
@@ -388,4 +391,80 @@ impl AnimNode {
             0
         }
     }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimNode.checkConditions: `AnimCondition.pass` of the node's
+    /// conditions.
+    pub fn check_conditions(
+        &self,
+        var_source: &dyn IAnimationVariableSource,
+    ) -> Result<bool, String> {
+        AnimCondition::pass(var_source, &self.conditions)
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimNode.getSpeedScale: the parsed number, else the variable named
+    /// by the speed scale text (1.0 when the owner has none).
+    pub fn get_speed_scale(&self, var_source: &dyn IAnimationVariableSource) -> f32 {
+        if self.speed_scale_f != f32::INFINITY {
+            self.speed_scale_f
+        } else {
+            var_source.get_variable_float(&self.speed_scale, 1.0)
+        }
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimNode.getBlendOutTime: the out-transition's blend-out time when
+    /// the node has one, else `blendOutTime` when not negative, else `blendTime`.
+    pub fn get_blend_out_time(&self) -> f32 {
+        if let Some(t) = self.transition_out {
+            return self.transitions[t].blend_out_time;
+        }
+        if self.blend_out_time >= 0.0 {
+            self.blend_out_time
+        } else {
+            self.blend_time
+        }
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimNode.getDeferredBoneName: "Translation_Data" when blank.
+    pub fn get_deferred_bone_name(&self) -> &str {
+        if string_utils::is_null_or_whitespace(Some(&self.deferred_bone_name)) {
+            "Translation_Data"
+        } else {
+            &self.deferred_bone_name
+        }
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimNode.isGrappler: a matching grappled node is named.
+    pub fn is_grappler(&self) -> bool {
+        !string_utils::is_null_or_whitespace(Some(&self.matching_grappled_anim_node))
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimNode.getRandomAnim: the animation name, or an alternate: with
+    /// both, `Rand.Next(1 + alternates)` picks the name on 0, else `PZArrayUtil.pickRandom` draws again.
+    pub fn get_random_anim(&self, rand: &mut RandAbstract<Random>) -> String {
+        let empty_name = self.anim_name.is_empty();
+        if empty_name && self.alternate_anims.is_empty() {
+            return String::new();
+        }
+        if empty_name {
+            return pick_random(&self.alternate_anims, rand);
+        }
+        if self.alternate_anims.is_empty() {
+            return self.anim_name.clone();
+        }
+        let idx = rand.next(1 + self.alternate_anims.len() as i32);
+        if idx == 0 {
+            self.anim_name.clone()
+        } else {
+            pick_random(&self.alternate_anims, rand)
+        }
+    }
+}
+
+/// zombie.util.list.PZArrayUtil.pickRandom(List): `Rand.Next(size)` (no draw for an empty list, which gives null).
+fn pick_random(list: &[String], rand: &mut RandAbstract<Random>) -> String {
+    if list.is_empty() {
+        return String::new();
+    }
+    let i = rand.next(list.len() as i32);
+    list[i as usize].clone()
 }
