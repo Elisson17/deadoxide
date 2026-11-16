@@ -314,12 +314,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 }
             })
         },
-        // TextManager.getFontFromEnum gives `this.font`, null until TextManager.Init (the renderer's startup).
-        ("zombie.ui.TextManager", "getFontHeight") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            enum_arg(cf, 1, "zombie.ui.UIFont", "UIFont")?;
-            Err(npe())
-        },
         ("zombie.iso.IsoWorld", "getRandomizedWorldBase") => {
             |s, _, cf, _| ret(cf, the(s, "zombie.randomizedWorld.RandomizedWorldBase"))
         }

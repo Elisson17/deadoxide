@@ -53,10 +53,30 @@ public class LuaBootProbe {
         PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, "UTF-8");
         System.setOut(System.err);
         LuaLoadEnvProbe.load(a);
+        zombie.gameStates.TermsOfServiceState tos = events(null);
+        LuaLoadEnvProbe.report();
+        report(tos);
+        out.print(LuaLoadEnvProbe.sb);
+        out.flush();
+        Runtime.getRuntime().halt(0);
+    }
+
+    interface Hook { void run() throws Exception; }
+
+    /** ZomboidGlobals.Load and the boot events, after LoadDirBase, with `enter` (GameWindow.enter's steps before its
+     * OnGameBoot; null for none) before OnGameBoot; returns the TermsOfServiceState handed out. */
+    static zombie.gameStates.TermsOfServiceState events(Hook enter) throws Exception {
+        // a debugging aid (pz-dump reads the same variable): LUABOOT_STOP=<event> stops after that event,
+        // LUABOOT_STOP=load before ZomboidGlobals.Load
+        String stop = System.getenv("LUABOOT_STOP");
+        zombie.gameStates.TermsOfServiceState tos = new zombie.gameStates.TermsOfServiceState();
+        if ("load".equals(stop)) return tos;
         zombie.ZomboidGlobals.Load();
         fire("OnLoadSoundBanks");
+        if ("OnLoadSoundBanks".equals(stop)) return tos;
+        if (enter != null) enter.run();
         fire("OnGameBoot");
-        zombie.gameStates.TermsOfServiceState tos = new zombie.gameStates.TermsOfServiceState();
+        if ("OnGameBoot".equals(stop)) return tos;
         fire("OnGameStateEnter", tos);
         // the rest of TermsOfServiceState.enter, the original's code: its triggerEvent finds no callbacks (checkEvent
         // gives null) while they are set aside, as fire ran them already
@@ -65,8 +85,13 @@ public class LuaBootProbe {
         tosEvent.callbacks.clear();
         tos.enter();
         tosEvent.callbacks.addAll(saved);
+        if ("OnGameStateEnter".equals(stop)) return tos;
         fire("OnMainMenuEnter");
-        LuaLoadEnvProbe.report();
+        return tos;
+    }
+
+    /** The boot lines and Java state after LuaLoadEnvProbe.report (see the class comment). */
+    static void report(zombie.gameStates.TermsOfServiceState tos) throws Exception {
         StringBuilder sb = LuaLoadEnvProbe.sb;
         sb.append(boot);
         TreeMap<String, java.lang.reflect.Field> zg = new TreeMap<>();
@@ -99,8 +124,5 @@ public class LuaBootProbe {
             sb.append("CLOSURE U").append(n).append(' ').append(LuaLoadEnvProbe.closurePaths.get(n)).append(' ').append(ups.length).append('\n');
             for (int j = 0; j < ups.length; j++) LuaLoadEnvProbe.dump("U" + n + "[" + j + "]", ups[j].getValue());
         }
-        out.print(sb);
-        out.flush();
-        Runtime.getRuntime().halt(0);
     }
 }

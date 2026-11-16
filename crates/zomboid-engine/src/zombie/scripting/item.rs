@@ -1,6 +1,7 @@
 //! zombie.scripting.objects.Item: an `item` script. So far the parameters whose handling in `DoParam` is a plain typed
 //! assignment (table generated from the original, `item_params_table.rs`); the other parameters are kept as text.
 use super::item_params_table::{COMPLEX, FIELDS, PARAMS};
+use super::objects::resource_location::ResourceLocation;
 use super::script_parser::{self, BlockElement};
 use crate::java;
 use crate::zombie::util::string_utils;
@@ -55,6 +56,9 @@ pub struct Item {
     pub unported: Vec<(String, String)>,
     /// Parameters the original has no branch for at all.
     pub unknown: Vec<String>,
+    /// `itemTags`: the locations of the `Tags` entries (`ItemTag.get(ResourceLocation.of(tag))`, a null for a
+    /// location the ItemTag registry does not hold), in script order.
+    pub tags: Vec<ResourceLocation>,
 }
 
 /// java.lang.Float.parseFloat for decimal text (surrounding blanks and an f/d suffix allowed).
@@ -112,6 +116,7 @@ impl Item {
             values,
             unported: Vec::new(),
             unknown: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
@@ -180,6 +185,12 @@ impl Item {
         if ATTRIBUTES.contains(&lower.as_str()) {
             self.unported.push((lower, val.to_string()));
             return Ok(());
+        }
+        if lower == "tags" {
+            // `val.split(";")`, each trimmed: a bad location throws (the item fails to load)
+            for t in java::split_char(val, ';') {
+                self.tags.push(ResourceLocation::of(java::trim(t))?);
+            }
         }
         let Some(&(_, i, op)) = PARAMS.iter().find(|p| p.0 == lower) else {
             if COMPLEX.contains(&lower.as_str()) {

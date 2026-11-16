@@ -83,6 +83,7 @@ fn main() {
             luaload(Path::new(&a[2]), &a[3], &a[4..], false)
         }
         Some("luaboot") if a.len() >= 4 => luaload(Path::new(&a[2]), &a[3], &a[4..], true),
+        Some("luagame") if a.len() >= 4 => luagame(Path::new(&a[2]), &a[3], &a[4..]),
         Some("mapzone") if a.len() == 4 => {
             mapzone(Path::new(&a[2]), Path::new(&a[3]), false, false)
         }
@@ -8105,6 +8106,24 @@ pub fn luaload(
     dirs: &[String],
     boot: bool,
 ) -> Result<String, String> {
+    luaload_after(root, cache_dir, dirs, boot, None)
+}
+
+/// LuaGameProbe on the port: the client's startup (zombie::game_window), then luaboot's LoadDirBase, boot events and
+/// report, then the UI the scripts built.
+pub fn luagame(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, String> {
+    use zomboid_engine::zombie::game_window::ClientStartup;
+    let startup = ClientStartup::init(root).map_err(|e| format!("startup: {e}"))?;
+    luaload_after(root, cache_dir, dirs, true, Some(std::rc::Rc::new(startup)))
+}
+
+fn luaload_after(
+    root: &Path,
+    cache_dir: &str,
+    dirs: &[String],
+    boot: bool,
+    startup: Option<std::rc::Rc<zomboid_engine::zombie::game_window::ClientStartup>>,
+) -> Result<String, String> {
     use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
     use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
@@ -8203,8 +8222,84 @@ pub fn luaload(
                 self.closures.push((c.clone(), path.to_string()));
             }
         }
+        /// LuaGameProbe.element: `<prefix> x y width height (raw bits) visible anchors(T L R B) alwaysOnTop capture
+        /// scrollChildren scrollWithParent yScroll scrollHeight consumeMouseEvents wantKeyEvents wantExtraMouseEvents
+        /// forceCursorVisible table`, then the element's table (`UITABLE <path>`, a ref when printed before).
+        fn ui_element(
+            &mut self,
+            prefix: &str,
+            path: &str,
+            u: &Rc<dyn zomboid_engine::se::krka::kahlua::vm::object::Userdata>,
+        ) {
+            use zomboid_engine::zombie::ui::ui_element::ui_element;
+            let Some(obj) = ui_element(u) else {
+                let _ = writeln!(self.sb, "{prefix} {}", u.class().name);
+                return;
+            };
+            let table = {
+                let e = obj.0.borrow();
+                let flag = |b: bool| if b { "1" } else { "0" };
+                let _ = write!(
+                    self.sb,
+                    "{prefix} {:x} {:x} {:x} {:x} {} {}{}{}{} {} {} {} {} {:x} {} {}{}{}{} ",
+                    e.x.to_bits(),
+                    e.y.to_bits(),
+                    e.width.to_bits(),
+                    e.height.to_bits(),
+                    flag(e.visible),
+                    flag(e.anchor_top),
+                    flag(e.anchor_left),
+                    flag(e.anchor_right),
+                    flag(e.anchor_bottom),
+                    flag(e.always_on_top),
+                    flag(e.capture),
+                    flag(e.scroll_children),
+                    flag(e.scroll_with_parent),
+                    e.y_scroll.to_bits(),
+                    e.scroll_height,
+                    flag(e.consume_mouse_events),
+                    flag(e.want_key_events),
+                    flag(e.want_extra_mouse_events),
+                    flag(e.force_cursor_visible),
+                );
+                e.table.clone()
+            };
+            let table = table.map_or(Object::Nil, Object::Table);
+            let _ = writeln!(self.sb, "{}", value(&table));
+            self.dump(&format!("UITABLE {path}"), &table);
+        }
+        /// LuaGameProbe.tree: the controls of `u`, depth first, as `UICHILD <depth> <path>`.
+        fn ui_tree(
+            &mut self,
+            path: &str,
+            u: &Rc<dyn zomboid_engine::se::krka::kahlua::vm::object::Userdata>,
+            depth: usize,
+        ) {
+            use zomboid_engine::zombie::ui::ui_element::ui_element;
+            let Some(obj) = ui_element(u) else {
+                return;
+            };
+            let controls = obj.0.borrow().controls.clone();
+            for (i, c) in controls.iter().enumerate() {
+                let p = format!("{path}.{i}");
+                self.ui_element(&format!("UICHILD {depth} {p}"), &p, c);
+                self.ui_tree(&p, c, depth + 1);
+            }
+        }
+        /// LuaGameProbe.ui: each element of one of UIManager's lists, then its controls.
+        fn ui_list(
+            &mut self,
+            list: &str,
+            items: &[Rc<dyn zomboid_engine::se::krka::kahlua::vm::object::Userdata>],
+        ) {
+            for (i, u) in items.iter().enumerate() {
+                let p = format!("{list}[{i}]");
+                self.ui_element(&format!("UI {list} {i}"), &p, u);
+                self.ui_tree(&p, u, 1);
+            }
+        }
     }
-    let mut lm = LuaManager::init(root).map_err(|e| format!("init: {e:?}"))?;
+    let mut lm = LuaManager::init_after(root, startup).map_err(|e| format!("init: {e:?}"))?;
     // the probe's ZomboidFileSystem.instance.setCacheDir(<scratch>)
     *lm.statics.cache_dir.borrow_mut() = Some(cache_dir.to_string());
     let env = lm.env.clone();
@@ -8236,6 +8331,9 @@ pub fn luaload(
         .into_values()
         .map(|(name, v)| (name, static_collection_text(&v, &value).unwrap_or_default()))
         .collect();
+    // GameWindow.initShared, after LuaManager.init (a no-op without a client's startup)
+    zomboid_engine::zombie::lua::exposed_game::init_shared(&lm.statics)
+        .map_err(|e| format!("initShared: {e}"))?;
     for dir in dirs {
         lm.load_dir_base(dir)
             .map_err(|e| format!("LoadDirBase {dir}: {e:?}"))?;
@@ -8322,6 +8420,16 @@ pub fn luaload(
             }
             n += 1;
         }
+        // LuaGameProbe's UI section: UIManager's pending lists, then the UI list
+        if lm.statics.state.client.borrow().is_some() {
+            let (to_add, to_remove, ui) = {
+                let m = lm.statics.state.ui_manager.borrow();
+                (m.to_add.clone(), m.to_remove.clone(), m.ui.clone())
+            };
+            d.ui_list("toAdd", &to_add);
+            d.ui_list("toRemove", &to_remove);
+            d.ui_list("UI", &ui);
+        }
     }
     Ok(d.sb)
 }
@@ -8360,17 +8468,34 @@ fn luaboot_events(
         }
         Ok(())
     };
+    // LuaBootProbe's debugging aid: LUABOOT_STOP=<event> stops after that event, =load before ZomboidGlobals.Load
+    let stop = std::env::var("LUABOOT_STOP").unwrap_or_default();
+    let tos = Rc::new(TermsOfServiceStateObject::default());
+    if stop == "load" {
+        return Ok((sb, tos));
+    }
     lm.statics
         .state
         .zomboid_globals
         .borrow_mut()
         .load(&lm.env)?;
     fire(lm, "OnLoadSoundBanks", &[])?;
+    if stop == "OnLoadSoundBanks" {
+        return Ok((sb, tos));
+    }
+    // GameWindow.enter's steps before OnGameBoot, in a client whose startup ran (LuaGameProbe.enter)
+    zomboid_engine::zombie::lua::exposed_game::enter(&lm.statics)
+        .map_err(zomboid_engine::se::krka::kahlua::vm::object::Throwable::runtime)?;
     fire(lm, "OnGameBoot", &[])?;
-    let tos = Rc::new(TermsOfServiceStateObject::default());
+    if stop == "OnGameBoot" {
+        return Ok((sb, tos));
+    }
     fire(lm, "OnGameStateEnter", &[Object::Userdata(tos.clone())])?;
     // the rest of TermsOfServiceState.enter
     tos.0.borrow_mut().after_enter_event();
+    if stop == "OnGameStateEnter" {
+        return Ok((sb, tos));
+    }
     fire(lm, "OnMainMenuEnter", &[])?;
     Ok((sb, tos))
 }
@@ -8519,6 +8644,12 @@ fn static_collection_text(
             l.0.borrow().iter().map(value).collect::<Vec<_>>().join(",")
         ));
     }
+    if let Some(m) = u
+        .as_any()
+        .downcast_ref::<zomboid_engine::zombie::lua::exposed_game::StartupMapObject>()
+    {
+        return Some(format!("size {}", m.size()));
+    }
     u.as_any()
         .downcast_ref::<ObservationMapObject>()
         .map(|m| format!("size {}", m.0.borrow().observation_map.len()))
@@ -8549,6 +8680,8 @@ fn luaload_static_collections(
                 if u.as_any().is::<ArrayListObject>()
                     || u.as_any()
                         .is::<zomboid_engine::zombie::lua::exposed_boot::ObservationMapObject>()
+                    || u.as_any()
+                        .is::<zomboid_engine::zombie::lua::exposed_game::StartupMapObject>()
                 {
                     let name = format!("{}.{}", c.0.name, k.java_to_string());
                     r.insert(name.encode_utf16().collect(), (name, v.clone()));

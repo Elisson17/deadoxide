@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::exposer::{is_instance, Fail, Imp, JavaEnum, JavaObject, JavaStatics, Ret};
+use crate::java_formatter::FormatArg;
 use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
@@ -23,6 +24,7 @@ use crate::zombie::characters::attached_items::attached_locations::{
 use crate::zombie::characters::worn_items::body_locations::{
     BodyLocation, BodyLocationGroup, BodyLocations,
 };
+use crate::zombie::core::core_options::CoreOptions;
 use crate::zombie::core::textures::color_info::ColorInfo;
 use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::lua::exposer::class_named;
@@ -53,6 +55,43 @@ pub struct State {
         RefCell<crate::zombie::characters::character_input_binding_set::InputBindings>,
     /// zombie.ZomboidGlobals' statics (ZomboidGlobals.Load runs after LoadDirBase).
     pub zomboid_globals: RefCell<crate::zombie::zomboid_globals::ZomboidGlobals>,
+    /// What the client's startup (GameWindow.init, initShared) left, when the host ran it before LuaManager.init;
+    /// `None` for a Lua state made on its own (the translations, fonts and scripts not loaded).
+    pub client: RefCell<Option<Rc<crate::zombie::game_window::ClientStartup>>>,
+    /// The Item objects handed to Lua, by item index.
+    pub items: RefCell<HashMap<usize, Rc<super::exposed_game::ItemObject>>>,
+    /// The option objects of SandboxOptions.instance handed to Lua, by option index.
+    pub sandbox_option_objects:
+        RefCell<HashMap<usize, Rc<super::exposed_game::SandboxOptionObject>>>,
+    /// The Texture objects handed to Lua, by texture.
+    pub textures: RefCell<HashMap<usize, Rc<super::exposed_game::TextureObject>>>,
+    /// zombie.SystemDisabler's switches.
+    pub system_disabler: RefCell<crate::zombie::system_disabler::SystemDisabler>,
+    /// zombie.core.PerformanceSettings' statics.
+    pub performance_settings:
+        RefCell<crate::zombie::core::performance_settings::PerformanceSettings>,
+    /// TextureID.useFiltering (`useTextureFiltering(bool)`).
+    pub use_texture_filtering: std::cell::Cell<bool>,
+    /// GameWindow.doRenderEvent (private: whether a frame fires OnRenderTick/OnPostRender).
+    pub do_render_event: std::cell::Cell<bool>,
+    /// The Language objects handed to Lua (a Language is one object in Java: found again by identity) and
+    /// `Translator.availableLanguage`, the list `getAvailableLanguage` returns.
+    pub language_objects: RefCell<
+        Vec<(
+            Rc<crate::zombie::core::language::Language>,
+            Rc<super::exposed_game::LanguageObject>,
+        )>,
+    >,
+    pub available_language: RefCell<Option<Rc<ArrayListObject>>>,
+    /// UIManager's element lists.
+    pub ui_manager: RefCell<crate::zombie::ui::ui_manager::UIManager>,
+    /// The AngelCodeFont objects handed to Lua, by font.
+    pub fonts: RefCell<
+        Vec<(
+            crate::zombie::ui::text_manager::FontRef,
+            Rc<super::exposed_game::AngelCodeFontObject>,
+        )>,
+    >,
 }
 
 /// zombie.SandboxOptions as a Lua value.
@@ -73,19 +112,28 @@ impl Userdata for SandboxOptionsObject {
 /// zombie.core.Core, the part the scripts reach so far: the highlight colours and the options below (at their
 /// defaults, as no options.ini is read in this state).
 pub struct CoreObject {
+    /// `options` and `fakeOptions` of the Core (`newOption`, `newFakeOption`).
+    pub options: RefCell<CoreOptions>,
+    /// objectHighlitedColor, worldItemHighlightColor, workstationHighlitedColor, goodHighlitedColor,
+    /// badHighlitedColor, targetColor, noTargetColor: the objects `getXxxColor` returns after setting them from the
+    /// option.
+    pub object_highlited_color: Rc<ColorInfo>,
+    pub world_item_highlight_color: Rc<ColorInfo>,
+    pub workstation_highlited_color: Rc<ColorInfo>,
     pub good_highlited_color: Rc<ColorInfo>,
     pub bad_highlited_color: Rc<ColorInfo>,
-    /// optionGoodHighlightColor ("0.0,1.0,0.0") and optionBadHighlightColor ("1.0,0.0,0.0")
-    pub option_good_highlight_color: [f64; 3],
-    pub option_bad_highlight_color: [f64; 3],
-    /// optionFontSize: `newOption("fontSize", 1, 6, 6)`, 6 is "automatic"
-    pub option_font_size: i32,
-    /// optionControllerButtonStyle: `newOption("controllerButtonStyle", 1, 3, 1, ...)`
-    pub option_controller_button_style: i32,
-    /// optionGamepadBindingPreset: `newOption("gamepadBindingPreset", "Original", ...)`
-    pub option_gamepad_binding_preset: String,
-    /// optionTermsOfServiceVersion: `newFakeOption("termsOfServiceVersion", -1, 1000, -1)`
-    pub option_terms_of_service_version: i32,
+    pub target_color: Rc<ColorInfo>,
+    pub no_target_color: Rc<ColorInfo>,
+    /// mpTextColor: null until `getMpTextColor` or `setMpTextColor`.
+    pub mp_text_color: RefCell<Option<Rc<ColorInfo>>>,
+    /// `isAzerty` (false).
+    pub is_azerty: std::cell::Cell<bool>,
+    /// `iPerfSkybox` (1), `perfReflections` (true) and `iPerfPuddles` (0): what the options file held at load.
+    pub i_perf_skybox: std::cell::Cell<i32>,
+    pub perf_reflections: std::cell::Cell<bool>,
+    pub i_perf_puddles: std::cell::Cell<i32>,
+    /// `keyMaps` and `keyBindingByKeyValue`.
+    pub key_maps: RefCell<crate::zombie::core::core::KeyMaps>,
 }
 
 /// zombie.core.Core.height (public static, 720 until the display is created).
@@ -97,26 +145,38 @@ impl CoreObject {
     /// zombie.core.Core.<init>, the fields above.
     fn new() -> CoreObject {
         CoreObject {
+            options: RefCell::new(CoreOptions::new()),
+            object_highlited_color: Rc::new(ColorInfo::new(0.98, 0.56, 0.11, 1.0)),
+            world_item_highlight_color: Rc::new(ColorInfo::new(0.5, 1.0, 1.0, 1.0)),
+            workstation_highlited_color: Rc::new(ColorInfo::new(0.56, 0.98, 0.11, 1.0)),
             good_highlited_color: Rc::new(ColorInfo::new(0.0, 1.0, 0.0, 1.0)),
             bad_highlited_color: Rc::new(ColorInfo::new(1.0, 0.0, 0.0, 1.0)),
-            option_good_highlight_color: [0.0, 1.0, 0.0],
-            option_bad_highlight_color: [1.0, 0.0, 0.0],
-            option_font_size: 6,
-            option_controller_button_style: 1,
-            option_gamepad_binding_preset: "Original".into(),
-            option_terms_of_service_version: -1,
+            target_color: Rc::new(ColorInfo::new(1.0, 1.0, 1.0, 1.0)),
+            no_target_color: Rc::new(ColorInfo::new(1.0, 1.0, 1.0, 1.0)),
+            mp_text_color: RefCell::new(None),
+            is_azerty: std::cell::Cell::new(false),
+            i_perf_skybox: std::cell::Cell::new(1),
+            perf_reflections: std::cell::Cell::new(true),
+            i_perf_puddles: std::cell::Cell::new(0),
+            key_maps: RefCell::new(Default::default()),
         }
     }
 
     /// zombie.core.Core.getOptionFontSizeReal, with `getScreenHeight()` = Core.height.
     pub fn get_option_font_size_real(&self) -> i32 {
-        crate::zombie::core::core::get_option_font_size_real(self.option_font_size, CORE_HEIGHT)
+        let size = self.options.borrow().get("optionFontSize").int_value();
+        crate::zombie::core::core::get_option_font_size_real(size, CORE_HEIGHT)
     }
 
     /// zombie.core.Core.getOptionControllerButtonStyleString
     pub fn get_option_controller_button_style_string(&self) -> &'static str {
+        let style = self
+            .options
+            .borrow()
+            .get("optionControllerButtonStyle")
+            .int_value();
         crate::zombie::input::controller_button_style::ControllerButtonStyle::from_option_code(
-            self.option_controller_button_style,
+            style,
         )
         .get_label()
     }
@@ -132,13 +192,6 @@ impl Userdata for CoreObject {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-}
-
-/// zombie.config.ArrayConfigOption.getValueAsColorInfo for a fixed-size-3 double option: the colour object set
-/// from the three elements (cast to float) and alpha 1 (a missing fourth element), then returned.
-fn value_as_color_info(option: &[f64; 3], color: &Rc<ColorInfo>) -> Rc<ColorInfo> {
-    color.set(option[0] as f32, option[1] as f32, option[2] as f32, 1.0);
-    color.clone()
 }
 
 /// zombie.scripting.ScriptManager.instance with no scripts loaded.
@@ -226,9 +279,10 @@ pub fn object_to_string(o: &JavaObject) -> Option<String> {
         return ResourceLocation::of(o.id).ok().map(|l| l.to_string());
     }
     match name {
-        "zombie.input.KeybindId" | "zombie.characters.skills.PerkFactory$Perk" => {
-            Some(o.id.to_string())
-        }
+        // GameMode.toString: its id
+        "zombie.input.KeybindId"
+        | "zombie.characters.skills.PerkFactory$Perk"
+        | "zombie.core.GameMode" => Some(o.id.to_string()),
         "zombie.scripting.objects.ItemKey" => Some(format!("Base.{}", o.id)),
         _ => None,
     }
@@ -253,7 +307,18 @@ pub fn static_object(
             ud(Rc::new(super::exposed_boot::ObservationMapObject::default()))
         }
         (_, _, "java.util.ArrayList") => Object::Userdata(Rc::new(ArrayListObject::default())),
-        _ => Object::Userdata(Rc::new(JavaObject { class, id })),
+        _ => match (
+            statics.state.client.borrow().clone(),
+            super::exposed_game::StartupMap::of(owner, field),
+        ) {
+            // a map the client's startup fills: its size follows the ported state
+            (Some(client), Some(which)) => ud(Rc::new(super::exposed_game::StartupMapObject {
+                class,
+                client,
+                which,
+            })),
+            _ => Object::Userdata(Rc::new(JavaObject { class, id })),
+        },
     })
 }
 
@@ -487,6 +552,12 @@ pub(super) use with_this;
 
 /// The written ones of LuaManager.GlobalObject's `@LuaMethod(global = true)` functions.
 pub fn global(name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_io::global(name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_game::global(name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_world::global(name) {
         return Some(f);
     }
@@ -508,17 +579,28 @@ pub fn global(name: &str) -> Option<Imp> {
         "isSystemMacOS" => |_, _, cf, _| ret_bool(cf, cfg!(target_os = "macos")),
         "isSystemWindows" => |_, _, cf, _| ret_bool(cf, cfg!(target_os = "windows")),
         "isSystemLinux" => |_, _, cf, _| ret_bool(cf, cfg!(target_os = "linux")),
-        "getText" => |_, _, cf, n| {
+        "getText" => |s, _, cf, n| {
             let desc = string_arg_nn(cf, 0)?;
-            let text = translator_get_text(&desc, n > 1)?;
+            let args = format_args(cf, n)?;
+            let text = translator_get_text(s, &desc, &args)?;
             ret_str(cf, Some(&text))
         },
-        "getTextOrNull" => |_, _, cf, _| {
-            string_arg_nn(cf, 0)?;
-            ret(cf, Object::Nil)
+        "getTextOrNull" => |s, _, cf, n| {
+            let desc = string_arg_nn(cf, 0)?;
+            let args = format_args(cf, n)?;
+            let Some(client) = s.state.client.borrow().clone() else {
+                // no translation loaded: every key is missing
+                return ret(cf, Object::Nil);
+            };
+            let text = client
+                .translator
+                .borrow_mut()
+                .get_text_or_null(&desc, &args)
+                .map_err(|m| Fail::Lua(Throwable::runtime(m)))?;
+            ret_str(cf, text.as_deref())
         },
-        // Texture.getSharedTexture: null without a renderer.
-        "getTexture" | "tryGetTexture" => |_, _, cf, _| {
+        // Texture.trygetTexture: null without a renderer (getTexture: exposed_game).
+        "tryGetTexture" => |_, _, cf, _| {
             string_arg(cf, 0)?;
             ret(cf, Object::Nil)
         },
@@ -542,10 +624,61 @@ pub fn global(name: &str) -> Option<Imp> {
     })
 }
 
+/// The `Object... args` of a varargs Java method from Lua argument 1 on, as `String.formatted` sees them (Kahlua
+/// numbers are Doubles). Another object is its class, `toString()` and the identity hash that `toString` prints
+/// (this port's, as in every `Class@hash`; 0 for an object whose `toString` prints none).
+pub(super) fn format_args(cf: &FrameRef, n: i32) -> Result<Vec<FormatArg>, Fail> {
+    Ok((1..n)
+        .map(|i| match cf.get(i) {
+            Object::Nil => FormatArg::Null,
+            Object::String(s) => FormatArg::Str(rstr(&s)),
+            Object::Number(d) => FormatArg::Double(d),
+            Object::Boolean(b) => FormatArg::Bool(b),
+            o => {
+                let class = match &o {
+                    Object::Table(_) => "se.krka.kahlua.j2se.KahluaTableImpl",
+                    Object::Closure(_) => "se.krka.kahlua.vm.LuaClosure",
+                    Object::Coroutine(_) => "se.krka.kahlua.vm.Coroutine",
+                    Object::Function(f) => f.class().name,
+                    Object::Userdata(u) => u.class().name,
+                    _ => "java.lang.Object",
+                };
+                let string = o.java_to_string();
+                let hash_code = string
+                    .rsplit_once('@')
+                    .and_then(|(_, h)| i64::from_str_radix(h, 16).ok())
+                    .map_or(0, |h| h as i32);
+                FormatArg::Object {
+                    class: class.to_string(),
+                    string,
+                    hash_code,
+                }
+            }
+        })
+        .collect())
+}
+
+/// zombie.core.Translator.getText(String, Object...): through the client's Translator when its startup ran
+/// (`Translator.loadFiles`), else as in a state where no translation file is loaded.
+pub(super) fn translator_get_text(
+    s: &Rc<JavaStatics>,
+    desc: &str,
+    args: &[FormatArg],
+) -> Result<String, Fail> {
+    if let Some(client) = s.state.client.borrow().clone() {
+        return client
+            .translator
+            .borrow_mut()
+            .get_text(desc, args)
+            .map_err(|m| Fail::Lua(Throwable::runtime(m)));
+    }
+    translator_get_text_unloaded(desc)
+}
+
 /// zombie.core.Translator.getText in a state where no translation file is loaded: every key is missing, so the
 /// key itself is the text, formatted with the arguments (`String.formatted`, which a key without `%` leaves as
 /// it is) and with `<br>` turned into newlines.
-pub(super) fn translator_get_text(desc: &str, _has_args: bool) -> Result<String, Fail> {
+fn translator_get_text_unloaded(desc: &str) -> Result<String, Fail> {
     if desc.contains('%') {
         return Err(Fail::Lua(Throwable::runtime(format!(
             "not ported: Translator.getText formatting of \"{desc}\""
@@ -640,8 +773,22 @@ fn is_enum_class(class: &str) -> bool {
     })
 }
 
+/// SandboxOptions' static methods.
+fn static_sandbox_method(class: &str, name: &str) -> Option<Imp> {
+    Some(match (class, name) {
+        // SandboxOptions(): a new set of options (another object than SandboxOptions.instance): defines.lua and
+        // Apocalypse.lua run again (so does the Lua state they change), then the defaults are the current values.
+        ("zombie.SandboxOptions", "new") => |s, t, cf, n| {
+            want_args(n, false, 0)?;
+            let o = sandbox_options_new(s, t)?;
+            ret(cf, ud(Rc::new(SandboxOptionsObject(RefCell::new(o)))))
+        },
+        _ => return None,
+    })
+}
+
 /// The registry id of a JavaObject receiver.
-fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
+pub(super) fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
     match cf.get(0) {
         Object::Userdata(u) => u
             .as_any()
@@ -653,6 +800,15 @@ fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
 }
 
 fn static_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = static_sandbox_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_ui::static_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_game::static_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_world::static_method(class, name) {
         return Some(f);
     }
@@ -746,6 +902,18 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 }
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
+    if let Some(f) = super::exposed_io::instance_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_core::instance_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_ui::instance_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_game::instance_method(class, name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_world::instance_method(class, name) {
         return Some(f);
     }
@@ -1102,20 +1270,6 @@ fn instance_method(class: &str, name: &str) -> Option<Imp> {
             ret(cf, Object::Nil)
         },
         // ---- Core ----
-        ("zombie.core.Core", "getGoodHighlitedColor") => |_, _, cf, _| {
-            with_this!(cf, CoreObject, c, {
-                let col =
-                    value_as_color_info(&c.option_good_highlight_color, &c.good_highlited_color);
-                ret(cf, ud(col))
-            })
-        },
-        ("zombie.core.Core", "getBadHighlitedColor") => |_, _, cf, _| {
-            with_this!(cf, CoreObject, c, {
-                let col =
-                    value_as_color_info(&c.option_bad_highlight_color, &c.bad_highlited_color);
-                ret(cf, ud(col))
-            })
-        },
         // ---- ColorInfo ----
         ("zombie.core.textures.ColorInfo", "getR") => {
             |_, _, cf, _| with_this!(cf, ColorInfo, c, ret_float(cf, c.r.get()))

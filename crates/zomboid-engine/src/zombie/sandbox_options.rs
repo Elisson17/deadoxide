@@ -2,8 +2,10 @@
 //! (`sandbox_options_table.rs`); this module holds values, parsing and the `map_sand.bin` reader.
 use std::collections::HashMap;
 
+use super::core::translator::Translator;
 use super::sandbox_options_table::OPTIONS;
 use crate::java;
+use crate::java_formatter::{self, FormatArg};
 use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::object::{rstr, Object, TableRef, R};
 
@@ -27,6 +29,10 @@ pub fn parse_name(name: &str) -> (Option<&str>, &str) {
 pub struct Def {
     pub name: &'static str,
     pub kind: Kind,
+    /// `.setTranslation(...)` of the declaration
+    pub translation: Option<&'static str>,
+    /// `.setValueTranslation(...)` of the declaration (enum options)
+    pub value_translation: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -171,6 +177,147 @@ impl SandboxOptions {
             Value::Integer(v) => v.to_string(),
             Value::Str(s) => s.clone(),
         }
+    }
+
+    /// SandboxOptions.getNumOptions
+    pub fn get_num_options(&self) -> usize {
+        OPTIONS.len()
+    }
+
+    /// SandboxOptions.getOptionByName: the option's index.
+    pub fn get_option_by_name(&self, name: &str) -> Option<usize> {
+        self.by_name.get(name).copied()
+    }
+
+    /// ConfigOption.getType of option `i`'s class.
+    pub fn get_type(&self, i: usize) -> &'static str {
+        match OPTIONS[i].kind {
+            Kind::Boolean(_) => "boolean",
+            Kind::Double { .. } => "double",
+            Kind::Integer { .. } => "integer",
+            Kind::Enum { .. } => "enum",
+            Kind::Str { .. } => "string",
+        }
+    }
+
+    /// EnumConfigOption.getNumValues of option `i` (`None`: not an enum option).
+    pub fn get_num_values(&self, i: usize) -> Option<i32> {
+        match OPTIONS[i].kind {
+            Kind::Enum { num_values, .. } => Some(num_values),
+            _ => None,
+        }
+    }
+
+    /// `translation == null ? getShortName() : translation`, the key part of every *SandboxOption text.
+    fn translation_key(&self, i: usize) -> &'static str {
+        let d = &OPTIONS[i];
+        d.translation.unwrap_or_else(|| parse_name(d.name).1)
+    }
+
+    /// SandboxOptions$*SandboxOption.getTranslatedName: `Translator.getText("Sandbox_" + key)`.
+    pub fn get_translated_name(
+        &self,
+        i: usize,
+        translator: &mut Translator,
+    ) -> Result<String, String> {
+        translator.get_text(&format!("Sandbox_{}", self.translation_key(i)), &[])
+    }
+
+    /// EnumSandboxOption.getValueTranslation: `valueTranslation`, else the translation key.
+    fn value_translation(&self, i: usize) -> &'static str {
+        OPTIONS[i]
+            .value_translation
+            .unwrap_or_else(|| self.translation_key(i))
+    }
+
+    /// EnumSandboxOption.getValueTranslationByIndex (`or_null`: getValueTranslationByIndexOrNull):
+    /// `Sandbox_<valueTranslation>_option<index>`; `Err` is the ArrayIndexOutOfBoundsException outside
+    /// 1..=getNumValues (and a translator failure the port has not written).
+    pub fn get_value_translation_by_index(
+        &self,
+        i: usize,
+        index: i32,
+        or_null: bool,
+        translator: &mut Translator,
+    ) -> Result<Option<String>, String> {
+        let n = self.get_num_values(i).unwrap_or(0);
+        if index < 1 || index > n {
+            return Err("java.lang.ArrayIndexOutOfBoundsException".into());
+        }
+        let key = format!("Sandbox_{}_option{index}", self.value_translation(i));
+        if or_null {
+            translator.get_text_or_null(&key, &[])
+        } else {
+            translator.get_text(&key, &[]).map(Some)
+        }
+    }
+
+    /// SandboxOptions$*SandboxOption.getTooltip: `Sandbox_<key>_tooltip` (`_help` for the integer and double
+    /// options of ZombieConfig) or null, then for an enum `Sandbox_Default` with the default's value text and for
+    /// a number `Sandbox_MinMaxDefault` (doubles as `%.02f`, ints as Integers), joined by a backslash and n.
+    pub fn get_tooltip(
+        &self,
+        i: usize,
+        translator: &mut Translator,
+    ) -> Result<Option<String>, String> {
+        let d = &OPTIONS[i];
+        let key = self.translation_key(i);
+        let zombie_config = parse_name(d.name).0 == Some("ZombieConfig");
+        let suffix = match d.kind {
+            Kind::Integer { .. } | Kind::Double { .. } if zombie_config => "_help",
+            _ => "_tooltip",
+        };
+        let s1 = translator.get_text_or_null(&format!("Sandbox_{key}{suffix}"), &[])?;
+        let s2 = match d.kind {
+            Kind::Boolean(_) | Kind::Str { .. } => return Ok(s1),
+            Kind::Enum { .. } => {
+                let default = match self.default_value(i) {
+                    Value::Integer(v) => *v,
+                    _ => 0,
+                };
+                match self.get_value_translation_by_index(i, default, true, translator)? {
+                    None => None,
+                    Some(value) => {
+                        Some(translator.get_text("Sandbox_Default", &[FormatArg::Str(value)])?)
+                    }
+                }
+            }
+            Kind::Double { min, max, .. } => {
+                let default = match self.default_value(i) {
+                    Value::Double(v) => *v,
+                    _ => 0.0,
+                };
+                let f = |v: f64| {
+                    java_formatter::format("%.02f", &[FormatArg::Double(v)])
+                        .map(FormatArg::Str)
+                        .map_err(|_| "not ported: String.format(\"%.02f\")".to_string())
+                };
+                Some(
+                    translator
+                        .get_text("Sandbox_MinMaxDefault", &[f(min)?, f(max)?, f(default)?])?,
+                )
+            }
+            Kind::Integer { min, max, .. } => {
+                let default = match self.default_value(i) {
+                    Value::Integer(v) => *v,
+                    _ => 0,
+                };
+                let int = |v: i32| FormatArg::Object {
+                    class: "java.lang.Integer".into(),
+                    string: v.to_string(),
+                    hash_code: v,
+                };
+                Some(
+                    translator
+                        .get_text("Sandbox_MinMaxDefault", &[int(min), int(max), int(default)])?,
+                )
+            }
+        };
+        Ok(match (s1, s2) {
+            (None, s2) => s2,
+            (Some(s1), None) => Some(s1),
+            (Some(s1), Some(s2)) => Some(format!("{s1}\\n{s2}")),
+        })
     }
 
     /// zombie.config.IntegerConfigOption.parse (and the Boolean/Double/String ones) for option `i`: an unparsable or out-of-range value is logged and the

@@ -8,22 +8,20 @@ use std::rc::Rc;
 
 use super::exposed_client::static_args;
 use super::exposed_methods::{
-    core, hash, npe, ret, ret_bool, ret_int, singleton, string_arg, translator_get_text,
-    type_error, ud, want_args, with_this, ArrayListObject, CoreObject, ScriptManagerObject,
-    CORE_HEIGHT, CORE_WIDTH,
+    arg_count_error, core, float_arg, hash, npe, ret, ret_bool, ret_float, ret_int, ret_str,
+    singleton, string_arg, this, translator_get_text, type_error, ud, want_args, with_this,
+    ArrayListObject, ScriptManagerObject, CORE_HEIGHT, CORE_WIDTH,
 };
 use super::exposer::{class_named, Fail, Imp, JavaObject, JavaStatics, Ret};
 use crate::java::float_to_string;
+use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
-use crate::se::krka::kahlua::vm::object::{
-    classes, JavaClass, Object, TableRef, Throwable, Userdata,
-};
+use crate::se::krka::kahlua::vm::object::{classes, JavaClass, Object, Throwable, Userdata};
 use crate::zombie::characters::traits::observation_factory::ObservationFactory;
 use crate::zombie::core::color::Color;
 use crate::zombie::core::immutable_color::ImmutableColor;
 use crate::zombie::core::textures::color_info::ColorInfo;
 use crate::zombie::game_states::terms_of_service_state::TermsOfServiceState;
-use crate::zombie::ui::ui_element::UIElement;
 
 static COLOR_CLASS: JavaClass = JavaClass {
     name: "zombie.core.Color",
@@ -115,23 +113,6 @@ impl Userdata for TermsOfServiceStateObject {
     }
 }
 
-/// zombie.ui.UIElement as a Lua value. It holds its Lua table (as the Java object does; the table usually holds it
-/// back as `javaObject`, a cycle Rc does not free). UIElement.toString (`tostring` of the table) is not reproduced:
-/// this prints Object.toString.
-pub struct UIElementObject(pub RefCell<UIElement>);
-
-impl Userdata for UIElementObject {
-    fn class(&self) -> &'static JavaClass {
-        class_named("zombie.ui.UIElement")
-    }
-    fn java_to_string(&self) -> String {
-        format!("zombie.ui.UIElement@{:x}", hash(self))
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 /// The ObservationFactory state (the object in ObservationFactory.observationMap).
 fn observations(s: &Rc<JavaStatics>) -> Result<Rc<dyn Userdata>, Fail> {
     match s.field(
@@ -163,8 +144,9 @@ fn survivor_name(s: &Rc<JavaStatics>, cf: &FrameRef, n: i32, prefix: &str, field
     static_args(n, 1)?;
     let name = string_arg(cf, 0)?;
     let text = translator_get_text(
+        s,
         &format!("{prefix}{}", name.as_deref().unwrap_or("null")),
-        false,
+        &[],
     )?;
     add_to_static_list(
         s,
@@ -180,22 +162,6 @@ fn color_info_arg(cf: &FrameRef, i: i32) -> Result<Option<Rc<dyn Userdata>>, Fai
         Object::Nil => Ok(None),
         Object::Userdata(u) if u.as_any().is::<ColorInfo>() => Ok(Some(u)),
         o => Err(type_error("ColorInfo", &o)),
-    }
-}
-
-/// A double parameter: a Lua number.
-fn double_arg(cf: &FrameRef, i: i32) -> Result<f64, Fail> {
-    match cf.get(i) {
-        Object::Number(d) => Ok(d),
-        o => Err(type_error("double", &o)),
-    }
-}
-
-/// A boolean parameter: a Lua boolean.
-fn boolean_arg(cf: &FrameRef, i: i32) -> Result<bool, Fail> {
-    match cf.get(i) {
-        Object::Boolean(b) => Ok(b),
-        o => Err(type_error("boolean", &o)),
     }
 }
 
@@ -236,10 +202,11 @@ fn instance_of_name(o: &Object, name: &str) -> bool {
 pub fn global(name: &str) -> Option<Imp> {
     Some(match name {
         // FMODSoundBank.instance (BaseSoundBank.instance): made by GameWindow.mainThreadInit (an FMODSoundBank, a
-        // DummySoundBank with sound disabled), which this state does not run: null.
-        "getFMODSoundBank" => |_, _, cf, n| {
+        // DummySoundBank with sound disabled, as in the `-nosound` client whose startup ran); null in a state
+        // without that startup.
+        "getFMODSoundBank" | "getBaseSoundBank" => |s, _, cf, n| {
             static_args(n, 0)?;
-            ret(cf, Object::Nil)
+            ret(cf, super::exposed_game::base_sound_bank(s))
         },
         "getScriptManager" => |s, _, cf, n| {
             static_args(n, 0)?;
@@ -279,6 +246,27 @@ pub fn global(name: &str) -> Option<Imp> {
 /// The static methods this module owns.
 pub fn static_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
+        // Color(float, float, float, float) (MultiLuaJavaInvoker tries the float constructor before the all-int one
+        // for Lua numbers): the channels clamped to [0, 1]; Color(float, float, float): not clamped, alpha 1
+        ("zombie.core.Color", "new") => |_, _, cf, n| {
+            let c = match n {
+                4 => Color::new_clamped(
+                    float_arg(cf, 0)?,
+                    float_arg(cf, 1)?,
+                    float_arg(cf, 2)?,
+                    float_arg(cf, 3)?,
+                ),
+                3 => Color {
+                    r: float_arg(cf, 0)?,
+                    g: float_arg(cf, 1)?,
+                    b: float_arg(cf, 2)?,
+                    a: 1.0,
+                },
+                0 => Color::default(),
+                _ => return Err(arg_count_error(4, n)),
+            };
+            ret(cf, ud(Rc::new(ColorObject(RefCell::new(c)))))
+        },
         // `new ArrayList<>(characterTraitDefinitions.values())`: the map is filled by ScriptManager.Load (the
         // character_trait scripts), which this state does not run, so the list is new and empty.
         ("zombie.characters.traits.CharacterTraitDefinition", "getTraits")
@@ -350,8 +338,8 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
             add_to_static_list(s, "zombie.characters.SurvivorDesc", "HairCommonColors", o)
         },
         // PerkFactory.getPerkName: `type.getName()`. A Perk's name is its id until PerkFactory.init translates
-        // it (GameWindow.initShared, not run in this state).
-        ("zombie.characters.skills.PerkFactory", "getPerkName") => |_, _, cf, n| {
+        // it (GameWindow.initShared, run only in a client's startup).
+        ("zombie.characters.skills.PerkFactory", "getPerkName") => |s, _, cf, n| {
             static_args(n, 1)?;
             let u = registry_arg(cf, 0, "zombie.characters.skills.PerkFactory$Perk", "Perk")?
                 .ok_or_else(npe)?;
@@ -360,26 +348,12 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
                 .downcast_ref::<JavaObject>()
                 .map(|o| o.id)
                 .ok_or_else(npe)?;
-            ret(cf, Object::str(id))
-        },
-        // UIElement() and UIElement(KahluaTable) (a MultiLuaJavaInvoker: the table one for one argument).
-        ("zombie.ui.UIElement", "new") => |_, _, cf, n| {
-            let table: Option<TableRef> = match (n, cf.get(0)) {
-                (0, _) => None,
-                (1, Object::Nil) => None,
-                (1, Object::Table(t)) => Some(t),
-                _ => {
-                    return Err(Fail::Lua(Throwable::runtime(
-                        "not ported: UIElement.new with these arguments",
-                    )))
-                }
+            let client = s.state.client.borrow().clone();
+            let name = match client.as_ref().and_then(|c| c.shared.get()) {
+                Some(shared) => shared.perks.get_name(id).to_string(),
+                None => id.to_string(),
             };
-            ret(
-                cf,
-                ud(Rc::new(UIElementObject(RefCell::new(UIElement::new(
-                    table,
-                ))))),
-            )
+            ret(cf, Object::str(&name))
         },
         _ => return None,
     })
@@ -388,9 +362,93 @@ pub fn static_method(class: &str, name: &str) -> Option<Imp> {
 /// The instance methods this module owns.
 pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
     Some(match (class, name) {
-        // ScriptManager.getItemsTag: getAllItemsWithTag, the list cached per tag; with no scripts loaded every
-        // list is empty.
-        ("zombie.scripting.ScriptManager", "getItemsTag") => |_, _, cf, n| {
+        // zombie.core.Color.set(Color) / set(float, float, float) / set(float, float, float, float): returns this
+        ("zombie.core.Color", "set") => |_, _, cf, n| {
+            let me = this::<ColorObject>(cf)?;
+            let c = me.as_any().downcast_ref::<ColorObject>().ok_or_else(npe)?;
+            let v = match n {
+                2 => match cf.get(1) {
+                    Object::Userdata(u) => match u.as_any().downcast_ref::<ColorObject>() {
+                        Some(o) => *o.0.borrow(),
+                        None => return Err(type_error("Color", &Object::Userdata(u))),
+                    },
+                    Object::Nil => return Err(npe()),
+                    o => return Err(type_error("Color", &o)),
+                },
+                4 => Color {
+                    r: float_arg(cf, 1)?,
+                    g: float_arg(cf, 2)?,
+                    b: float_arg(cf, 3)?,
+                    a: 1.0,
+                },
+                5 => Color {
+                    r: float_arg(cf, 1)?,
+                    g: float_arg(cf, 2)?,
+                    b: float_arg(cf, 3)?,
+                    a: float_arg(cf, 4)?,
+                },
+                _ => return Err(arg_count_error(4, n - 1)),
+            };
+            *c.0.borrow_mut() = v;
+            ret(cf, Object::Userdata(me))
+        },
+        // zombie.core.Color getR/getG/getB/getRedFloat/getGreenFloat/getBlueFloat/getAlphaFloat: the channel
+        ("zombie.core.Color", "getR" | "getRedFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().r))
+        },
+        ("zombie.core.Color", "getG" | "getGreenFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().g))
+        },
+        ("zombie.core.Color", "getB" | "getBlueFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().b))
+        },
+        ("zombie.core.Color", "getAlphaFloat") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(cf, ColorObject, c, ret_float(cf, c.0.borrow().a))
+        },
+        // getRed/getRedByte etc.: `(int)(channel * 255.0F)`
+        ("zombie.core.Color", "getRed" | "getRedByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().r * 255.0) as i32)
+            )
+        },
+        ("zombie.core.Color", "getGreen" | "getGreenByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().g * 255.0) as i32)
+            )
+        },
+        ("zombie.core.Color", "getBlue" | "getBlueByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().b * 255.0) as i32)
+            )
+        },
+        ("zombie.core.Color", "getAlpha" | "getAlphaByte") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            with_this!(
+                cf,
+                ColorObject,
+                c,
+                ret_int(cf, (c.0.borrow().a * 255.0) as i32)
+            )
+        },
+        // ScriptManager.getItemsTag: getAllItemsWithTag, the list cached per tag: the items of getAllItems that
+        // `hasTag(itemTag)`; with no scripts loaded (no client startup) every list is empty.
+        ("zombie.scripting.ScriptManager", "getItemsTag") => |s, _, cf, n| {
             want_args(n, true, 1)?;
             let tag = registry_arg(cf, 1, "zombie.scripting.objects.ItemTag", "ItemTag")?
                 .map_or(Object::Nil, Object::Userdata);
@@ -404,13 +462,72 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 let list = match found {
                     Some(l) => l,
                     None => {
-                        let l = ud(Rc::new(ArrayListObject::default()));
+                        let items = super::exposed_game::items_with_tag(s, &tag);
+                        let l = ud(Rc::new(ArrayListObject(RefCell::new(items))));
                         m.tag_to_item_map.borrow_mut().push((tag, l.clone()));
                         l
                     }
                 };
                 ret(cf, list)
             })
+        },
+        // Core.getScreenModes: the lines of <Lua cache dir>/screenresolution.ini at 1..n. A missing file is created
+        // and filled from `Display.getAvailableDisplayModes()`; with no display (this headless state) there are no
+        // modes (UNKNOWN whether that call throws: either way the table stays empty, the exception is logged and the
+        // file stays empty).
+        ("zombie.core.Core", "getScreenModes") => |s, _, cf, n| {
+            want_args(n, true, 0)?;
+            let t = s.platform.new_table();
+            // LuaManager.getLuaCacheDir: <cache>/Lua, made with mkdir
+            let dir = std::path::Path::new(&s.cache_dir()?).join("Lua");
+            if !dir.exists() {
+                let _ = std::fs::create_dir(&dir);
+            }
+            let file = dir.join("screenresolution.ini");
+            if !file.exists() {
+                // createNewFile; a failure (no Lua folder) is logged and leaves the table empty
+                let _ = std::fs::File::create(&file);
+            } else if let Ok(bytes) = std::fs::read(&file) {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                let mut c = 1.0;
+                let mut rest: &str = &text;
+                while !rest.is_empty() {
+                    let (line, tail) = match rest.find(['\n', '\r']) {
+                        Some(i) => {
+                            let skip = if rest[i..].starts_with("\r\n") { 2 } else { 1 };
+                            (&rest[..i], &rest[i + skip..])
+                        }
+                        None => (rest, ""),
+                    };
+                    KahluaTableImpl::rawset(
+                        &t,
+                        Object::Number(c),
+                        Object::str(crate::java::trim(line)),
+                    );
+                    c += 1.0;
+                    rest = tail;
+                }
+            }
+            ret(cf, Object::Table(t))
+        },
+        ("zombie.core.Core", "getVersion") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(cf, Some(&crate::zombie::core::core::get_version()))
+        },
+        ("zombie.core.Core", "getGameAndBuildVersion") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(
+                cf,
+                Some(&crate::zombie::core::core::get_game_and_build_version()),
+            )
+        },
+        ("zombie.core.Core", "getBulletVersion") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(cf, Some(crate::zombie::core::core::BULLET_VERSION))
+        },
+        ("zombie.core.Core", "getGitSha") => |_, _, cf, n| {
+            want_args(n, true, 0)?;
+            ret_str(cf, Some(crate::zombie::core::core::GIT_REVISION))
         },
         ("zombie.core.Core", "getScreenWidth") => |s, _, cf, n| {
             want_args(n, true, 0)?;
@@ -422,15 +539,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
             let _ = core(s);
             ret_int(cf, CORE_HEIGHT)
         },
-        ("zombie.core.Core", "getTermsOfServiceVersion") => |_, _, cf, n| {
-            want_args(n, true, 0)?;
-            with_this!(
-                cf,
-                CoreObject,
-                c,
-                ret_int(cf, c.option_terms_of_service_version)
-            )
-        },
         ("zombie.gameStates.TermsOfServiceState", "fromLua0") => |_, _, cf, n| {
             want_args(n, true, 1)?;
             let func = string_arg(cf, 1)?;
@@ -440,98 +548,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                     .map_err(Fail::Java)?;
                 ret(cf, Object::Nil)
             })
-        },
-        ("zombie.ui.UIElement", "setX") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_x(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setY") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_y(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setWidth") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_width(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setHeight") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = double_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_height(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorTop") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_anchor_top(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorLeft") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_anchor_left(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorRight") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().set_anchor_right(v));
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setAnchorBottom") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().set_anchor_bottom(v)
-            );
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setWantKeyEvents") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(cf, UIElementObject, e, e.0.borrow_mut().want_key_events = v);
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setWantExtraMouseEvents") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().want_extra_mouse_events = v
-            );
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setForceCursorVisible") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().force_cursor_visible = v
-            );
-            Ok(0)
-        },
-        ("zombie.ui.UIElement", "setConsumeMouseEvents") => |_, _, cf, n| {
-            want_args(n, true, 1)?;
-            let v = boolean_arg(cf, 1)?;
-            with_this!(
-                cf,
-                UIElementObject,
-                e,
-                e.0.borrow_mut().consume_mouse_events = v
-            );
-            Ok(0)
         },
         _ => return None,
     })

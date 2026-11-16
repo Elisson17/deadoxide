@@ -632,6 +632,73 @@ impl ScriptManager {
         None
     }
 
+    /// zombie.scripting.ScriptManager.FindItem(name, true): a known full type, else the item of the module's bucket
+    /// (`getModule(name)`, then `ScriptModule.getItem(getItemName(name))`; the original's retry over every module
+    /// asks the same module again). The full type of the item found.
+    pub fn find_item(&self, index: &BucketIndex, name: &str) -> Option<String> {
+        if name.contains('.') && index.full_types.contains(name) {
+            return Some(name.to_string());
+        }
+        let module = self.get_module(name)?;
+        self.bucket_get(index, module, get_item_name(name), 1)
+    }
+
+    /// The scripts of one bucket type as ScriptBucket.LoadScripts visits them: modules in `moduleList` order, in each
+    /// the names in the order of its `loadData` HashMap, each body of a name in file order. (name, body) pairs.
+    pub fn bucket_scripts(&self, tag: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for module in &self.module_list {
+            let Some(names) = module.names.get(tag) else {
+                continue;
+            };
+            let keys: Vec<&str> = names.iter().map(String::as_str).collect();
+            for i in java::hash_map_order(&keys) {
+                let name = &names[i];
+                for body in &module.bodies[&(tag.to_string(), name.clone())] {
+                    out.push((name.clone(), body.clone()));
+                }
+            }
+        }
+        out
+    }
+
+    /// ScriptBucketCollection.getAllScripts of the items (ScriptManager.getAllItems): per module of `moduleList`, its
+    /// bucket's `scriptMap.values()`, the HashMap the kept items were put into in `loadData` order. Indices into
+    /// `items`.
+    pub fn all_items(&self) -> Vec<usize> {
+        let index: HashMap<String, usize> = (self.items.iter().enumerate())
+            .map(|(i, item)| (item.full_name(), i))
+            .collect();
+        let mut out = Vec::with_capacity(self.items.len());
+        for module in &self.module_list {
+            let Some(names) = module.names.get("item") else {
+                continue;
+            };
+            let all: Vec<&str> = names.iter().map(String::as_str).collect();
+            let kept: Vec<(&str, usize)> = java::hash_map_order(&all)
+                .into_iter()
+                .filter_map(|i| Some((all[i], *index.get(&format!("{}.{}", module.name, all[i]))?)))
+                .collect();
+            let keys: Vec<&str> = kept.iter().map(|k| k.0).collect();
+            out.extend(java::hash_map_order(&keys).into_iter().map(|i| kept[i].1));
+        }
+        out
+    }
+
+    /// Item.InitLoadPP's statics after ScriptManager.Load: `netIdToItem` gets an id per item token (each body of an
+    /// item, in every module), `netItemToId` an entry per full type. (sizes)
+    pub fn item_net_id_counts(&self) -> (usize, usize) {
+        let mut ids = 0;
+        let mut types = 0;
+        for module in &self.module_list {
+            for name in module.names.get("item").into_iter().flatten() {
+                ids += module.bodies[&("item".to_string(), name.clone())].len();
+                types += 1;
+            }
+        }
+        (ids, types)
+    }
+
     /// The lookup data of the item collection (ScriptManager.getItem).
     pub fn item_index(&self) -> BucketIndex {
         let module_of = |name: &str| self.module_list.iter().position(|m| m.name == name);

@@ -157,6 +157,7 @@ sel luaload && game_case luaload LuaLoadEnvProbe shared
 sel luaserver && game_case luaserver LuaLoadEnvProbe shared server
 sel luaclient && game_case luaclient LuaLoadEnvProbe shared client
 sel luaboot && game_case luaboot LuaBootProbe shared client
+sel luagame && game_case luagame LuaGameProbe shared client
 # measurement only (no Rust side): what the original LuaManager.init exposes, the input of tools/gen_lua_expose.py
 [ "$want" = luaexpose ] && game_measure luaexpose LuaExposeProbe
 sel doortoggle && { cp tests/golden/engine/specialcollide.sha256 target/oracle/sc.keep 2>/dev/null; server_case specialcollide SpecialCollideProbe 129 182 toggle; mv tests/golden/engine/specialcollide.sha256 tests/golden/engine/doortoggle.sha256 2>/dev/null; cp target/oracle/sc.keep tests/golden/engine/specialcollide.sha256 2>/dev/null; }

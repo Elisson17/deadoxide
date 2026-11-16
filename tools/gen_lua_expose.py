@@ -17,7 +17,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 meas = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else root / "target/oracle/luaexpose.txt"
 
 # The classes the game's media/lua/shared, media/lua/server and media/lua/client read while loading and while the boot
-# events run (measured, docs/COMPATIBILITY.md),
+# events run, standalone and after the client's startup (luagame) (measured, docs/COMPATIBILITY.md),
 # the classes of the objects they call methods on, and SandboxOptions/Core. Nested classes come along with their outer class.
 CLASSES = """
 zombie.characters.animals.AnimalDefinitions zombie.characters.animals.AnimalGenomeDefinitions
@@ -45,6 +45,16 @@ zombie.ui.AtomUIText zombie.ui.AtomUITexture zombie.ui.AtomUITextEntry
 zombie.characters.traits.CharacterTraitDefinition zombie.characters.professions.CharacterProfessionDefinition
 zombie.characters.traits.ObservationFactory zombie.characters.SurvivorFactory zombie.characters.SurvivorDesc
 zombie.gameStates.TermsOfServiceState zombie.ui.UIElement
+zombie.core.fonts.AngelCodeFont zombie.core.textures.Texture zombie.core.Translator zombie.core.Language
+zombie.scripting.objects.Item zombie.network.ServerOptions zombie.core.GameMode zombie.GameWindow zombie.MapGroups
+java.io.BufferedReader zombie.Lua.LuaManager$GlobalObject$LuaFileWriter
+zombie.SystemDisabler zombie.ui.UIManager zombie.ui.UITransition zombie.audio.DummySoundBank zombie.core.Color
+zombie.SandboxOptions$BooleanSandboxOption zombie.SandboxOptions$DoubleSandboxOption
+zombie.SandboxOptions$EnumSandboxOption zombie.SandboxOptions$IntegerSandboxOption
+zombie.SandboxOptions$StringSandboxOption zombie.network.ServerOptions$BooleanServerOption
+zombie.network.ServerOptions$DoubleServerOption zombie.network.ServerOptions$EnumServerOption
+zombie.network.ServerOptions$IntegerServerOption zombie.network.ServerOptions$StringServerOption
+zombie.network.ServerOptions$TextServerOption zombie.characters.Capability
 """.split()
 
 
@@ -119,7 +129,7 @@ def decompiled(c):
         return None
     src = f.read_text(encoding="utf-8")
     for nested in c.split("$")[1:]:
-        m = re.search(r"\n(\s*)public (?:static )?(?:final )?class %s \{" % re.escape(nested), src)
+        m = re.search(r"\n([ \t]*)public (?:static )?(?:final )?class %s \{" % re.escape(nested), src)
         if not m:
             return None
         end = src.index("\n" + m.group(1) + "}", m.end())

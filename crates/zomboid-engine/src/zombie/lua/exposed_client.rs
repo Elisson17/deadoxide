@@ -13,13 +13,13 @@ use super::exposed_methods::{
 use super::exposed_world::{enum_arg, state_object, table_impl_arg};
 use super::exposer::{class_named, Fail, Imp, JavaEnum, JavaStatics, Ret};
 use crate::org::joml::vector3f::Vector3f;
+use crate::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::object::{JavaClass, Object, Throwable, Userdata};
 use crate::zombie::audio::music_intensity_config::MusicIntensityConfig;
 use crate::zombie::audio::music_threat_config::MusicThreatConfig;
 use crate::zombie::characters::character_input_binding_set::CharacterInputBindingSet;
 use crate::zombie::ui::text_manager::TextManager;
-use crate::zombie::ui::ui_font::UIFont;
 
 state_object!(
     MusicIntensityConfigObject,
@@ -110,6 +110,98 @@ pub fn global(name: &str) -> Option<Imp> {
         "getSteamModeActive" => |_, _, cf, n| {
             static_args(n, 0)?;
             ret_bool(cf, false)
+        },
+        // SteamUtils.isOverlayEnabled: `steamEnabled && n_IsOverlayEnabled()`; false without Steam.
+        "isSteamOverlayEnabled" => |_, _, cf, n| {
+            static_args(n, 0)?;
+            ret_bool(cf, false)
+        },
+        // LuaManager.GlobalObject.getLatestSave: a new table of the lines of <cache dir>/latestSave.ini (1..n); an
+        // empty table when it cannot be opened or read (BufferedReader.readLine: \n, \r or \r\n end a line).
+        "getLatestSave" => |s, _, cf, n| {
+            static_args(n, 0)?;
+            let t = s.platform.new_table();
+            let path = std::path::Path::new(&s.cache_dir()?).join("latestSave.ini");
+            if let Ok(bytes) = std::fs::read(path) {
+                let text = String::from_utf8_lossy(&bytes);
+                let mut lines: Vec<&str> = Vec::new();
+                let mut rest: &str = &text;
+                while !rest.is_empty() {
+                    match rest.find(['\n', '\r']) {
+                        Some(i) => {
+                            lines.push(&rest[..i]);
+                            let skip = if rest[i..].starts_with("\r\n") { 2 } else { 1 };
+                            rest = &rest[i + skip..];
+                        }
+                        None => {
+                            lines.push(rest);
+                            rest = "";
+                        }
+                    }
+                }
+                for (i, line) in lines.iter().enumerate() {
+                    KahluaTableImpl::rawset(&t, Object::Number((i + 1) as f64), Object::str(line));
+                }
+            }
+            ret(cf, Object::Table(t))
+        },
+        // LuaManager.GlobalObject.getFullSaveDirectoryTable: `<cache>/Saves` (made when missing), each folder in it but
+        // "Multiplayer" gives its sub-folders (getSaveDirectory, which makes a missing folder: it is listed, so it
+        // exists); newest first (File.lastModified, a stable sort); the items "<folder>/<save>" at 1..n.
+        "getFullSaveDirectoryTable" => |s, _, cf, n| {
+            static_args(n, 0)?;
+            let t = s.platform.new_table();
+            let saves = std::path::Path::new(&s.cache_dir()?).join("Saves");
+            // ZomboidFileSystem.getSaveDir: ensureFolderExists(<cache>/Saves)
+            if !saves.is_dir() {
+                let _ = std::fs::create_dir_all(&saves);
+            }
+            let Ok(entries) = std::fs::read_dir(&saves) else {
+                return ret(cf, Object::Table(t));
+            };
+            let mut saved_games: Vec<(std::path::PathBuf, i64)> = Vec::new();
+            for entry in entries.flatten() {
+                let folder = entry.path();
+                if folder.is_dir() && entry.file_name() != "Multiplayer" {
+                    // getSaveDirectory(folder): validatePrefix passes (the folder is under the cache dir)
+                    let Ok(subs) = std::fs::read_dir(&folder) else {
+                        // `savedGames.addAll(null)`
+                        return Err(Fail::Java(Throwable::Java {
+                            class: "java.lang.NullPointerException",
+                            message: None,
+                        }));
+                    };
+                    for sub in subs.flatten() {
+                        let p = sub.path();
+                        if p.is_dir() {
+                            // File.lastModified: milliseconds since the epoch, 0 when unreadable
+                            let ms = std::fs::metadata(&p)
+                                .and_then(|m| m.modified())
+                                .ok()
+                                .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map_or(0, |d| d.as_millis() as i64);
+                            saved_games.push((p, ms));
+                        }
+                    }
+                }
+            }
+            // comparingLong(File::lastModified).reversed(): List.sort is stable
+            saved_games.sort_by_key(|g| std::cmp::Reverse(g.1));
+            for (i, (file, _)) in saved_games.iter().enumerate() {
+                let name = file.file_name().map(|n| n.to_string_lossy().into_owned());
+                let parent = file
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned());
+                let item = format!(
+                    "{}{}{}",
+                    parent.unwrap_or_default(),
+                    std::path::MAIN_SEPARATOR,
+                    name.unwrap_or_default()
+                );
+                KahluaTableImpl::rawset(&t, Object::Number((i + 1) as f64), Object::str(&item));
+            }
+            ret(cf, Object::Table(t))
         },
         "isDemo" => |_, _, cf, n| {
             static_args(n, 0)?;
@@ -312,20 +404,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 ret(cf, s.field("zombie.ui.UIFont", font.name()))
             })
         },
-        ("zombie.ui.TextManager", "getFontFromEnum") => |_, _, cf, n| {
-            want_self_args(n, 1)?;
-            let font = enum_arg(cf, 1, "zombie.ui.UIFont", "UIFont")?;
-            with_this!(cf, TextManagerObject, t, {
-                let font = font.as_ref().map(|u| UIFont::values()[ordinal_of(u)]);
-                match t.0.borrow().get_font_from_enum(font) {
-                    None => ret(cf, Object::Nil),
-                    // Only reachable after TextManager.Init, which the Lua state never runs.
-                    Some(_) => Err(Fail::Lua(Throwable::runtime(
-                        "not ported: an AngelCodeFont as a Lua value".to_string(),
-                    ))),
-                }
-            })
-        },
         // ---- Core options ----
         ("zombie.core.Core", "getOptionFontSizeReal") => |_, _, cf, n| {
             want_self_args(n, 0)?;
@@ -343,15 +421,6 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
                 CoreObject,
                 c,
                 ret_str(cf, Some(c.get_option_controller_button_style_string()))
-            )
-        },
-        ("zombie.core.Core", "getOptionGamepadBindingPreset") => |_, _, cf, n| {
-            want_self_args(n, 0)?;
-            with_this!(
-                cf,
-                CoreObject,
-                c,
-                ret_str(cf, Some(&c.option_gamepad_binding_preset))
             )
         },
         // ---- CharacterJoypadButtonBinding ----
@@ -425,6 +494,13 @@ pub fn instance_method(class: &str, name: &str) -> Option<Imp> {
             let ty = cf.get(0).java_to_string();
             let msg = cf.get(1).java_to_string();
             s.loader.borrow_mut().log.push(format!("{ty}: {msg}"));
+            Ok(0)
+        },
+        // DebugType.trace: the lowest log level, which the game does not print by default
+        ("zombie.debug.DebugType", "trace") => |_, _, _, n| {
+            if n < 2 {
+                return Err(arg_count_error(1, n - 1));
+            }
             Ok(0)
         },
         _ => return None,

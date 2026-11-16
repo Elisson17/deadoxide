@@ -4,25 +4,25 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 355 of 3432 classes touched, 1530 of 46318 method names cited (3.3%), 965313 decompiled lines.**
+**Total: 369 of 3432 classes touched, 1603 of 46318 method names cited (3.5%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 69 | 7277 | 386 (5.3%) | 144530 |
-| zombie.core | 450 | 70 | 5920 | 182 (3.1%) | 93574 |
-| zombie.characters | 200 | 39 | 5028 | 106 (2.1%) | 77144 |
-| zombie.network | 436 | 2 | 3229 | 2 (0.1%) | 60679 |
-| zombie.scripting | 205 | 35 | 2713 | 173 (6.4%) | 52509 |
+| zombie.core | 450 | 75 | 5920 | 203 (3.4%) | 93574 |
+| zombie.characters | 200 | 41 | 5028 | 107 (2.1%) | 77144 |
+| zombie.network | 436 | 3 | 3229 | 2 (0.1%) | 60679 |
+| zombie.scripting | 205 | 35 | 2713 | 174 (6.4%) | 52509 |
 | zombie.entity | 156 | 10 | 2517 | 14 (0.6%) | 36294 |
 | zombie.inventory | 40 | 15 | 2100 | 16 (0.8%) | 28391 |
 | zombie.vehicles | 42 | 13 | 1411 | 14 (1.0%) | 28275 |
-| zombie | 60 | 10 | 1192 | 82 (6.9%) | 22185 |
+| zombie | 60 | 12 | 1192 | 100 (8.4%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 1 | 823 | 1 (0.1%) | 18680 |
 | zombie.worldMap | 85 | 6 | 1328 | 5 (0.4%) | 18604 |
-| zombie.ui | 52 | 5 | 1026 | 27 (2.6%) | 16932 |
-| zombie.Lua | 8 | 4 | 875 | 18 (2.1%) | 14841 |
+| zombie.ui | 52 | 7 | 1026 | 53 (5.2%) | 16932 |
+| zombie.Lua | 8 | 4 | 875 | 19 (2.2%) | 14841 |
 | zombie.ai | 99 | 0 | 875 | 0 (0.0%) | 14312 |
 | zombie.erosion | 23 | 5 | 216 | 24 (11.1%) | 13296 |
 | se | 70 | 21 | 692 | 207 (29.9%) | 11221 |
@@ -48,11 +48,11 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.buildingRooms | 6 | 0 | 72 | 0 (0.0%) | 1359 |
 | zombie.vehicleNetworkSound | 10 | 0 | 96 | 0 (0.0%) | 1263 |
 | zombie.basements | 7 | 6 | 43 | 10 (23.3%) | 1224 |
-| zombie.fileSystem | 13 | 0 | 87 | 0 (0.0%) | 1205 |
+| zombie.fileSystem | 13 | 2 | 87 | 2 (2.3%) | 1205 |
 | zombie.seating | 3 | 0 | 79 | 0 (0.0%) | 1062 |
 | zombie.characterTextures | 4 | 1 | 36 | 0 (0.0%) | 1002 |
 | zombie.vehicleSound | 19 | 0 | 107 | 0 (0.0%) | 987 |
-| zombie.config | 8 | 7 | 101 | 11 (10.9%) | 965 |
+| zombie.config | 8 | 7 | 101 | 14 (13.9%) | 965 |
 | zombie.asset | 14 | 1 | 80 | 1 (1.3%) | 819 |
 | zombie.profanity | 6 | 0 | 53 | 0 (0.0%) | 783 |
 | zombie.spnetwork | 6 | 0 | 69 | 0 (0.0%) | 706 |
@@ -106,14 +106,16 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.FileGuidTable | 5 / 6 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.GameSounds | 9 / 21 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/game_sounds.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.GameTime | 13 / 136 | crates/zomboid-content/src/save.rs, crates/zomboid-engine/src/zombie/game_time.rs, crates/zomboid-scene/src/sim.rs |
-| zombie.GameWindow | 1 / 47 | crates/zomboid-engine/src/java_nio.rs |
+| zombie.GameWindow | 5 / 47 | crates/zomboid-engine/src/java_nio.rs, crates/zomboid-engine/src/zombie/core/textures/texture.rs, crates/zomboid-engine/src/zombie/game_window.rs, crates/zomboid-engine/src/zombie/lua/exposed_game.rs |
 | zombie.Lua.Event | 4 / 6 | crates/zomboid-engine/src/zombie/lua/event.rs |
 | zombie.Lua.LuaEventManager | 4 / 21 | crates/zomboid-engine/src/zombie/lua/lua_event_manager.rs |
-| zombie.Lua.LuaManager | 7 / 798 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs |
+| zombie.Lua.LuaManager | 8 / 798 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs, crates/zomboid-engine/src/zombie/lua/exposed_io.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs |
 | zombie.Lua.MapObjects | 3 / 12 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/lua/exposed_world.rs, crates/zomboid-engine/src/zombie/lua/map_objects.rs |
+| zombie.MapGroups | 13 / 23 | crates/zomboid-engine/src/zombie/lua/exposed_game.rs, crates/zomboid-engine/src/zombie/map_groups.rs |
 | zombie.PersistentOutfits | 10 / 20 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.SandboxOptions | 7 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.SharedDescriptors | 1 / 16 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
+| zombie.SystemDisabler | 1 / 16 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/system_disabler.rs |
 | zombie.ZomboidFileSystem | 35 / 114 | crates/zomboid-engine/src/zombie/file_guid_table.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
 | zombie.ZomboidGlobals | 1 / 2 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/zomboid_globals.rs |
 | zombie.asset.AssetManager | 1 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/anim_node_asset_manager.rs |
@@ -164,28 +166,32 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.action.conditions.LuaCall | 0 / 5 | crates/zomboid-engine/src/zombie/characters/action/i_action_condition.rs |
 | zombie.characters.animals.AnimalZone | 4 / 18 | crates/zomboid-engine/src/zombie/characters/animals/animal_zone.rs |
 | zombie.characters.animals.AnimalZoneJunction | 0 / 10 | crates/zomboid-engine/src/zombie/characters/animals/animal_zone_junction.rs |
-| zombie.characters.skills.PerkFactory | 0 / 31 | crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
+| zombie.characters.professions.CharacterProfessionDefinition | 0 / 21 | crates/zomboid-engine/src/zombie/characters/professions/character_profession_definition.rs |
+| zombie.characters.skills.PerkFactory | 1 / 31 | crates/zomboid-engine/src/zombie/characters/iso_game_character.rs, crates/zomboid-engine/src/zombie/characters/skills/perk_factory.rs |
+| zombie.characters.traits.CharacterTraitDefinition | 0 / 30 | crates/zomboid-engine/src/zombie/characters/traits/character_trait_definition.rs |
 | zombie.characters.traits.CharacterTraits | 1 / 15 | crates/zomboid-engine/src/zombie/characters/traits/character_traits.rs |
 | zombie.characters.traits.ObservationFactory | 3 / 14 | crates/zomboid-engine/src/zombie/characters/traits/observation_factory.rs |
-| zombie.config.ArrayConfigOption | 1 / 22 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
-| zombie.config.BooleanConfigOption | 2 / 14 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
-| zombie.config.ConfigFile | 3 / 7 | crates/zomboid-engine/src/zombie/config/config_file.rs |
-| zombie.config.ConfigOption | 1 / 5 | crates/zomboid-engine/src/zombie/config/config_file.rs |
-| zombie.config.DoubleConfigOption | 2 / 17 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
-| zombie.config.IntegerConfigOption | 1 / 16 | crates/zomboid-engine/src/zombie/sandbox_options.rs |
-| zombie.config.StringConfigOption | 1 / 17 | crates/zomboid-engine/src/zombie/config/config_file.rs |
-| zombie.core.Color | 2 / 58 | crates/zomboid-engine/src/zombie/core/color.rs, crates/zomboid-engine/src/zombie/core/colors.rs, crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs |
+| zombie.config.ArrayConfigOption | 0 / 22 | crates/zomboid-engine/src/zombie/core/core_options.rs |
+| zombie.config.BooleanConfigOption | 2 / 14 | crates/zomboid-engine/src/zombie/core/core_options.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs |
+| zombie.config.ConfigFile | 4 / 7 | crates/zomboid-engine/src/zombie/config/config_file.rs, crates/zomboid-engine/src/zombie/core/core_options.rs |
+| zombie.config.ConfigOption | 1 / 5 | crates/zomboid-engine/src/zombie/config/config_file.rs, crates/zomboid-engine/src/zombie/core/core_options.rs |
+| zombie.config.DoubleConfigOption | 2 / 17 | crates/zomboid-engine/src/zombie/core/core_options.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs |
+| zombie.config.IntegerConfigOption | 2 / 16 | crates/zomboid-engine/src/zombie/core/core_options.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs |
+| zombie.config.StringConfigOption | 3 / 17 | crates/zomboid-engine/src/zombie/config/config_file.rs, crates/zomboid-engine/src/zombie/core/core_options.rs |
+| zombie.core.Color | 3 / 58 | crates/zomboid-engine/src/zombie/core/color.rs, crates/zomboid-engine/src/zombie/core/colors.rs, crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs |
 | zombie.core.Colors | 13 / 33 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/core/colors.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-engine/src/zombie/scripting/ui/xui_lua_style.rs |
-| zombie.core.Core | 2 / 513 | crates/zomboid-engine/src/zombie/core/core.rs, crates/zomboid-engine/src/zombie/core/game_version.rs, crates/zomboid-engine/src/zombie/core/mod.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
+| zombie.core.Core | 10 / 513 | crates/zomboid-engine/src/zombie/core/core.rs, crates/zomboid-engine/src/zombie/core/core_options.rs, crates/zomboid-engine/src/zombie/core/core_options_table.rs, crates/zomboid-engine/src/zombie/core/game_version.rs, crates/zomboid-engine/src/zombie/core/mod.rs, crates/zomboid-engine/src/zombie/lua/exposed_core.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
 | zombie.core.GameVersion | 7 / 12 | crates/zomboid-engine/src/zombie/core/game_version.rs |
 | zombie.core.ImmutableColor | 1 / 26 | crates/zomboid-engine/src/zombie/core/immutable_color.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs |
 | zombie.core.IndieFileLoader | 1 / 1 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs |
-| zombie.core.Language | 0 / 6 | crates/zomboid-engine/src/zombie/core/language.rs |
+| zombie.core.Language | 0 / 6 | crates/zomboid-engine/src/zombie/core/language.rs, crates/zomboid-engine/src/zombie/lua/exposed_game.rs |
 | zombie.core.LanguageFile | 0 / 1 | crates/zomboid-engine/src/zombie/core/language_file.rs |
 | zombie.core.Languages | 6 / 9 | crates/zomboid-engine/src/zombie/core/languages.rs |
+| zombie.core.PerformanceSettings | 0 / 21 | crates/zomboid-engine/src/zombie/core/performance_settings.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
 | zombie.core.TilePropertyAliasMap | 5 / 6 | crates/zomboid-engine/src/zombie/core/tile_property_alias_map.rs |
 | zombie.core.Translator | 29 / 41 | crates/zomboid-engine/src/zombie/core/translator.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-lua/src/text.rs |
-| zombie.core.fonts.AngelCodeFont | 10 / 23 | crates/zomboid-engine/src/zombie/core/fonts/angel_code_font.rs |
+| zombie.core.fonts.AngelCodeFont | 10 / 23 | crates/zomboid-engine/src/zombie/core/fonts/angel_code_font.rs, crates/zomboid-engine/src/zombie/lua/exposed_game.rs |
+| zombie.core.input.Input | 1 / 25 | crates/zomboid-engine/src/zombie/core/input/input.rs |
 | zombie.core.logger.ExceptionLogger | 1 / 3 | crates/zomboid-engine/src/zombie/lua/exposer.rs |
 | zombie.core.math.IInterpolator | 0 / 0 | crates/zomboid-engine/src/zombie/core/math/i_interpolator.rs |
 | zombie.core.math.PZMath | 14 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
@@ -200,6 +206,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.properties.FasciaEdge | 0 / 0 | crates/zomboid-engine/src/zombie/core/properties/fascia_edge.rs |
 | zombie.core.properties.IsoPropertyType | 0 / 7 | crates/zomboid-engine/src/zombie/core/properties/iso_property_type.rs |
 | zombie.core.properties.PropertyContainer | 20 / 24 | crates/zomboid-engine/src/zombie/core/properties/property_container.rs |
+| zombie.core.raknet.VoiceManager | 1 / 42 | crates/zomboid-engine/src/zombie/core/raknet/voice_manager.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs |
 | zombie.core.random.Rand | 1 / 5 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandAbstract | 1 / 2 | crates/zomboid-content/src/rng.rs, crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandInterface | 1 / 2 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
@@ -238,8 +245,10 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.stash.StashBuilding | 0 / 2 | crates/zomboid-engine/src/zombie/core/stash/stash_system.rs |
 | zombie.core.stash.StashSystem | 1 / 19 | crates/zomboid-engine/src/zombie/core/stash/stash_system.rs |
 | zombie.core.textures.ColorInfo | 5 / 16 | crates/zomboid-engine/src/zombie/core/textures/color_info.rs |
-| zombie.core.textures.Texture | 2 / 91 | crates/zomboid-engine/src/zombie/scripting/ui/xui_skin.rs |
+| zombie.core.textures.PNGSize | 1 / 10 | crates/zomboid-engine/src/zombie/core/textures/texture.rs |
+| zombie.core.textures.Texture | 7 / 91 | crates/zomboid-engine/src/zombie/core/textures/texture.rs, crates/zomboid-engine/src/zombie/lua/exposed_game.rs, crates/zomboid-engine/src/zombie/scripting/ui/xui_skin.rs |
 | zombie.core.textures.TextureID | 0 / 29 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs |
+| zombie.core.textures.TexturePackPage | 4 / 8 | crates/zomboid-engine/src/zombie/core/textures/texture.rs |
 | zombie.core.utils.Bits | 2 / 11 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.core.utils.BooleanGrid | 7 / 13 | crates/zomboid-engine/src/zombie/core/utils/boolean_grid.rs |
 | zombie.core.utils.ByteBlock | 3 / 13 | crates/zomboid-engine/src/java_nio.rs |
@@ -259,6 +268,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.erosion.categories.ErosionCategory | 1 / 12 | crates/zomboid-engine/src/zombie/erosion/erosion_data.rs |
 | zombie.erosion.season.ErosionSeason | 16 / 49 | crates/zomboid-engine/src/zombie/erosion/season/erosion_season.rs |
 | zombie.erosion.utils.Noise2D | 7 / 7 | crates/zomboid-engine/src/zombie/erosion/utils/noise2d.rs |
+| zombie.fileSystem.FileSystem | 1 / 1 | crates/zomboid-engine/src/zombie/core/textures/texture.rs |
+| zombie.fileSystem.TexturePackDevice | 1 / 20 | crates/zomboid-engine/src/zombie/core/textures/texture.rs |
 | zombie.gameStates.ChooseGameInfo | 10 / 76 | crates/zomboid-engine/src/zombie/game_states/choose_game_info.rs |
 | zombie.gameStates.TermsOfServiceState | 2 / 5 | crates/zomboid-engine/src/zombie/game_states/terms_of_service_state.rs, crates/zomboid-engine/src/zombie/lua/exposed_boot.rs |
 | zombie.input.ControllerButtonStyle | 3 / 6 | crates/zomboid-engine/src/zombie/input/controller_button_style.rs |
@@ -349,6 +360,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.modding.ActiveMods | 18 / 21 | crates/zomboid-engine/src/zombie/modding/active_mods.rs |
 | zombie.modding.ActiveModsFile | 2 / 4 | crates/zomboid-engine/src/zombie/modding/active_mods_file.rs |
 | zombie.network.GameServer | 1 / 171 | crates/zomboid-engine/src/zombie/core/translator.rs |
+| zombie.network.ServerOptions | 0 / 36 | crates/zomboid-engine/src/zombie/lua/exposed_game.rs, crates/zomboid-engine/src/zombie/network/server_options.rs |
 | zombie.network.id.ObjectID | 1 / 17 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs |
 | zombie.pathfind.LiangBarsky | 1 / 1 | crates/zomboid-engine/src/zombie/pathfind/liang_barsky.rs |
 | zombie.radio.devices.DeviceData | 1 / 116 | crates/zomboid-engine/src/zombie/radio/devices/device_data.rs |
@@ -358,7 +370,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.savefile.PlayerDB | 0 / 33 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/characters/iso_player.rs |
 | zombie.scripting.ScriptBucket | 1 / 17 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.ScriptBucketCollection | 1 / 20 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
-| zombie.scripting.ScriptManager | 20 / 134 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/entity/components/crafting/craft_recipe.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
+| zombie.scripting.ScriptManager | 21 / 134 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/entity/components/crafting/craft_recipe.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.ScriptParser | 4 / 17 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/modding/active_mods_file.rs, crates/zomboid-engine/src/zombie/scripting/script_parser.rs, crates/zomboid-engine/tests/oracle_hashes.rs |
 | zombie.scripting.entity.GameEntityScript | 2 / 26 | crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.entity.components.crafting.CraftRecipe | 19 / 125 | crates/zomboid-engine/src/zombie/scripting/entity/components/crafting/craft_recipe.rs |
@@ -370,7 +382,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.scripting.objects.CraftRecipeGroup | 1 / 5 | crates/zomboid-engine/src/zombie/scripting/objects/craft_recipe_group.rs |
 | zombie.scripting.objects.CraftRecipeTag | 0 / 3 | crates/zomboid-engine/src/zombie/scripting/objects/craft_recipe_tag.rs |
 | zombie.scripting.objects.GameSoundScript | 3 / 4 | crates/zomboid-engine/src/zombie/scripting/objects/game_sound_script.rs |
-| zombie.scripting.objects.Item | 4 / 336 | crates/zomboid-engine/src/zombie/scripting/item.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
+| zombie.scripting.objects.Item | 4 / 336 | crates/zomboid-engine/src/zombie/lua/exposed_game.rs, crates/zomboid-engine/src/zombie/scripting/item.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
 | zombie.scripting.objects.ItemTag | 1 / 6 | crates/zomboid-engine/src/zombie/scripting/objects/item_tag.rs |
 | zombie.scripting.objects.ItemType | 1 / 6 | crates/zomboid-engine/src/zombie/inventory/inventory_item.rs |
 | zombie.scripting.objects.ModelAttachment | 1 / 16 | crates/zomboid-engine/src/zombie/scripting/objects/model_attachment.rs |
@@ -394,8 +406,10 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.ui.FontsFile | 2 / 2 | crates/zomboid-engine/src/zombie/ui/fonts_file.rs |
 | zombie.ui.FontsFileFont | 0 / 0 | crates/zomboid-engine/src/zombie/ui/fonts_file_font.rs |
 | zombie.ui.TextManager | 16 / 27 | crates/zomboid-engine/src/zombie/ui/text_manager.rs |
-| zombie.ui.UIElement | 8 / 164 | crates/zomboid-engine/src/zombie/lua/exposed_boot.rs, crates/zomboid-engine/src/zombie/ui/ui_element.rs |
+| zombie.ui.UIElement | 26 / 164 | crates/zomboid-engine/src/zombie/lua/exposed_ui.rs, crates/zomboid-engine/src/zombie/ui/ui_element.rs |
 | zombie.ui.UIFont | 1 / 1 | crates/zomboid-engine/src/zombie/ui/ui_font.rs |
+| zombie.ui.UIManager | 4 / 127 | crates/zomboid-engine/src/zombie/ui/ui_manager.rs |
+| zombie.ui.UITransition | 4 / 9 | crates/zomboid-engine/src/zombie/lua/exposed_ui.rs, crates/zomboid-engine/src/zombie/ui/ui_transition.rs |
 | zombie.util.LocationRNG | 4 / 5 | crates/zomboid-engine/src/zombie/util/location_rng.rs |
 | zombie.util.PZXmlUtil | 5 / 24 | crates/zomboid-engine/src/zombie/util/pz_xml_util.rs |
 | zombie.util.StringUtils | 8 / 36 | crates/zomboid-engine/src/zombie/core/language_file.rs, crates/zomboid-engine/src/zombie/scripting/objects/vehicle_script.rs, crates/zomboid-engine/src/zombie/scripting/objects/xui_skin_script.rs, crates/zomboid-engine/src/zombie/util/string_utils.rs |

@@ -162,6 +162,11 @@ impl JavaStatics {
         o
     }
 
+    /// Sets the singleton of `class` (a Java static the host's startup filled before the Lua state existed).
+    pub fn set_singleton(&self, class: &'static str, o: Object) {
+        self.singletons.borrow_mut().insert(class, o);
+    }
+
     /// The singleton of `class` if something made it already (a Java static still null otherwise).
     pub fn singleton_if_made(&self, class: &str) -> Option<Object> {
         self.singletons.borrow().get(class).cloned()

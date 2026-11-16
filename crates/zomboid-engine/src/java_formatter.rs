@@ -529,6 +529,13 @@ impl FormatSpecifier {
             };
         }
         match self.c {
+            // printFloat of a Double with the 'f' conversion
+            102 if matches!(arg, FormatArg::Double(_)) => {
+                let FormatArg::Double(v) = arg else {
+                    return Err(self.fail_conversion(arg));
+                };
+                self.print_double_decimal(out, *v)
+            }
             // printInteger, printFloat, printCharacter
             100 | 111 | 120 | 101 | 103 | 102 | 97 | 99 => match arg {
                 FormatArg::Null => self.print_string(out, "null"),
@@ -598,6 +605,103 @@ impl FormatSpecifier {
         }
     }
 
+    /// java.util.Formatter.FormatSpecifier.print(Formatter, double, Locale) for Conversion.DECIMAL_FLOAT: the sign
+    /// (`Double.compare(value, 0.0) == -1`, so -0.0 is negative), then the magnitude as FormattedFloatingDecimal
+    /// gives it for the precision (6 by default) with `addZeros`, then `localizedMagnitude` (an English locale:
+    /// '.' and ',' in groups of 3; zero padding to the width) and `appendJustified`. The decimal digits are the
+    /// shortest that round-trip, as FloatingDecimal's converter gives for the values measured; whether it gives
+    /// more digits for some doubles is UNKNOWN.
+    fn print_double_decimal(&self, out: &mut Vec<u16>, value: f64) -> Result<(), FormatError> {
+        let mut sb = String::new();
+        if value.is_nan() {
+            sb.push_str(if self.flags & UPPERCASE != 0 {
+                "NAN"
+            } else {
+                "NaN"
+            });
+        } else {
+            let neg = value < 0.0 || (value == 0.0 && value.is_sign_negative());
+            let v = value.abs();
+            // leadingSign
+            if !neg {
+                if self.flags & PLUS != 0 {
+                    sb.push('+');
+                } else if self.flags & LEADING_SPACE != 0 {
+                    sb.push(' ');
+                }
+            } else if self.flags & PARENTHESES != 0 {
+                sb.push('(');
+            } else {
+                sb.push('-');
+            }
+            if v.is_infinite() {
+                sb.push_str(if self.flags & UPPERCASE != 0 {
+                    "INFINITY"
+                } else {
+                    "Infinity"
+                });
+            } else {
+                let prec = if self.precision == -1 {
+                    6
+                } else {
+                    self.precision
+                };
+                let mut mant = formatted_decimal(v, prec);
+                add_zeros(&mut mant, prec);
+                if self.flags & ALTERNATE != 0 && prec == 0 {
+                    mant.push('.');
+                }
+                let mut new_w = self.width;
+                if self.width != -1 && neg && self.flags & PARENTHESES != 0 {
+                    new_w -= 1;
+                }
+                self.localized_magnitude(&mut sb, &mant, new_w);
+            }
+            // trailingSign
+            if neg && self.flags & PARENTHESES != 0 {
+                sb.push(')');
+            }
+        }
+        // appendJustified
+        let units: Vec<u16> = sb.encode_utf16().collect();
+        let sp = if self.width == -1 {
+            0
+        } else {
+            i64::from(self.width) - units.len() as i64
+        };
+        let pad_right = self.flags & LEFT_JUSTIFY == LEFT_JUSTIFY;
+        if pad_right {
+            out.extend_from_slice(&units);
+        }
+        for _ in 0..sp.max(0) {
+            out.push(32);
+        }
+        if !pad_right {
+            out.extend_from_slice(&units);
+        }
+        Ok(())
+    }
+
+    /// java.util.Formatter.FormatSpecifier.localizedMagnitude over ASCII digits and '.' in an English locale.
+    fn localized_magnitude(&self, sb: &mut String, value: &str, width: i32) {
+        let begin = sb.len();
+        let dot = value.find('.').unwrap_or(value.len());
+        let int_part = &value[..dot];
+        for (i, c) in int_part.chars().enumerate() {
+            sb.push(c);
+            let left = int_part.len() - 1 - i;
+            if self.flags & GROUP != 0 && left > 0 && left.is_multiple_of(3) {
+                sb.push(',');
+            }
+        }
+        sb.push_str(&value[dot..]);
+        if width != -1 && self.flags & ZERO_PAD != 0 {
+            while (sb.encode_utf16().count() as i32) < width {
+                sb.insert(begin, '0');
+            }
+        }
+    }
+
     /// java.util.Formatter.FormatSpecifier.print(Formatter, String, Locale): precision cuts UTF-16 units, then the
     /// upper case, then `appendJustified` pads with spaces to the width (in UTF-16 units). A cut through a surrogate
     /// pair keeps a lone surrogate in Java; here it becomes U+FFFD when the result is turned into a Rust string.
@@ -631,6 +735,101 @@ impl FormatSpecifier {
 
 /// System.lineSeparator().
 const LINE_SEPARATOR: &str = if cfg!(windows) { "\r\n" } else { "\n" };
+
+/// The decimal digits of a finite non-negative double and its exponent, as FloatingDecimal's converter gives them:
+/// value = 0.d1d2... x 10^exp (zero is the digit 0 with exponent 1).
+fn decimal_digits(v: f64) -> (Vec<u8>, i32) {
+    if v == 0.0 {
+        return (vec![b'0'], 1);
+    }
+    // Rust's {:e} is the shortest round-trip digits, d.ddde<n>
+    let s = format!("{v:e}");
+    let (m, e) = s.split_once('e').unwrap_or((&s, "0"));
+    let digits: Vec<u8> = m.bytes().filter(u8::is_ascii_digit).collect();
+    (digits, e.parse::<i32>().unwrap_or(0) + 1)
+}
+
+/// jdk.internal.math.FormattedFloatingDecimal.valueOf(d, precision, Form.DECIMAL_FLOAT).getMantissa(): the digits
+/// rounded half up at `precision` places after the point (applyPrecision), then laid out by fillDecimal.
+fn formatted_decimal(v: f64, precision: i32) -> String {
+    let (mut digits, dec_exp) = decimal_digits(v);
+    let n = digits.len() as i32;
+    // applyPrecision(decExp, digits, nDigits, decExp + prec)
+    let prec = dec_exp + precision;
+    let mut exp = dec_exp;
+    if prec < n && prec >= 0 {
+        if prec == 0 {
+            if digits[0] >= b'5' {
+                digits[0] = b'1';
+                digits[1..].fill(b'0');
+                exp = dec_exp + 1;
+            } else {
+                digits.fill(b'0');
+            }
+        } else if digits[prec as usize] >= b'5' {
+            let mut i = prec as usize - 1;
+            let mut q = digits[i];
+            if q == b'9' {
+                while q == b'9' && i > 0 {
+                    i -= 1;
+                    q = digits[i];
+                }
+            }
+            if q == b'9' {
+                digits[0] = b'1';
+                digits[1..].fill(b'0');
+                exp = dec_exp + 1;
+            } else {
+                digits[i] = q + 1;
+                digits[i + 1..].fill(b'0');
+            }
+        } else {
+            digits[prec as usize..].fill(b'0');
+        }
+    }
+    // fillDecimal(precision, digits, nDigits, exp, false)
+    let d = |a: usize, b: usize| String::from_utf8_lossy(&digits[a..b]).into_owned();
+    if exp > 0 {
+        let e = exp as usize;
+        if (n as usize) < e {
+            format!("{}{}", d(0, n as usize), "0".repeat(e - n as usize))
+        } else {
+            let t = (n - exp).min(precision);
+            if t > 0 {
+                format!("{}.{}", d(0, e), d(e, e + t as usize))
+            } else {
+                d(0, e)
+            }
+        }
+    } else {
+        let zeros = (-exp).min(precision).max(0);
+        let t = n.min(precision + exp).max(0);
+        if zeros > 0 {
+            format!("0.{}{}", "0".repeat(zeros as usize), d(0, t as usize))
+        } else if t > 0 {
+            format!("0.{}", d(0, t as usize))
+        } else {
+            "0".into()
+        }
+    }
+}
+
+/// java.util.Formatter.FormatSpecifier.addZeros: pads the fraction with zeros to `prec` digits (adding the point).
+fn add_zeros(sb: &mut String, prec: i32) {
+    let len = sb.len();
+    let i = sb.find('.').unwrap_or(len);
+    let need_dot = i == len;
+    let out_prec = (len - i) as i32 - if need_dot { 0 } else { 1 };
+    if out_prec >= prec {
+        return;
+    }
+    if need_dot {
+        sb.push('.');
+    }
+    for _ in 0..prec - out_prec {
+        sb.push('0');
+    }
+}
 
 /// java.util.Formatter.FormatSpecifierParser.parse: the length of the specifier at `start` (0: none), pushing it.
 fn parse_specifier(

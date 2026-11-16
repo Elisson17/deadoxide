@@ -2,9 +2,14 @@
 pub mod event;
 pub mod exposed_boot;
 pub mod exposed_client;
+pub mod exposed_core;
+pub mod exposed_core_accessors;
+pub mod exposed_game;
+pub mod exposed_io;
 pub mod exposed_methods;
 #[rustfmt::skip] // generated, one entry per line
 pub mod exposed_table;
+pub mod exposed_ui;
 pub mod exposed_world;
 pub mod exposer;
 pub mod lua_event_manager;
