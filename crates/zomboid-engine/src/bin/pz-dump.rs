@@ -2514,9 +2514,7 @@ pub fn vehicles(root: &Path) -> Result<String, String> {
                 line(sb, &q, "updateConstraint", &a.update_constraint.to_string());
             }
         }
-        for (k, v) in [("mass", s.mass)] {
-            line(sb, p, k, &f(v));
-        }
+        line(sb, p, "mass", &f(s.mass));
         line(sb, p, "centerOfMassOffset", &v3(&s.center_of_mass_offset));
         for (k, v) in [
             ("engineForce", s.engine_force),
