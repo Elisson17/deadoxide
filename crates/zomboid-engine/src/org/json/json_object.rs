@@ -34,19 +34,31 @@ pub enum JsonNumber {
 /// unique, a duplicate key is an error).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct JsonObject {
-    pub entries: Vec<(String, JsonValue)>,
+    entries: Vec<(String, JsonValue)>,
+    /// key -> position in `entries` (the HashMap lookup of the original)
+    index: std::collections::HashMap<String, usize>,
 }
 
 impl JsonObject {
     /// org.json.JSONObject(String): `new JSONObject(new JSONTokener(source))` with the default configuration (not
     /// strict, duplicate keys an error); text after the closing brace is ignored.
-    pub fn from_str(source: &str) -> Result<JsonObject, JsonException> {
+    pub fn parse_text(source: &str) -> Result<JsonObject, JsonException> {
         parse(&mut JsonTokener::new(source))
+    }
+
+    /// The pairs in the text's order.
+    pub fn entries(&self) -> &[(String, JsonValue)] {
+        &self.entries
+    }
+
+    /// The pairs in the text's order, by value.
+    pub fn into_entries(self) -> Vec<(String, JsonValue)> {
+        self.entries
     }
 
     /// org.json.JSONObject.opt: the value of `key` (`None` where Java returns null).
     pub fn opt(&self, key: &str) -> Option<&JsonValue> {
-        self.entries.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+        self.index.get(key).map(|&i| &self.entries[i].1)
     }
 
     /// org.json.JSONObject.optInt(key, default): `optNumber(key, null)`, then `intValue()`.
@@ -225,6 +237,7 @@ pub fn parse(x: &mut JsonTokener) -> Result<JsonObject, JsonException> {
             return Err(x.syntax_error(&format!("Duplicate key \"{key}\"")));
         }
         let value = x.next_value()?;
+        obj.index.insert(key.clone(), obj.entries.len());
         obj.entries.push((key, value));
         match x.next_clean() {
             59 | 44 => {
@@ -271,16 +284,20 @@ fn is_decimal_notation(val: &str) -> bool {
     val.contains('.') || val.contains('e') || val.contains('E') || val == "-0"
 }
 
+/// java.lang.NumberFormatException out of `stringToNumber`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NumberFormatException;
+
 /// org.json.JSONObject.stringToNumber: decimal notation through `new BigDecimal` (a negative zero becomes the
 /// Double -0.0), falling back to `Double.valueOf` (finite only); integers (no leading zeros) through `new
 /// BigInteger`, narrowed to Integer or Long by bit length. `Err` is the NumberFormatException. Digits are ASCII
 /// here (Java's BigDecimal/BigInteger also accept other Unicode digits: UNKNOWN); hexadecimal `Double.valueOf`
 /// input ("0x1.8p1") is not ported (`java::parse_double`), so such a text stays a string (UNKNOWN).
-pub fn string_to_number(val: &str) -> Result<JsonNumber, ()> {
+pub fn string_to_number(val: &str) -> Result<JsonNumber, NumberFormatException> {
     let b = val.as_bytes();
-    let initial = *b.first().ok_or(())?;
+    let initial = *b.first().ok_or(NumberFormatException)?;
     if !initial.is_ascii_digit() && initial != b'-' {
-        return Err(());
+        return Err(NumberFormatException);
     }
     if is_decimal_notation(val) {
         if let Some((unscaled, scale)) = parse_big_decimal(val) {
@@ -292,22 +309,22 @@ pub fn string_to_number(val: &str) -> Result<JsonNumber, ()> {
         }
         return match crate::java::parse_double(val) {
             Some(d) if d.is_finite() => Ok(JsonNumber::Double(d)),
-            _ => Err(()),
+            _ => Err(NumberFormatException),
         };
     }
     if initial == b'0' && b.len() > 1 {
         if b[1].is_ascii_digit() {
-            return Err(());
+            return Err(NumberFormatException);
         }
     } else if initial == b'-' && b.len() > 2 && b[1] == b'0' && b[2].is_ascii_digit() {
-        return Err(());
+        return Err(NumberFormatException);
     }
     let (neg, digits) = match val.strip_prefix('-') {
         Some(d) => (true, d),
         None => (false, val.strip_prefix('+').unwrap_or(val)),
     };
     if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
-        return Err(());
+        return Err(NumberFormatException);
     }
     let trimmed = digits.trim_start_matches('0');
     let magnitude = if trimmed.is_empty() { "0" } else { trimmed };

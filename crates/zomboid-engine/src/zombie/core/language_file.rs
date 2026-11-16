@@ -12,14 +12,14 @@ pub struct LanguageFile {
 }
 
 impl LanguageFile {
-    /// zombie.core.LanguageFile(String, Path): `new JSONObject(Files.readString(path))`; `version` (optInt, default
-    /// 1) must be 1 and `language_name` (optString) not blank; `base` (optString) and `azerty` (optBoolean, default
-    /// false) are optional. `Err` where the original throws.
+    /// zombie.core.LanguageFile(String, Path): `new JSONObject(Files.readString(path))`; `version` (optInt with the
+    /// default one) must be one and `language_name` (optString) not blank; `base` (optString) and `azerty`
+    /// (optBoolean, default false) are optional. `Err` where the original throws.
     pub fn new(name: &str, path: &Path) -> Result<LanguageFile, String> {
         let bytes = crate::vfs::read(path).map_err(|e| format!("java.io.IOException: {e}"))?;
         let text = String::from_utf8(bytes)
             .map_err(|_| "java.nio.charset.MalformedInputException".to_string())?;
-        let json = JsonObject::from_str(&text).map_err(|e| e.to_string())?;
+        let json = JsonObject::parse_text(&text).map_err(|e| e.to_string())?;
         let version = json.opt_int("version", 1);
         let file = LanguageFile {
             name: name.to_string(),

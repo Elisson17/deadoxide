@@ -208,6 +208,7 @@ fmt	%5	s:a	s:b	s:c	s:d	s:e
 fmt	%s
 fmt	literal 50%	s:unused
 fmt	%1 %s	s:A
+fmt	%1 / %2	s:one	s:two
 fmt	Wave %1 in : %2 (press Enter to skip)	s:4	s:9
 fmt	average temperature %1. Minimum: %2. Maximum: %3. Humidity: %4%%...	s:10	s:5	s:15	s:50
 fmt	%s	n
@@ -429,3 +430,4 @@ json	71	{\n"a": "1",\n"b": 2\n}
 json	72	{\r\n"a": "1",\r\n"b":\r\n}
 json	73	{"a": "x\\
 json	74	{"a": [}
+json	75	{true: "t", 12: "i", 1.50: "d", 1e3: "e", -0: "z", 00.5: "l", 1.e2: "p", 99999999999: "L", 1.5f: "f", null: "N", 1e-7: "s"}

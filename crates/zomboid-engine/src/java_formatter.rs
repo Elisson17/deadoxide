@@ -1,5 +1,6 @@
-//! java.util.Formatter as `String.formatted(Object...)` runs it (JDK 27 source, the JVM `tools/oracle.sh` runs the
-//! probes on; the game's JRE 25 is UNKNOWN where they differ): `Formatter.parse` with `FormatSpecifierParser`, the
+//! java.util.Formatter as `String.formatted(Object...)` runs it (ported from the JDK 27 source, the JVM `tools/oracle.sh`
+//! runs the probes on; `TranslatorProbe` on the game's own JRE 25.0.5 printed the same 119451 lines, so the two agree
+//! on `tests/translator_cases.txt`, beyond it UNKNOWN): `Formatter.parse` with `FormatSpecifierParser`, the
 //! checks of each `FormatSpecifier`, then `Formatter.format`'s argument indexing (ordinary, explicit `n$`, relative
 //! `<`) and printing. The whole format string is parsed (and checked) before anything is printed; any exception
 //! discards the output. Printed in full: text, `%%` and `%n`, the general conversions `b B h H s S` with flags, width

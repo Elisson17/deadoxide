@@ -4688,7 +4688,7 @@ fn translator(root: &Path, commands: &Path) -> Result<String, String> {
         }
         h
     }
-    fn sorted<'a>(map: &'a HashMap<String, String>) -> Vec<(&'a String, &'a String)> {
+    fn sorted(map: &HashMap<String, String>) -> Vec<(&String, &String)> {
         let mut v: Vec<_> = map.iter().collect();
         v.sort_by(|a, b| java::string_compare_to(a.0, b.0));
         v

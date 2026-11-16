@@ -79,7 +79,7 @@ impl JsonTokener {
     }
 
     /// org.json.JSONTokener.next(): the next unit, 0 at the end (or at a unit 0).
-    pub fn next(&mut self) -> u16 {
+    pub fn next_char(&mut self) -> u16 {
         let c = if self.use_previous {
             self.use_previous = false;
             i32::from(self.previous)
@@ -119,7 +119,7 @@ impl JsonTokener {
     pub fn next_n(&mut self, n: usize) -> Result<Vec<u16>, JsonException> {
         let mut chars = Vec::with_capacity(n);
         for _ in 0..n {
-            chars.push(self.next());
+            chars.push(self.next_char());
             if self.end() {
                 return Err(self.syntax_error("Substring bounds error"));
             }
@@ -130,7 +130,7 @@ impl JsonTokener {
     /// org.json.JSONTokener.nextClean: skips units up to U+0020.
     pub fn next_clean(&mut self) -> u16 {
         loop {
-            let c = self.next();
+            let c = self.next_char();
             if c == 0 || c > u16::from(b' ') {
                 return c;
             }
@@ -143,7 +143,7 @@ impl JsonTokener {
     pub fn next_string(&mut self, quote: u16) -> Result<Vec<u16>, JsonException> {
         let mut sb: Vec<u16> = Vec::new();
         loop {
-            let c = self.next();
+            let c = self.next_char();
             match c {
                 0 | 10 | 13 => {
                     return Err(self.syntax_error(&format!(
@@ -151,7 +151,7 @@ impl JsonTokener {
                     )))
                 }
                 92 => {
-                    let c = self.next();
+                    let c = self.next_char();
                     match c {
                         34 | 39 | 47 | 92 => sb.push(c),
                         98 => sb.push(8),
@@ -216,7 +216,7 @@ impl JsonTokener {
                 let mut sb: Vec<u16> = Vec::new();
                 while c >= u16::from(b' ') && !(c < 128 && STOP.contains(&(c as u8))) {
                     sb.push(c);
-                    c = self.next();
+                    c = self.next_char();
                 }
                 if !self.eof {
                     self.back()?;

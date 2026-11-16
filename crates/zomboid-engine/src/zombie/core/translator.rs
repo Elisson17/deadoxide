@@ -229,9 +229,9 @@ impl Translator {
         // DebugType.Translation.println("translator: language is " + getLanguage())
         self.get_language();
         let root = self.base.to_string_lossy().into_owned();
-        for i in 0..BY_NAME.len() {
+        for (i, name) in BY_NAME.iter().enumerate() {
             for l in self.for_language_stack() {
-                try_fill_map_from_file(&root, BY_NAME[i], &mut self.maps[i], &l)?;
+                try_fill_map_from_file(&root, name, &mut self.maps[i], &l)?;
             }
         }
         let default = self.get_default_language();
@@ -393,7 +393,8 @@ impl Translator {
     /// zombie.core.Translator.getDisplayItemName: the `Items` table under the name with ' ' and '-' made '_', else
     /// the name.
     pub fn get_display_item_name(&self, trim: &str) -> String {
-        let key = trim.replace(' ', "_").replace('-', "_");
+        // trim.replace(" ", "_").replace("-", "_")
+        let key = trim.replace([' ', '-'], "_");
         self.maps[ITEMS]
             .get(&key)
             .cloned()
@@ -586,8 +587,7 @@ const FULL_TYPE_ERROR: &str =
 /// The key getMoveableDisplayName looks up: `name.replace(" ", "_").replace("-", "_").replace("'", "")
 /// .replace("\\.", "")`.
 fn moveable_key(name: &str) -> String {
-    name.replace(' ', "_")
-        .replace('-', "_")
+    name.replace([' ', '-'], "_")
         .replace('\'', "")
         .replace("\\.", "")
 }
@@ -626,8 +626,8 @@ pub fn fill_map_from_bytes(
     map: &mut HashMap<String, String>,
 ) -> Result<(), FillError> {
     let content = std::str::from_utf8(bytes).map_err(|_| FillError::Malformed)?;
-    let obj = JsonObject::from_str(content).map_err(FillError::Json)?;
-    for (k, v) in obj.entries {
+    let obj = JsonObject::parse_text(content).map_err(FillError::Json)?;
+    for (k, v) in obj.into_entries() {
         match v {
             JsonValue::Str(s) => {
                 if !map.contains_key(&k) || !s.is_empty() {
