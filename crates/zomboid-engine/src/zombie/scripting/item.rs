@@ -59,7 +59,140 @@ pub struct Item {
     /// `itemTags`: the locations of the `Tags` entries (`ItemTag.get(ResourceLocation.of(tag))`, a null for a
     /// location the ItemTag registry does not hold), in script order.
     pub tags: Vec<ResourceLocation>,
+    /// The `component <Id> { ... }` blocks: the ids that are `ComponentType` names (GameEntityScript.LoadComponentBlock
+    /// makes a component script for each; only which components the item has is kept), in script order.
+    pub components: Vec<String>,
+    /// The `component FluidContainer` blocks seen (a second one is not modelled: `fluid` holds the last).
+    pub fluid_blocks: usize,
+    /// What `FluidContainerScript` keeps of the last `component FluidContainer` block.
+    pub fluid: Option<FluidScript>,
 }
+
+/// zombie.scripting.entity.components.fluids.FluidContainerScript: the fields that decide how a fresh item's
+/// `FluidContainer.readFromScript` draws random numbers and how much it holds (after `OnScriptsLoaded`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FluidScript {
+    /// `capacity`, at least `FluidUtil.getMinContainerCapacity()` (0.05).
+    pub capacity: f32,
+    pub initial_amount_set: bool,
+    /// `initialAmountMin`/`Max`: swapped when out of order, clamped to 0..1 and scaled by `capacity`.
+    pub initial_amount_min: f32,
+    pub initial_amount_max: f32,
+    pub initial_fluids_is_random: bool,
+    /// `initialFluids.size()`: the `Fluid` values and `fluid` blocks of the `fluids` block.
+    pub initial_fluids: usize,
+    /// A `whitelist` or `blacklist` block is present.
+    pub has_filter: bool,
+}
+
+impl FluidScript {
+    /// FluidContainerScript's field defaults (`PreReload`).
+    fn new() -> Self {
+        FluidScript {
+            capacity: 1.0,
+            initial_amount_set: false,
+            initial_amount_min: 0.0,
+            initial_amount_max: 1.0,
+            initial_fluids_is_random: false,
+            initial_fluids: 0,
+            has_filter: false,
+        }
+    }
+
+    /// FluidContainerScript.load for the keys that matter here, then `OnScriptsLoaded`.
+    fn load(block: &script_parser::Block) -> Result<Self, String> {
+        let mut f = FluidScript::new();
+        let float = |v: &str| {
+            parse_float(v).ok_or_else(|| {
+                format!("java.lang.NumberFormatException: For input string: \"{v}\"")
+            })
+        };
+        for element in &block.elements {
+            match element {
+                BlockElement::Value(v) => {
+                    if !java::trim(&v.string).is_empty() && v.string.contains('=') {
+                        let (k, val) = (java::trim(v.get_key()), java::trim(v.get_value()));
+                        if java::equals_ignore_case(k, "Capacity") {
+                            f.capacity = float(val)?;
+                        } else if java::equals_ignore_case(k, "InitialPercent") {
+                            f.initial_amount_min = float(val)?;
+                            f.initial_amount_max = f.initial_amount_min;
+                            f.initial_amount_set = true;
+                        } else if java::equals_ignore_case(k, "InitialPercentMin") {
+                            f.initial_amount_min = float(val)?;
+                            f.initial_amount_set = true;
+                        } else if java::equals_ignore_case(k, "InitialPercentMax") {
+                            f.initial_amount_max = float(val)?;
+                            f.initial_amount_set = true;
+                        } else if java::equals_ignore_case(k, "PickRandomFluid") {
+                            f.initial_fluids_is_random = java::equals_ignore_case(val, "true");
+                        }
+                    }
+                }
+                BlockElement::Block(i) => {
+                    let child = &block.children[*i];
+                    if java::equals_ignore_case(&child.r#type, "fluids") {
+                        // loadBlockFluids: each `Fluid` value, then each `fluid` block that has a `type`
+                        for value in &child.values {
+                            if java::equals_ignore_case(java::trim(value.get_key()), "Fluid") {
+                                f.initial_fluids += 1;
+                            }
+                        }
+                        for fb in &child.children {
+                            if java::equals_ignore_case(&fb.r#type, "Fluid")
+                                && fb.values.iter().any(|v| {
+                                    java::equals_ignore_case(java::trim(v.get_key()), "type")
+                                })
+                            {
+                                f.initial_fluids += 1;
+                            }
+                        }
+                    } else if java::equals_ignore_case(&child.r#type, "whitelist")
+                        || java::equals_ignore_case(&child.r#type, "blacklist")
+                    {
+                        f.has_filter = true;
+                    }
+                }
+            }
+        }
+        // OnScriptsLoaded
+        f.capacity = f.capacity.max(0.05);
+        if f.initial_amount_min > f.initial_amount_max {
+            std::mem::swap(&mut f.initial_amount_min, &mut f.initial_amount_max);
+        }
+        f.initial_amount_min = f.initial_amount_min.clamp(0.0, 1.0) * f.capacity;
+        f.initial_amount_max = f.initial_amount_max.clamp(0.0, 1.0) * f.capacity;
+        Ok(f)
+    }
+}
+
+/// zombie.entity.ComponentType: the names `ComponentType.valueOf` accepts, without `Undefined` (a component block
+/// of that type is warned about and skipped).
+const COMPONENT_TYPES: [&str; 23] = [
+    "Attributes",
+    "FluidContainer",
+    "SpriteConfig",
+    "Lua",
+    "Parts",
+    "Signals",
+    "Script",
+    "UiConfig",
+    "CraftLogic",
+    "FurnaceLogic",
+    "TestComponent",
+    "MashingLogic",
+    "DryingLogic",
+    "MetaTag",
+    "Resources",
+    "CraftBench",
+    "CraftRecipe",
+    "Durability",
+    "DryingCraftLogic",
+    "ContextMenuConfig",
+    "SpriteOverlayConfig",
+    "CraftBenchSounds",
+    "WallCoveringConfig",
+];
 
 /// java.lang.Float.parseFloat for decimal text (surrounding blanks and an f/d suffix allowed).
 pub(crate) fn parse_float(s: &str) -> Option<f32> {
@@ -117,7 +250,15 @@ impl Item {
             unported: Vec::new(),
             unknown: Vec::new(),
             tags: Vec::new(),
+            components: Vec::new(),
+            fluid_blocks: 0,
+            fluid: None,
         }
+    }
+
+    /// zombie.scripting.entity.GameEntityScript.containsComponent for the component named `id`.
+    pub fn contains_component(&self, id: &str) -> bool {
+        self.components.iter().any(|c| c == id)
     }
 
     /// `module.name`, the original's `moduleDotType`.
@@ -157,8 +298,24 @@ impl Item {
             }
         }
         for element in &block.elements {
-            let BlockElement::Value(v) = element else {
-                continue;
+            let v = match element {
+                BlockElement::Value(v) => v,
+                // Item.Load: `child.type.equalsIgnoreCase("component")` -> LoadComponentBlock(child)
+                BlockElement::Block(i) => {
+                    let child = &block.children[*i];
+                    if java::equals_ignore_case(&child.r#type, "component") {
+                        if let Some(id) = child.id.as_deref() {
+                            if COMPONENT_TYPES.contains(&id) {
+                                self.components.push(id.to_string());
+                                if id == "FluidContainer" {
+                                    self.fluid_blocks += 1;
+                                    self.fluid = Some(FluidScript::load(child)?);
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
             };
             if java::trim(&v.string).is_empty() {
                 continue;

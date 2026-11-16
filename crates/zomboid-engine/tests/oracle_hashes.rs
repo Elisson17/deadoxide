@@ -526,3 +526,19 @@ fn luagame_matches_original() {
     );
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+#[test]
+fn loot_matches_original() {
+    // the client's startup, shared + server Lua, the distribution merge events, then ItemPickerJava.Parse and its
+    // tables (and the loot scenarios rolled over them); a fresh scratch cache dir, as luagame's
+    let scratch = std::env::temp_dir().join("pz-oracle-hashes-loot");
+    let _ = std::fs::remove_dir_all(&scratch);
+    let scenarios = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/loot_scenarios.txt"),
+    )
+    .expect("tests/loot_scenarios.txt");
+    let mut args = vec![scratch.to_str().expect("utf-8 path")];
+    args.extend(scenarios.split_whitespace());
+    check("loot", &args);
+    let _ = std::fs::remove_dir_all(&scratch);
+}

@@ -222,4 +222,16 @@ impl ClientStartup {
         let full = shared.scripts.find_item(&shared.item_index, name)?;
         shared.item_by_full_type.get(&full).copied()
     }
+
+    /// The item script at `index` of ScriptManager's items (an index `find_item` returned).
+    pub fn item(&self, index: usize) -> Option<&super::scripting::item::Item> {
+        self.shared.get()?.scripts.items.get(index)
+    }
+
+    /// `Item.obsolete` of the item script at `index`.
+    pub fn is_obsolete(&self, index: usize) -> bool {
+        use super::scripting::item::Value;
+        self.item(index)
+            .is_some_and(|i| matches!(i.get("obsolete"), Some(Value::Bool(true))))
+    }
 }
