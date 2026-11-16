@@ -4480,6 +4480,12 @@ pub fn luaload(
         sb: String,
         seen: HashMap<usize, String>,
         init_tables: HashMap<usize, String>,
+        /// The closures printed so far, in the order first printed, with where (LuaLoadEnvProbe.closures).
+        closures: Vec<(
+            Rc<zomboid_engine::se::krka::kahlua::vm::lua_closure::LuaClosure>,
+            String,
+        )>,
+        closure_index: HashSet<usize>,
     }
     fn addr(t: &TableRef) -> usize {
         Rc::as_ptr(t) as usize
@@ -4502,6 +4508,18 @@ pub fn luaload(
                 }
             } else {
                 let _ = writeln!(self.sb, "{path} = {}", value(v));
+                if let Object::Closure(c) = v {
+                    self.closure(c, path);
+                }
+            }
+        }
+        fn closure(
+            &mut self,
+            c: &Rc<zomboid_engine::se::krka::kahlua::vm::lua_closure::LuaClosure>,
+            path: &str,
+        ) {
+            if self.closure_index.insert(Rc::as_ptr(c) as usize) {
+                self.closures.push((c.clone(), path.to_string()));
             }
         }
     }
@@ -4515,6 +4533,8 @@ pub fn luaload(
         sb: String::new(),
         seen: HashMap::new(),
         init_tables: HashMap::new(),
+        closures: Vec::new(),
+        closure_index: HashSet::new(),
     };
     for (k, v) in KahluaTableImpl::iterate_snapshot(&env) {
         if let (Object::Table(t), Object::String(name)) = (&v, &k) {
@@ -4599,14 +4619,28 @@ pub fn luaload(
             continue;
         }
         let _ = writeln!(d.sb, "EVENT {} {}", e.name, callbacks.len());
-        for c in callbacks.iter() {
+        for (i, c) in callbacks.iter().enumerate() {
             let _ = writeln!(d.sb, "  {}", value(&Object::Closure(c.clone())));
+            d.closure(c, &format!("EVENT {} {i}", e.name));
         }
     }
     luaload_java_state(&lm, &init_collections, &mut d.sb, &value);
     if let Some((boot_sb, tos)) = boot_state {
         d.sb.push_str(&boot_sb);
         luaboot_java_state(&lm, &tos, &mut d.sb, &value);
+        // LuaBootProbe's upvalue section: each closure printed with upvalues, in the order first printed
+        let mut n = 0;
+        while n < d.closures.len() {
+            let (c, path) = d.closures[n].clone();
+            if !c.upvalues.is_empty() {
+                let _ = writeln!(d.sb, "CLOSURE U{n} {path} {}", c.upvalues.len());
+                for (j, u) in c.upvalues.iter().enumerate() {
+                    let v = u.borrow().get_value();
+                    d.dump(&format!("U{n}[{j}]"), &v);
+                }
+            }
+            n += 1;
+        }
     }
     Ok(d.sb)
 }
@@ -4746,6 +4780,41 @@ fn luaboot_java_state(
                     c.b.to_bits(),
                     c.a.to_bits()
                 );
+            }
+        }
+    }
+    if let Object::Userdata(u) = zomboid_engine::zombie::lua::exposed_methods::singleton(
+        &lm.statics,
+        zomboid_engine::zombie::lua::exposer::class_named("zombie.scripting.ScriptManager"),
+    ) {
+        if let Some(m) = u
+            .as_any()
+            .downcast_ref::<zomboid_engine::zombie::lua::exposed_methods::ScriptManagerObject>()
+        {
+            // TreeMap<String, Integer> of String.valueOf(tag)
+            let mut tags: Vec<(Vec<u16>, String, usize)> = m
+                .tag_to_item_map
+                .borrow()
+                .iter()
+                .map(|(k, v)| {
+                    let name = if k.is_nil() {
+                        "null".to_string()
+                    } else {
+                        k.java_to_string()
+                    };
+                    let n = match v {
+                        Object::Userdata(l) => l
+                            .as_any()
+                            .downcast_ref::<ArrayListObject>()
+                            .map_or(0, |l| l.0.borrow().len()),
+                        _ => 0,
+                    };
+                    (name.encode_utf16().collect(), name, n)
+                })
+                .collect();
+            tags.sort_by(|a, b| a.0.cmp(&b.0));
+            for (_, name, n) in tags {
+                let _ = writeln!(sb, "ITEMSTAG {} {n}", value(&Object::str(&name)));
             }
         }
     }

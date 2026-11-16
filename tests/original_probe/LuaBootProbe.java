@@ -22,7 +22,10 @@ import zombie.Lua.LuaManager;
  *   ZOMBOIDGLOBALS <field> <bits>   ZomboidGlobals' static numbers (double/float raw bits), by name
  *   OBSERVATION ...            ObservationFactory.observationMap, by key
  *   TROUSERCOLOR / HAIRCOLOR   SurvivorDesc's common colour lists (r g b a raw float bits)
+ *   ITEMSTAG <tag> <n>         ScriptManager's tagToItemMap (the lists getItemsTag made), by the tag's toString
  *   TOSSTATE created exit      the TermsOfServiceState handed to OnGameStateEnter, after its enter()
+ *   CLOSURE U<n> <path> <k>    each closure printed so far that has upvalues (n: the order first printed, path:
+ *                              where), then its k upvalues as U<n>[j]; closures met there join the list
  * Args: <scratch cache dir> <dir>... ; run from the game root. */
 public class LuaBootProbe {
     static final StringBuilder boot = new StringBuilder();
@@ -82,7 +85,20 @@ public class LuaBootProbe {
             sb.append("TROUSERCOLOR ").append(bits(c.r)).append(' ').append(bits(c.g)).append(' ').append(bits(c.b)).append(' ').append(bits(c.a)).append('\n');
         for (zombie.core.ImmutableColor c : zombie.characters.SurvivorDesc.HairCommonColors)
             sb.append("HAIRCOLOR ").append(bits(c.r)).append(' ').append(bits(c.g)).append(' ').append(bits(c.b)).append(' ').append(bits(c.a)).append('\n');
+        TreeMap<String, Integer> tags = new TreeMap<>();
+        for (Map.Entry<?, ?> e : ((Map<?, ?>) LuaLoadEnvProbe.field(zombie.scripting.ScriptManager.instance, "tagToItemMap")).entrySet())
+            tags.put(String.valueOf(e.getKey()), ((java.util.List<?>) e.getValue()).size());
+        for (Map.Entry<String, Integer> e : tags.entrySet())
+            sb.append("ITEMSTAG ").append(LuaLoadEnvProbe.value(e.getKey())).append(' ').append(e.getValue()).append('\n');
         sb.append("TOSSTATE ").append(LuaLoadEnvProbe.field(tos, "created")).append(' ').append(LuaLoadEnvProbe.field(tos, "exit")).append('\n');
+        // the upvalues of every closure printed above (where the scripts keep local state: ISMoveableDefinitions'
+        // `instance`, ...), then of the closures found in them, in the order first printed
+        for (int n = 0; n < LuaLoadEnvProbe.closures.size(); n++) {
+            se.krka.kahlua.vm.UpValue[] ups = LuaLoadEnvProbe.closures.get(n).upvalues;
+            if (ups.length == 0) continue;
+            sb.append("CLOSURE U").append(n).append(' ').append(LuaLoadEnvProbe.closurePaths.get(n)).append(' ').append(ups.length).append('\n');
+            for (int j = 0; j < ups.length; j++) LuaLoadEnvProbe.dump("U" + n + "[" + j + "]", ups[j].getValue());
+        }
         out.print(sb);
         out.flush();
         Runtime.getRuntime().halt(0);

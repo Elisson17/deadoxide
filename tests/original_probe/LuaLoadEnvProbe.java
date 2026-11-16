@@ -97,7 +97,21 @@ public class LuaLoadEnvProbe {
             while (it.advance()) dump(path + "[" + key(it.getKey()) + "]", it.getValue());
         } else {
             sb.append(path).append(" = ").append(value(v)).append('\n');
+            if (v instanceof LuaClosure c) closure(c, path);
         }
+    }
+
+    /** The closures printed so far, in the order first printed, with the path they were printed at (for
+     * LuaBootProbe's upvalue section). */
+    static final IdentityHashMap<LuaClosure, Integer> closureIndex = new IdentityHashMap<>();
+    static final List<LuaClosure> closures = new ArrayList<>();
+    static final List<String> closurePaths = new ArrayList<>();
+
+    static void closure(LuaClosure c, String path) {
+        if (closureIndex.containsKey(c)) return;
+        closureIndex.put(c, closures.size());
+        closures.add(c);
+        closurePaths.add(path);
     }
 
     static Object field(Object owner, Class<?> c, String name) throws Exception {
@@ -372,7 +386,11 @@ public class LuaLoadEnvProbe {
         for (Event e : events) {
             if (e.callbacks.isEmpty()) continue;
             sb.append("EVENT ").append(e.name).append(" ").append(e.callbacks.size()).append('\n');
-            for (LuaClosure c : e.callbacks) sb.append("  ").append(value(c)).append('\n');
+            for (int i = 0; i < e.callbacks.size(); i++) {
+                LuaClosure c = e.callbacks.get(i);
+                sb.append("  ").append(value(c)).append('\n');
+                closure(c, "EVENT " + e.name + " " + i);
+            }
         }
         javaState(events);
     }
