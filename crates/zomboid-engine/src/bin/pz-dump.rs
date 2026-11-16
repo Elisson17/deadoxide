@@ -5328,7 +5328,7 @@ pub fn gametime(save: &Path) -> Result<String, String> {
                 b(s.creation_finished)
             );
         }
-        let _ = writeln!(sb, "WPC{}", color(&wp.cloud_color));
+        let _ = writeln!(sb, "WPC{}", color(wp.cloud_color()));
     }
     for (i, c) in cm.thunder_storm.clouds.iter().enumerate() {
         if c.is_running {

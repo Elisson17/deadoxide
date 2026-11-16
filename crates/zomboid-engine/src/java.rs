@@ -88,8 +88,23 @@ pub fn math_min_f32(a: f32, b: f32) -> f32 {
     }
 }
 
+/// java.lang.Math.max(float, float): NaN if either is NaN, and 0.0 above -0.0.
+pub fn math_max_f32(a: f32, b: f32) -> f32 {
+    if a.is_nan() {
+        return a;
+    }
+    if a == 0.0 && b == 0.0 && a.to_bits() == (-0.0f32).to_bits() {
+        return b;
+    }
+    if a >= b {
+        a
+    } else {
+        b
+    }
+}
+
 /// java.util.Random: the 48-bit linear congruential generator, bit-for-bit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Random {
     seed: i64,
 }
@@ -101,6 +116,10 @@ impl Random {
         Random {
             seed: (seed ^ MULTIPLIER) & MASK,
         }
+    }
+    /// java.util.Random.setSeed(long): the same scrambling as the constructor.
+    pub fn set_seed(&mut self, seed: i64) {
+        self.seed = (seed ^ MULTIPLIER) & MASK;
     }
     /// java.util.Random.next(int bits).
     pub fn next(&mut self, bits: u32) -> i32 {

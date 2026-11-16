@@ -30,6 +30,13 @@ pub struct GameTime {
     /// zombie.GameTime.table (`getModData`): null until made.
     pub table: Option<KahluaTable>,
     pub minutes_stamp: i64,
+    /// The clock's speed: real minutes per game day (60 for a one-hour day; the field initialiser is 30).
+    pub minutes_per_day: f32,
+    pub fps_multiplier: f32,
+    pub multiplier_bias: f32,
+    pub per_object_multiplier: f32,
+    pub view_dist_min: f32,
+    pub view_dist_max: f32,
 }
 
 impl Default for GameTime {
@@ -49,6 +56,12 @@ impl Default for GameTime {
             helicopter_time1_end: 0,
             table: None,
             minutes_stamp: 0,
+            minutes_per_day: 30.0,
+            fps_multiplier: 1.0,
+            multiplier_bias: 1.0,
+            per_object_multiplier: 1.0,
+            view_dist_min: 19.0,
+            view_dist_max: 42.0,
         }
     }
 }
@@ -81,6 +94,85 @@ impl GameTime {
         self.minutes_stamp = (self.get_world_age_hours() as i64)
             .wrapping_mul(60)
             .wrapping_add(i64::from(self.get_minutes()));
+    }
+
+    /// zombie.GameTime.getDayPlusOne
+    pub fn get_day_plus_one(&self) -> i32 {
+        self.day + 1
+    }
+
+    /// zombie.GameTime.getMultiplier on a dedicated server that is not fast-forwarding: multiplier, fps
+    /// multiplier, bias, per-object multiplier and the debug slow-motion multiplier (1 unless a debug option sets
+    /// it), times 0.8. The single-player sleeping branch (200 * 30 / lock FPS) is not modelled.
+    pub fn get_multiplier(&self) -> f32 {
+        let mut multiplier = 1.0f32;
+        multiplier *= self.multiplier;
+        multiplier *= self.fps_multiplier;
+        multiplier *= self.multiplier_bias;
+        multiplier *= self.per_object_multiplier;
+        multiplier *= 1.0;
+        multiplier * 0.8
+    }
+
+    /// zombie.GameTime.getUnmoddedMultiplier (no player asleep).
+    pub fn get_unmodded_multiplier(&self) -> f32 {
+        self.multiplier * self.fps_multiplier * self.per_object_multiplier
+    }
+
+    /// zombie.GameTime.getMultipliedSecondsSinceLastUpdate
+    pub fn get_multiplied_seconds_since_last_update(&self) -> f32 {
+        0.016666668 * self.get_unmodded_multiplier()
+    }
+
+    /// zombie.GameTime.daysInMonth: the Gregorian month length (leap years by GregorianCalendar.isLeapYear).
+    pub fn days_in_month(&self, year: i32, month: i32) -> i32 {
+        let mut days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        let leap = if year > 1582 {
+            year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        } else {
+            year % 4 == 0
+        };
+        days[1] += i32::from(leap);
+        days[month as usize]
+    }
+
+    /// The clock part of zombie.GameTime.update on a dedicated server (not paused, no Last Stand, the debug
+    /// freeze-time option off): the time of day moves by `1 / minutesPerDay / 60 * getMultiplier() / 2`, a night
+    /// is counted when 7:00 is passed, midnight advances the calendar (advanceOneDay), the minute stamp is set.
+    /// Returns true when the ten-minute mark changed (`now / 10 != minutesMod`), where the original runs
+    /// ErosionMain.EveryTenMinutes and ClimateManager.updateEveryTenMins; `minutes_mod` is GameTime.minutesMod.
+    /// The helicopter, gunfire, ambient and meta events of update (which draw from Rand) are not modelled.
+    pub fn update_clock(&mut self, minutes_mod: &mut i32) -> bool {
+        let last_time_of_day = self.time_of_day;
+        let time = 1.0f32 / self.minutes_per_day / 60.0 * self.get_multiplier() / 2.0;
+        self.time_of_day += time;
+        if last_time_of_day <= 7.0 && self.time_of_day > 7.0 {
+            self.nights_survived += 1;
+        }
+        if self.time_of_day >= 24.0 {
+            self.time_of_day -= 24.0;
+            self.advance_one_day();
+        }
+        self.set_minutes_stamp();
+        let now = ((self.time_of_day - self.time_of_day as i32 as f32) * 60.0) as i32;
+        if now / 10 != *minutes_mod {
+            *minutes_mod = now / 10;
+            return true;
+        }
+        false
+    }
+
+    /// zombie.GameTime.advanceOneDay
+    pub fn advance_one_day(&mut self) {
+        self.day += 1;
+        if self.day >= self.days_in_month(self.year, self.month) {
+            self.day = 0;
+            self.month += 1;
+            if self.month >= 12 {
+                self.month = 0;
+                self.year += 1;
+            }
+        }
     }
 
     /// zombie.GameTime.load(DataInputStream) over the bytes of `map_t.bin`: the world version from the "GMTM" header
@@ -135,6 +227,56 @@ impl GameTime {
         climate.load(&mut input, world_version, side, log)?;
         self.set_minutes_stamp();
         Ok(())
+    }
+}
+
+/// zombie.GameTime.AnimTimer: a countdown in thirtieths of a second of multiplied game time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AnimTimer {
+    pub elapsed: f32,
+    pub duration: f32,
+    pub finished: bool,
+    pub ticks: i32,
+}
+
+impl Default for AnimTimer {
+    /// zombie.GameTime.AnimTimer(): finished.
+    fn default() -> Self {
+        AnimTimer {
+            elapsed: 0.0,
+            duration: 0.0,
+            finished: true,
+            ticks: 0,
+        }
+    }
+}
+
+impl AnimTimer {
+    /// zombie.GameTime.AnimTimer.init
+    pub fn init(&mut self, ticks: i32) {
+        self.ticks = ticks;
+        self.elapsed = 0.0;
+        self.duration = ticks as f32 / 30.0;
+        self.finished = false;
+    }
+
+    /// zombie.GameTime.AnimTimer.update
+    pub fn update(&mut self, gt: &GameTime) {
+        self.elapsed += gt.get_multiplied_seconds_since_last_update() * 60.0 / 30.0;
+        if self.elapsed >= self.duration {
+            self.elapsed = self.duration;
+            self.finished = true;
+        }
+    }
+
+    /// zombie.GameTime.AnimTimer.ratio
+    pub fn ratio(&self) -> f32 {
+        self.elapsed / self.duration
+    }
+
+    /// zombie.GameTime.AnimTimer.finished
+    pub fn finished(&self) -> bool {
+        self.finished
     }
 }
 
