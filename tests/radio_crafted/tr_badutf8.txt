@@ -1,0 +1,8 @@
+[Info]
+guid = gÿþ
+language = EN
+version = 2
+[/Info]
+[Translations]
+xa = bÃ
+[/Translations]

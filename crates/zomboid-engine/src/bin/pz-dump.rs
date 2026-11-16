@@ -54,7 +54,12 @@ fn main() {
         }
         Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
-        Some("radio") if a.len() == 5 => radio(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
+        Some("radio") if a.len() == 5 || a.len() == 6 => radio(
+            Path::new(&a[2]),
+            Path::new(&a[3]),
+            Path::new(&a[4]),
+            a.get(5).map(Path::new),
+        ),
         Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
@@ -4735,7 +4740,12 @@ pub fn mapver(save: &Path, crafted: &Path) -> Result<String, String> {
 /// (see the header of that file for the commands). The Lua handler of `OnLoadRadioScripts` that the original runs
 /// (media/lua/server/radio/ISDynamicRadio.lua, which registers the Automated Emergency Broadcast System) is a stand-in
 /// here: its state is `dyn_freq` and `dyn_saved`, set by the `dynamic` commands.
-pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String> {
+pub fn radio(
+    root: &Path,
+    cases: &Path,
+    crafted: &Path,
+    real_save: Option<&Path>,
+) -> Result<String, String> {
     use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
     use zomboid_engine::zombie::core::translator::Translator;
     use zomboid_engine::zombie::radio::channel_category::{ChannelCategory, GameMode};
@@ -4897,7 +4907,14 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
             let s = &c.scripts[n];
             script_line(sb, label, c, s, b);
             for (i, &bid) in s.broadcasts.iter().enumerate() {
-                dump_broadcast(sb, label, &format!("{} {} {i}", c.frequency, s.name), b, bid, 0);
+                dump_broadcast(
+                    sb,
+                    label,
+                    &format!("{} {} {i}", c.frequency, s.name),
+                    b,
+                    bid,
+                    0,
+                );
             }
         }
     }
@@ -4929,7 +4946,12 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                 m.map_or(-1, |m| m.current_time_stamp)
             ),
         );
-        let kn: Vec<String> = zr.names.known_frequencies.iter().map(i32::to_string).collect();
+        let kn: Vec<String> = zr
+            .names
+            .known_frequencies
+            .iter()
+            .map(i32::to_string)
+            .collect();
         line(sb, "KN", label, &format!("[{}]", kn.join(", ")));
         let mut names: Vec<(&i32, &String)> = zr.names.channel_names.iter().collect();
         names.sort();
@@ -4985,10 +5007,11 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
         let mut parts = Vec::new();
         let mut rest = l;
         while parts.len() + 1 < limit {
-            match rest.find(|c: char| matches!(c, ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r')) {
+            match rest.find([' ', '\t', '\n', '\u{0B}', '\u{0C}', '\r']) {
                 Some(i) => {
                     parts.push(&rest[..i]);
-                    rest = rest[i..].trim_start_matches([' ', '\t', '\n', '\u{0B}', '\u{0C}', '\r']);
+                    rest =
+                        rest[i..].trim_start_matches([' ', '\t', '\n', '\u{0B}', '\u{0C}', '\r']);
                 }
                 None => break,
             }
@@ -5014,6 +5037,9 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
     let mut dyn_freq = DynFreq::Range(88000, 108000);
     let mut dyn_saved: Option<i32> = None;
     let mut radio_save: Option<Vec<u8>> = None;
+    // the files "saveto name" wrote (the probe keeps them as files next to its scratch folder)
+    let mut generated: std::collections::HashMap<String, Vec<u8>> =
+        std::collections::HashMap::new();
     let mut xml_channels: Vec<RadioChannel> = Vec::new();
     let mut xml_broadcasts = Broadcasts::default();
     let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
@@ -5034,10 +5060,22 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                     p[1].parse::<i64>().map_err(|e| e.to_string())?,
                 ));
             }
-            "sandbox" => sandbox = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
+            "sandbox" => {
+                sandbox = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?
+            }
             "gamemode" => game_mode = rest.to_string(),
-            "nights" => nights = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
-            "hour" => time_of_day = p[1].parse().map_err(|e: std::num::ParseFloatError| e.to_string())?,
+            "nights" => {
+                nights = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?
+            }
+            "hour" => {
+                time_of_day = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseFloatError| e.to_string())?
+            }
             "weather" => {
                 wi = weather_interference(
                     p[1] == "1",
@@ -5070,21 +5108,35 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                 dyn_saved = if p[1] == "reset" {
                     None
                 } else {
-                    Some(p[2].parse().map_err(|e: std::num::ParseIntError| e.to_string())?)
+                    Some(
+                        p[2].parse()
+                            .map_err(|e: std::num::ParseIntError| e.to_string())?,
+                    )
                 };
             }
             "radiosave" => {
                 radio_save = if p[1] == "none" {
                     None
-                } else {
+                } else if p[1] == "@real" {
+                    let dir = real_save.ok_or("radiosave @real needs the save folder argument")?;
                     Some(
-                        std::fs::read(crafted.join(p[1]))
-                            .map_err(|e| format!("{}: {e}", p[1]))?,
+                        std::fs::read(dir.join("radio/data/RADIO_SAVE.txt"))
+                            .map_err(|e| format!("@real: {e}"))?,
                     )
+                } else if let Some(g) = p[1].strip_prefix('@') {
+                    let f = generated.get(g).cloned();
+                    if f.is_none() {
+                        line(&mut sb, "RS", &st, "no such generated file");
+                    }
+                    f
+                } else {
+                    Some(std::fs::read(crafted.join(p[1])).map_err(|e| format!("{}: {e}", p[1]))?)
                 };
             }
             "init" => {
-                let v: i32 = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                let v: i32 = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?;
                 let old = std::mem::replace(
                     &mut zr,
                     ZomboidRadio::new(GameMode::Server, hour_of(time_of_day)),
@@ -5101,7 +5153,9 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                     radio_save: radio_save.as_deref(),
                 };
                 let mut handler =
-                    |radio: &mut ZomboidRadio, _new: bool, rand: &mut RandAbstract<java::Random>| {
+                    |radio: &mut ZomboidRadio,
+                     _new: bool,
+                     rand: &mut RandAbstract<java::Random>| {
                         // media/lua/server/radio/ISDynamicRadio.lua, DynamicRadio.OnLoadRadioScripts
                         if let Some(f) = dyn_saved.take() {
                             dyn_freq = DynFreq::Fixed(f);
@@ -5137,18 +5191,31 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                 }
             }
             "updatescripts" => {
-                let h: i32 = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
-                let m: i32 = p[2].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                let h: i32 = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?;
+                let m: i32 = p[2]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?;
+                // the probe deletes the file first, so the file is the text that Save wrote, or none
                 let c = zr.update_scripts(h, m, "RADIO_SAVE.txt", &mut rand);
+                radio_save = c.as_ref().map(|c| c.clone().into_bytes());
                 read_save(&mut sb, &st, c.as_deref());
+                if let (Some(c), Some(name)) = (c.as_ref(), p.get(3)) {
+                    generated.insert((*name).to_string(), c.clone().into_bytes());
+                }
                 line(&mut sb, "US", &st, &format!("rand={}", rand.id()));
             }
             "listen" => {
-                let f: i32 = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                let f: i32 = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?;
                 zr.player_listens_channel(f, p[2] == "1", p[3] == "1");
             }
             "tick" => {
-                let n: i32 = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                let n: i32 = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?;
                 for i in 0..n {
                     zr.update(multiplier, &mut rand);
                     if let Some(m) = zr.script_manager.as_ref() {
@@ -5179,7 +5246,11 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
             }
             "saveto" => {
                 let c = zr.save("RADIO_SAVE.txt", LINE_SEPARATOR);
+                radio_save = c.as_ref().map(|c| c.clone().into_bytes());
                 read_save(&mut sb, &st, c.as_deref());
+                if let Some(c) = c {
+                    generated.insert(p[1].to_string(), c.into_bytes());
+                }
             }
             "randcheck" => {
                 let v = rand.next(1000000);
@@ -5190,16 +5261,27 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                 let custom = if p[3] == "-" { None } else { Some(p[3]) };
                 let r = zr.scramble_string(
                     parts[4],
-                    p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
+                    p[1].parse()
+                        .map_err(|e: std::num::ParseIntError| e.to_string())?,
                     p[2] == "1",
                     custom,
                     &mut rand,
                 );
-                line(&mut sb, "SCR", &st, &format!("{} rand={}", esc(&r), rand.id()));
+                line(
+                    &mut sb,
+                    "SCR",
+                    &st,
+                    &format!("{} rand={}", esc(&r), rand.id()),
+                );
             }
             "computerize" => {
                 let r = ZomboidRadio::computerize(rest, &mut rand);
-                line(&mut sb, "CMP", &st, &format!("{} rand={}", esc(&r), rand.id()));
+                line(
+                    &mut sb,
+                    "CMP",
+                    &st,
+                    &format!("{} rand={}", esc(&r), rand.id()),
+                );
             }
             "bzzt" => {
                 let r = ZomboidRadio::get_random_bzzt_fzzt(&mut rand);
@@ -5207,30 +5289,38 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
             }
             "randfreq" => {
                 let r = zr.names.get_random_frequency(
-                    p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
-                    p[2].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
+                    p[1].parse()
+                        .map_err(|e: std::num::ParseIntError| e.to_string())?,
+                    p[2].parse()
+                        .map_err(|e: std::num::ParseIntError| e.to_string())?,
                     &mut rand,
                 );
                 line(&mut sb, "RF", &st, &format!("{r} rand={}", rand.id()));
             }
             "addname" => zr.names.add_channel_name(
                 &p[1].replace('_', " "),
-                p[2].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
+                p[2].parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?,
                 p[3],
                 p[4] == "1",
             ),
-            "removename" => zr
-                .names
-                .remove_channel_name(p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?),
+            "removename" => zr.names.remove_channel_name(
+                p[1].parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?,
+            ),
             "xml" => {
                 let name = p[1];
                 let path = crafted.join(name);
                 let data = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                let text = String::from_utf8_lossy(&data).into_owned();
                 xml_channels = Vec::new();
                 xml_broadcasts = Broadcasts::default();
-                match RadioData::read_file(&path.to_string_lossy(), &text) {
-                    None => line(&mut sb, "XML", name, &format!("read=null rand={}", rand.id())),
+                match RadioData::read_file_bytes(&path.to_string_lossy(), &data) {
+                    None => line(
+                        &mut sb,
+                        "XML",
+                        name,
+                        &format!("read=null rand={}", rand.id()),
+                    ),
                     Some(mut rd) => {
                         line(
                             &mut sb,
@@ -5243,11 +5333,17 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                                 rand.id()
                             ),
                         );
-                        let res = match rd.load_radio_scripts(&mut xml_broadcasts, &mut tr, &mut rand) {
-                            Ok(b) => b.to_string(),
-                            Err(e) => format!("exception {e}"),
-                        };
-                        line(&mut sb, "XML", name, &format!("load={res} rand={}", rand.id()));
+                        let res =
+                            match rd.load_radio_scripts(&mut xml_broadcasts, &mut tr, &mut rand) {
+                                Ok(b) => b.to_string(),
+                                Err(e) => format!("exception {e}"),
+                            };
+                        line(
+                            &mut sb,
+                            "XML",
+                            name,
+                            &format!("load={res} rand={}", rand.id()),
+                        );
                         xml_channels = rd.radio_channels.clone();
                         for (i, c) in xml_channels.iter().enumerate() {
                             dump_channel(&mut sb, &format!("{name}#{i}"), c, &xml_broadcasts);
@@ -5260,18 +5356,24 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                 tr.radio_data_mut().insert(k.to_string(), v.to_string());
             }
             "xchan" => {
-                let i: usize = p[1].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                let i: usize = p[1]
+                    .parse()
+                    .map_err(|e: std::num::ParseIntError| e.to_string())?;
                 let c = xml_channels.get_mut(i).ok_or("xchan: no such channel")?;
                 match p[2] {
                     "time" => c.update_scripts(
-                        p[3].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
-                        p[4].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
+                        p[3].parse()
+                            .map_err(|e: std::num::ParseIntError| e.to_string())?,
+                        p[4].parse()
+                            .map_err(|e: std::num::ParseIntError| e.to_string())?,
                         &xml_broadcasts,
                         &mut rand,
                     ),
                     "listen" => c.set_player_is_listening(p[3] == "1", &mut xml_broadcasts),
                     "update" => {
-                        let n: i32 = p[3].parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                        let n: i32 = p[3]
+                            .parse()
+                            .map_err(|e: std::num::ParseIntError| e.to_string())?;
                         for k in 0..n {
                             let t = c.update(
                                 multiplier,
@@ -5304,11 +5406,44 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                 compact_channel(&mut sb, &format!("x{i}"), c, &xml_broadcasts);
                 line(&mut sb, "XR", &st, &format!("rand={}", rand.id()));
             }
+            "charmap" => {
+                use zomboid_engine::java_chars;
+                let mut start: Option<u32> = None;
+                for c in 0..=0x10000u32 {
+                    let l = c < 0x10000 && java_chars::is_letter(c as u16);
+                    if l && start.is_none() {
+                        start = Some(c);
+                    }
+                    if !l {
+                        if let Some(s) = start.take() {
+                            line(&mut sb, "LT", &st, &format!("{s:04x} {:04x}", c - 1));
+                        }
+                    }
+                }
+                for c in 0..0x10000u32 {
+                    if let Some(d) = java_chars::digit10(c as u16) {
+                        line(&mut sb, "DG", &st, &format!("{c:04x} {d}"));
+                    }
+                    if let Some(ch) = char::from_u32(c) {
+                        let (lo, up) = (
+                            java_chars::to_lower_char(ch) as u32,
+                            java_chars::to_upper_char(ch) as u32,
+                        );
+                        if lo != c || up != c {
+                            line(&mut sb, "CM", &st, &format!("{c:04x} {lo:04x} {up:04x}"));
+                        }
+                    }
+                }
+            }
             "trans" => {
                 let name = p[1];
                 let path = crafted.join(name);
-                let data = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                match RadioTranslationData::read_file(&path.to_string_lossy(), Some(&data), &mut tr) {
+                let data = std::fs::read(&path).ok();
+                match RadioTranslationData::read_file(
+                    &path.to_string_lossy(),
+                    data.as_deref(),
+                    &mut tr,
+                ) {
                     None => line(&mut sb, "TR", name, "read=null"),
                     Some(mut d) => {
                         line(
@@ -5325,7 +5460,7 @@ pub fn radio(root: &Path, cases: &Path, crafted: &Path) -> Result<String, String
                                 d.validate()
                             ),
                         );
-                        let ok = d.load_translations(Some(&data), &mut tr);
+                        let ok = d.load_translations(data.as_deref(), &mut tr);
                         line(
                             &mut sb,
                             "TR",

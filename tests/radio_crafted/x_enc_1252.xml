@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="windows-1252"?>
+<RadioData>
+  <RootInfo><Version>3</Version><FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID></RootInfo>
+  <Channels>
+  <ChannelEntry ID="c1" name="“Quoted” €" cat="Radio" freq="1000" startscript="main">
+  </ChannelEntry>
+  </Channels>
+</RadioData>

@@ -1,0 +1,5 @@
+[Info]
+guid = g
+language = Klingon
+version = 1
+[/Info]

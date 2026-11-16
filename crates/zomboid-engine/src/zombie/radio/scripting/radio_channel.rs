@@ -102,7 +102,9 @@ impl RadioChannel {
 
     /// `getCurrentScript`
     pub fn current_script(&self) -> Option<&RadioScript> {
-        self.current_script.as_ref().and_then(|n| self.scripts.get(n))
+        self.current_script
+            .as_ref()
+            .and_then(|n| self.scripts.get(n))
     }
 
     /// `getRadioScript(name)`
@@ -127,13 +129,8 @@ impl RadioChannel {
 
     /// `setAirCounterMultiplier`: clamped to 0.1..10 (`PZMath.clamp` on floats).
     pub fn set_air_counter_multiplier(&mut self, m: f32) {
-        self.air_counter_multiplier = if m < 0.1 {
-            0.1
-        } else if m > 10.0 {
-            10.0
-        } else {
-            m
-        };
+        // PZMath.clamp(float): below the minimum, else above the maximum, else the value (NaN stays NaN)
+        self.air_counter_multiplier = m.clamp(0.1, 10.0);
     }
 
     /// `setActiveScriptNull`
@@ -173,7 +170,11 @@ impl RadioChannel {
     pub fn set_player_is_listening(&mut self, listening: bool, b: &mut Broadcasts) {
         self.player_is_listening = listening;
         if self.player_is_listening && self.airing_broadcast.is_none() {
-            if let Some(script) = self.current_script.as_ref().and_then(|n| self.scripts.get_mut(n)) {
+            if let Some(script) = self
+                .current_script
+                .as_ref()
+                .and_then(|n| self.scripts.get_mut(n))
+            {
                 self.airing_broadcast = script.get_valid_air_broadcast(b);
                 if let Some(a) = self.airing_broadcast {
                     b.reset_line_counter(a, true);
@@ -214,7 +215,8 @@ impl RadioChannel {
         self.current_script_loop = loop_;
         if maxloops == -1 {
             let (min, max) = (script.loop_min, script.loop_max);
-            maxloops = if min != max && min <= max {
+            // `min != max && min <= max` in the original
+            maxloops = if min < max {
                 rand.next_range(min, max)
             } else {
                 min
@@ -235,14 +237,13 @@ impl RadioChannel {
                 s.set_start_day_stamp(day);
             }
         } else {
-            let exit = self.scripts.get(&name).and_then(|s| s.get_next_script(rand));
+            let exit = self
+                .scripts
+                .get(&name)
+                .and_then(|s| s.get_next_script(rand));
             self.current_script = None;
             if let Some(e) = exit {
-                self.set_active_script(
-                    Some(&e.scriptname),
-                    day.wrapping_add(e.start_delay),
-                    rand,
-                );
+                self.set_active_script(Some(&e.scriptname), day.wrapping_add(e.start_delay), rand);
             }
         }
     }

@@ -81,6 +81,12 @@ impl RadioData {
         }
     }
 
+    /// `ReadFile(filePath)` over the bytes of the file: the XML parser of the JDK reads them in the encoding of the byte
+    /// order mark or of the `encoding` of the XML declaration (`decode_xml`); bytes that are not valid in it end the parse.
+    pub fn read_file_bytes(file_path: &str, bytes: &[u8]) -> Option<RadioData> {
+        RadioData::read_file(file_path, &decode_xml(bytes)?)
+    }
+
     /// `ReadFile(filePath)` over the text of the file: the data when a `RadioData` element holds a `RootInfo` with a
     /// `FileGUID` and a `Version` that is not negative; `None` for anything else (the original logs the exception that
     /// ended a parse).
@@ -293,7 +299,10 @@ impl RadioData {
     }
 
     /// `loadExitOptions`
-    fn load_exit_options(exit_options: &XmlElement, script: &mut RadioScript) -> Result<(), String> {
+    fn load_exit_options(
+        exit_options: &XmlElement,
+        script: &mut RadioScript,
+    ) -> Result<(), String> {
         for exit_option in exit_options.elements() {
             if exit_option.name == "ExitOption" {
                 let script_name = get_attrib(exit_option, "script")?;
@@ -333,7 +342,11 @@ impl RadioData {
             from = start + 1;
         }
         if val >= 0.0 {
-            format!("[cdt={}]{}", java::float_to_string(val), java::trim(&result))
+            format!(
+                "[cdt={}]{}",
+                java::float_to_string(val),
+                java::trim(&result)
+            )
         } else {
             java::trim(&result).to_string()
         }
@@ -377,8 +390,9 @@ pub fn fetch_all_radio_data<R: JavaRandom, T: RadioText>(
     let vanilla = files.clone();
     let mut list: Vec<RadioData> = Vec::new();
     for file in &files {
-        let text = std::fs::read(file).ok().map(|b| String::from_utf8_lossy(&b).into_owned());
-        let rd = text.and_then(|t| RadioData::read_file(file, &t));
+        let rd = std::fs::read(file)
+            .ok()
+            .and_then(|b| RadioData::read_file_bytes(file, &b));
         if let Some(mut rd) = rd {
             for v in &vanilla {
                 if v == file {
@@ -397,4 +411,207 @@ pub fn fetch_all_radio_data<R: JavaRandom, T: RadioText>(
         }
     }
     Ok((list, broadcasts))
+}
+
+/// The text of an XML file as the JDK's parser (Xerces) reads it: a byte order mark (UTF-8, UTF-16) or the first bytes
+/// of a UTF-16 declaration choose the encoding; otherwise the `encoding` of the declaration does (UTF-8 when there is
+/// none), and a UTF-8 byte order mark before a declaration of another 8-bit encoding is skipped. `None` is a fatal
+/// error of the parser: bytes invalid in the encoding, an unknown or unsupported encoding name (only UTF-8, UTF-16,
+/// US-ASCII, ISO-8859-1, ISO-8859-15 and windows-1252 are ported; other JDK charsets are UNKNOWN), a UTF-16 stream whose
+/// declaration names another encoding, an XML version other than 1.0 and 1.1.
+fn decode_xml(bytes: &[u8]) -> Option<String> {
+    #[derive(PartialEq)]
+    enum Enc {
+        Utf8,
+        Utf16Be,
+        Utf16Le,
+        Latin1,
+        Latin9,
+        Cp1252,
+        Ascii,
+    }
+    let (body, wide) = if let Some(r) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
+        (r, None)
+    } else if let Some(r) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        (r, Some(Enc::Utf16Be))
+    } else if let Some(r) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        (r, Some(Enc::Utf16Le))
+    } else if bytes.starts_with(&[0x00, 0x3C, 0x00, 0x3F]) {
+        (bytes, Some(Enc::Utf16Be))
+    } else if bytes.starts_with(&[0x3C, 0x00, 0x3F, 0x00]) {
+        (bytes, Some(Enc::Utf16Le))
+    } else {
+        (bytes, None)
+    };
+    let text = if let Some(enc) = wide {
+        if body.len() % 2 != 0 {
+            return None;
+        }
+        let units: Vec<u16> = body
+            .chunks_exact(2)
+            .map(|c| {
+                if enc == Enc::Utf16Be {
+                    u16::from_be_bytes([c[0], c[1]])
+                } else {
+                    u16::from_le_bytes([c[0], c[1]])
+                }
+            })
+            .collect();
+        let text: String = char::decode_utf16(units.iter().copied())
+            .collect::<Result<String, _>>()
+            .ok()?;
+        if let Some(name) = declared_encoding(&text) {
+            let n = name.to_ascii_lowercase();
+            if !(n.starts_with("utf-16") || n.starts_with("utf16")) {
+                return None;
+            }
+        }
+        text
+    } else {
+        let head: String = body.iter().take(200).map(|&b| char::from(b)).collect();
+        let enc = match declared_encoding(&head) {
+            None => Enc::Utf8,
+            Some(name) => match name.to_ascii_lowercase().as_str() {
+                "utf-8" | "utf8" => Enc::Utf8,
+                "iso-8859-1" | "iso8859-1" | "iso_8859-1" | "iso8859_1" | "iso_8859_1"
+                | "latin1" | "l1" | "iso-ir-100" | "cp819" | "ibm819" | "csisolatin1"
+                | "8859_1" => Enc::Latin1,
+                "iso-8859-15" | "iso8859-15" | "iso_8859-15" | "iso8859_15" | "iso_8859_15"
+                | "latin9" | "latin-9" | "l9" | "8859_15" => Enc::Latin9,
+                "windows-1252" | "cp1252" => Enc::Cp1252,
+                "us-ascii" | "ascii" | "iso646-us" | "ansi_x3.4-1968" | "cp367" | "ibm367"
+                | "us" | "646" | "csascii" | "iso-ir-6" | "ansi_x3.4-1986" | "iso_646.irv:1991" => {
+                    Enc::Ascii
+                }
+                _ => return None,
+            },
+        };
+        match enc {
+            Enc::Utf8 => String::from_utf8(body.to_vec()).ok()?,
+            Enc::Ascii => {
+                if body.iter().any(|&b| b >= 0x80) {
+                    return None;
+                }
+                body.iter().map(|&b| char::from(b)).collect()
+            }
+            Enc::Latin1 => body.iter().map(|&b| char::from(b)).collect(),
+            Enc::Latin9 => body
+                .iter()
+                .map(|&b| match b {
+                    0xA4 => '\u{20AC}',
+                    0xA6 => '\u{0160}',
+                    0xA8 => '\u{0161}',
+                    0xB4 => '\u{017D}',
+                    0xB8 => '\u{017E}',
+                    0xBC => '\u{0152}',
+                    0xBD => '\u{0153}',
+                    0xBE => '\u{0178}',
+                    _ => char::from(b),
+                })
+                .collect(),
+            Enc::Cp1252 => {
+                const HIGH: [u32; 32] = [
+                    0x20AC, 0xFFFD, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030,
+                    0x0160, 0x2039, 0x0152, 0xFFFD, 0x017D, 0xFFFD, 0xFFFD, 0x2018, 0x2019, 0x201C,
+                    0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0xFFFD,
+                    0x017E, 0x0178,
+                ];
+                body.iter()
+                    .map(|&b| {
+                        if (0x80..0xA0).contains(&b) {
+                            char::from_u32(HIGH[usize::from(b - 0x80)]).unwrap_or('\u{FFFD}')
+                        } else {
+                            char::from(b)
+                        }
+                    })
+                    .collect()
+            }
+            Enc::Utf16Be | Enc::Utf16Le => return None,
+        }
+    };
+    if let Some(v) = declared_attribute(&text, "version") {
+        if v != "1.0" && v != "1.1" {
+            return None;
+        }
+    }
+    Some(text)
+}
+
+/// The value of `attribute` in an XML declaration at the very start of `text`, if there is one.
+fn declared_attribute(text: &str, attribute: &str) -> Option<String> {
+    let rest = text.strip_prefix("<?xml")?;
+    let decl = &rest[..rest.find("?>")?];
+    if !decl.starts_with([' ', '\t', '\r', '\n']) {
+        return None;
+    }
+    let mut from = 0;
+    while let Some(i) = decl[from..].find(attribute) {
+        let at = from + i;
+        let before_ok = at == 0 || decl[..at].ends_with([' ', '\t', '\r', '\n']);
+        let after = decl[at + attribute.len()..].trim_start_matches([' ', '\t', '\r', '\n']);
+        if before_ok {
+            if let Some(v) = after.strip_prefix('=') {
+                let v = v.trim_start_matches([' ', '\t', '\r', '\n']);
+                let q = v.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+                let v = &v[1..];
+                return Some(v[..v.find(q)?].to_string());
+            }
+        }
+        from = at + attribute.len();
+    }
+    None
+}
+
+fn declared_encoding(text: &str) -> Option<String> {
+    declared_attribute(text, "encoding")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the JDK parser does with the encoding of a file, measured on the original (oracle `radio`, x_*.xml).
+    #[test]
+    fn xml_encodings_follow_the_jdk_parser() {
+        let latin = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a>Caf\xe9</a>";
+        assert_eq!(
+            decode_xml(latin)
+                .as_deref()
+                .map(|t| t.ends_with("Caf\u{e9}</a>")),
+            Some(true)
+        );
+        // a UTF-8 byte order mark before another 8-bit encoding is skipped
+        let mut bom = vec![0xEF, 0xBB, 0xBF];
+        bom.extend_from_slice(latin);
+        assert!(decode_xml(&bom).is_some_and(|t| t.starts_with("<?xml")));
+        // invalid UTF-8, bytes above 0x7F in US-ASCII, an unknown name, XML 2.0: fatal errors
+        assert_eq!(decode_xml(b"<a>\xe9</a>"), None);
+        assert_eq!(
+            decode_xml(b"<?xml version=\"1.0\" encoding=\"US-ASCII\"?><a>\xe9</a>"),
+            None
+        );
+        assert_eq!(
+            decode_xml(b"<?xml version=\"1.0\" encoding=\"Klingon\"?><a/>"),
+            None
+        );
+        assert_eq!(decode_xml(b"<?xml version=\"2.0\"?><a/>"), None);
+        assert!(decode_xml(b"<?xml version=\"1.1\"?><a/>").is_some());
+        // UTF-16 with a byte order mark, and without one (the first bytes of "<?")
+        let mut wide = vec![0xFF, 0xFE];
+        wide.extend("<a>\u{4e2d}</a>".encode_utf16().flat_map(u16::to_le_bytes));
+        assert_eq!(decode_xml(&wide).as_deref(), Some("<a>\u{4e2d}</a>"));
+        let bare: Vec<u8> = "<?xml version=\"1.0\"?><a/>"
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        assert!(decode_xml(&bare).is_some());
+        // a UTF-16 stream that declares UTF-8
+        let mut lie = vec![0xFF, 0xFE];
+        lie.extend(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><a/>"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes),
+        );
+        assert_eq!(decode_xml(&lie), None);
+    }
 }

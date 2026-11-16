@@ -389,6 +389,28 @@ fn map_ver_matches_original() {
     check("mapver", &[&save, crafted.to_str().expect("utf-8 path")]);
 }
 
+/// The radio of a world (`ZomboidRadio.Init`/`Load`/`Save`/`update`, the script manager, channels, scripts, broadcasts,
+/// `RadioData.xml`, `RadioTranslationData`, `computerize`/`scrambleString`) over the commands of tests/radio_cases.txt,
+/// the crafted files of tests/radio_crafted and the player's own RADIO_SAVE.txt.
+#[test]
+fn radio_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED radio: the isolated profile's save is not present");
+        return;
+    };
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = root.join("tests/radio_cases.txt");
+    let crafted = root.join("tests/radio_crafted");
+    check(
+        "radio",
+        &[
+            cases.to_str().expect("utf-8 path"),
+            crafted.to_str().expect("utf-8 path"),
+            &save,
+        ],
+    );
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

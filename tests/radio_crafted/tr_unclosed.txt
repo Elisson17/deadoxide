@@ -1,0 +1,10 @@
+[Info]
+guid = g2
+language = EN
+version = 0
+[/Info]
+[Translations]
+xa = one
+[Collection]
+text = T
+member = xm

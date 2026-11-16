@@ -13,12 +13,13 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::channel_category::GameMode;
+use super::parse_int_java;
 use super::radio_data::{fetch_all_radio_data, RadioText};
 use super::scripting::radio_channel::{RadioChannel, Transmission};
 use super::scripting::radio_script_manager::RadioScriptManager;
-use super::parse_int_java;
 use crate::java;
 use crate::java::JavaRandom;
+use crate::java_chars;
 use crate::zombie::core::random::rand_abstract::RandAbstract;
 
 /// `ZomboidRadio.staticSounds`
@@ -34,7 +35,13 @@ pub fn is_static_sound(s: Option<&str>) -> bool {
 
 /// zombie.iso.weather.ClimateManager.getWeatherInterference from the state of the weather period: 0.35 of its current
 /// strength for rain, 0.7 for a thunderstorm, tropical storm or blizzard, 0 when no weather is running.
-pub fn weather_interference(running: bool, strength: f32, thunder: bool, tropical: bool, blizzard: bool) -> f32 {
+pub fn weather_interference(
+    running: bool,
+    strength: f32,
+    thunder: bool,
+    tropical: bool,
+    blizzard: bool,
+) -> f32 {
     if running {
         if !thunder && !tropical && !blizzard {
             0.35 * strength
@@ -56,7 +63,13 @@ pub struct ChannelNames {
 
 impl ChannelNames {
     /// `addChannelName(name, frequency, category, overwrite)`: with `overwrite` false a known frequency keeps its name.
-    pub fn add_channel_name(&mut self, name: &str, frequency: i32, category: &str, overwrite: bool) {
+    pub fn add_channel_name(
+        &mut self,
+        name: &str,
+        frequency: i32,
+        category: &str,
+        overwrite: bool,
+    ) {
         if overwrite || !self.channel_names.contains_key(&frequency) {
             self.categorized_channels
                 .entry(category.to_string())
@@ -221,7 +234,10 @@ impl ZomboidRadio {
             .as_ref()
             .is_some_and(|m| !m.channels.is_empty())
         {
-            return Err("ZomboidRadio.Init on a script manager that already has channels is not ported".to_string());
+            return Err(
+                "ZomboidRadio.Init on a script manager that already has channels is not ported"
+                    .to_string(),
+            );
         }
         self.save_dir_exists = true;
         let (datas, broadcasts) = fetch_all_radio_data(root, tr, rand)?;
@@ -327,9 +343,15 @@ impl ZomboidRadio {
 
     /// `Load()` on a server or in single player: every channel's script is cleared, then `radio_save` (`None` when there
     /// is no file) is read: `DaysSinceStart` and `LvObfuscation` set their fields, every other line is a channel line for
-    /// `RadioScriptManager.Load`. An exception ends the read (logged). The original returns false on every path (its
-    /// `result` is set after the value is taken, in a `finally`), so `Init` always recomputes the days; so does this.
-    pub fn load<R: JavaRandom>(&mut self, radio_save: Option<&[u8]>, rand: &mut RandAbstract<R>) -> bool {
+    /// `RadioScriptManager.Load`. An exception ends the read (logged) and returns false. The result is true only when
+    /// `RadioScriptManager.Load` returned normally (the bytecode stores `result = true` after that call; the decompiled
+    /// text, which shows `finally { result = true; }` after `return result;`, misleads: measured with the oracle, the
+    /// days of a save file are used).
+    pub fn load<R: JavaRandom>(
+        &mut self,
+        radio_save: Option<&[u8]>,
+        rand: &mut RandAbstract<R>,
+    ) -> bool {
         let mode = self.get_game_mode();
         if mode != GameMode::Server && mode != GameMode::SinglePlayer {
             return false;
@@ -378,10 +400,10 @@ impl ZomboidRadio {
                 }
             }
         }
-        if let Some(m) = self.script_manager.as_mut() {
-            let _ = m.load(&channel_lines, rand);
+        match self.script_manager.as_mut() {
+            Some(m) => m.load(&channel_lines, rand).is_ok(),
+            None => false,
         }
-        false
     }
 
     /// `Save()`: the text to write to `radio/data/RADIO_SAVE.txt`, or `None` when the original writes nothing (no radio
@@ -606,15 +628,18 @@ impl ZomboidRadio {
         String::from_utf16_lossy(&new_msg)
     }
 
-    /// `computerize(str)`: each letter in random case (`Rand.NextBool(2)`: lower when 0). Letters are `char::is_alphabetic`
-    /// (UNKNOWN: it differs from `Character.isLetter` for numerals and combining marks).
+    /// `computerize(str)`: each `Character.isLetter` unit in random case (`Rand.NextBool(2)`: lower when 0).
     pub fn computerize<R: JavaRandom>(s: &str, rand: &mut RandAbstract<R>) -> String {
         let mut out: Vec<u16> = Vec::new();
         for u in s.encode_utf16() {
             match char::from_u32(u32::from(u)) {
-                Some(c) if c.is_alphabetic() => {
+                Some(c) if java_chars::is_letter(u) => {
                     let lower = rand.next_bool(2);
-                    let r = if lower { simple_lower(c) } else { simple_upper(c) };
+                    let r = if lower {
+                        java_chars::to_lower_char(c)
+                    } else {
+                        java_chars::to_upper_char(c)
+                    };
                     let mut buf = [0u16; 2];
                     out.extend_from_slice(r.encode_utf16(&mut buf));
                 }
@@ -622,23 +647,5 @@ impl ZomboidRadio {
             }
         }
         String::from_utf16_lossy(&out)
-    }
-}
-
-/// `Character.toLowerCase(char)`: the single-character mapping (the character itself when there is none or it is longer).
-fn simple_lower(c: char) -> char {
-    let mut l = c.to_lowercase();
-    match (l.next(), l.next()) {
-        (Some(x), None) => x,
-        _ => c,
-    }
-}
-
-/// `Character.toUpperCase(char)`
-fn simple_upper(c: char) -> char {
-    let mut l = c.to_uppercase();
-    match (l.next(), l.next()) {
-        (Some(x), None) => x,
-        _ => c,
     }
 }

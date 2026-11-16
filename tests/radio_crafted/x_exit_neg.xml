@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadioData>
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <Channels>
+  <ChannelEntry ID="c1" name="One" cat="Radio" freq="1000" startscript="main">
+    <ScriptEntry ID="e1" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <ExitOptions>
+        <ExitOption script="a" chance="-50" delay="0" />
+        <ExitOption script="b" chance="100" delay="0" />
+        <ExitOption script="c" chance="100" delay="0" />
+        <ExitOption script="d" chance="50" delay="0" />
+      </ExitOptions>
+    </ScriptEntry>
+  </ChannelEntry>
+  </Channels>
+</RadioData>

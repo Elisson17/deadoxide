@@ -1,0 +1,8 @@
+[Info]
+guid = г
+language = EN
+version = 2
+[/Info]
+[Translations]
+ä = öЖ📻
+[/Translations]

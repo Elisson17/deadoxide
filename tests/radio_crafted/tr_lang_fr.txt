@@ -1,0 +1,8 @@
+[Info]
+guid = g
+language = FR
+version = 1
+[/Info]
+[Translations]
+xa = bonjour
+[/Translations]

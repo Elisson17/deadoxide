@@ -1,0 +1,2 @@
+LvObfuscation = yes
+93200,1,1,main,0,none,-1

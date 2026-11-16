@@ -126,7 +126,12 @@ impl RadioScript {
 
     /// `AddBroadcast(broadcast, ignoreTimestamps)`: false (the original logs) for a broadcast with no id (not
     /// modelled: ids are always set) or, without `ignore_timestamps`, a bad or overlapping time range.
-    pub fn add_broadcast(&mut self, id: BroadcastId, ignore_timestamps: bool, b: &Broadcasts) -> bool {
+    pub fn add_broadcast(
+        &mut self,
+        id: BroadcastId,
+        ignore_timestamps: bool,
+        b: &Broadcasts,
+    ) -> bool {
         let bc = b.get(id);
         if ignore_timestamps {
             self.broadcasts.push(id);

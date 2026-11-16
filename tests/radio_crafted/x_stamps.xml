@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadioData>
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <Channels>
+  <ChannelEntry ID="c1" name="One" cat="Radio" freq="1000" startscript="main">
+    <ScriptEntry ID="s1" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="t0" timestamp="0" endstamp="100" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-0" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t1" timestamp="100" endstamp="100" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-1" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t2" timestamp="50" endstamp="150" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-2" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t3" timestamp="100" endstamp="200" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-3" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t4" timestamp="-10" endstamp="300" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-4" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t5" timestamp="150" endstamp="120" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-5" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t6" timestamp="200" endstamp="900" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+      </BroadcastEntry>
+      <BroadcastEntry ID="t7" timestamp="900" endstamp="1000" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xs-7" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t8" timestamp="-5" endstamp="-5" type="ActivateBroadcast" day="0" advertCat="none" isSegment="TRUE">
+        <LineEntry ID="xs-8" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t9" timestamp="1000" endstamp="1200" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-9" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t3" timestamp="1200" endstamp="1300" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-10" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t11" timestamp="1300" endstamp="2147483647" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-11" r="255" g="128" b="0" />
+      </BroadcastEntry>
+      <BroadcastEntry ID="t12" timestamp="2147483647" endstamp="2147483647" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xs-12" r="255" g="128" b="0" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </ChannelEntry>
+  </Channels>
+</RadioData>

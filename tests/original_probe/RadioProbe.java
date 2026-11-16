@@ -41,23 +41,28 @@ import zombie.radio.scripting.RadioScriptManager;
 //   radiosave <file>|none            put crafted/<file> where RADIO_SAVE.txt is (or remove it)
 //   init v                           ZomboidRadio.Reset(), getInstance(), Init(v): the whole radio of a world
 //   state | fulldump                 the radio's fields and its channels / and every script, broadcast and line
-//   updatescripts h m | listen f 0|1 tv 0|1 | tick n | saveto name | randcheck
+//   updatescripts h m [name] | listen f 0|1 tv 0|1 | tick n | saveto name | randcheck
 //   scramble n bb custom text | computerize text | bzzt | randfreq a b | addname name f cat ow | removename f
 //   xml file | xchan i time ts day | xchan i listen 0|1 | xchan i update n | xtrans key=value | trans file
 // Probe-side shortcuts, all named in docs/COMPATIBILITY.md: the Lua handlers of OnLoadRadioScripts (ISDynamicRadio.lua,
 // ISWeatherChannel.lua) run for real here, and the port stands in for them; the weather interference is set through the
 // weather period's own fields.
-// Args: <scratch dir> <commands file> <crafted dir>
+//   radiosave @real = the radio save of the player's own save (arg 4), radiosave @name = a file an earlier "saveto name" wrote
+// Args: <scratch dir> <commands file> <crafted dir> [<player's save dir>]
 public class RadioProbe {
     final PrintStream out;
     final File crafted;
+    final File real;
+    final File gen;
     int step = 0;
     RadioData xmlData;
     List<RadioChannel> xmlChannels = new ArrayList<>();
 
-    RadioProbe(PrintStream out, File crafted) {
+    RadioProbe(PrintStream out, File crafted, File real, File gen) {
         this.out = out;
         this.crafted = crafted;
+        this.real = real;
+        this.gen = gen;
     }
 
     static Object g(Object o, String name) throws Exception {
@@ -326,7 +331,12 @@ public class RadioProbe {
                         File f = saveFile();
                         f.getParentFile().mkdirs();
                         f.delete();
-                        if (!p[1].equals("none")) Files.copy(new File(crafted, p[1]).toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                        if (!p[1].equals("none")) {
+                            File src = p[1].equals("@real") ? new File(real, "radio/data/RADIO_SAVE.txt")
+                                : p[1].startsWith("@") ? new File(gen, p[1].substring(1)) : new File(crafted, p[1]);
+                            if (p[1].startsWith("@") && !p[1].equals("@real") && !src.exists()) line("RS", "" + step, "no such generated file");
+                            else Files.copy(src.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                        }
                     }
                     case "init" -> init(Integer.parseInt(p[1]));
                     case "state" -> state("" + step);
@@ -335,6 +345,8 @@ public class RadioProbe {
                         saveFile().delete();
                         ZomboidRadio.getInstance().UpdateScripts(Integer.parseInt(p[1]), Integer.parseInt(p[2]));
                         readSave("" + step);
+                        if (p.length > 3 && saveFile().exists())
+                            Files.copy(saveFile().toPath(), new File(gen, p[3]).toPath(), StandardCopyOption.REPLACE_EXISTING);
                         line("US", "" + step, "rand=" + randId());
                     }
                     case "listen" -> ZomboidRadio.getInstance().PlayerListensChannel(Integer.parseInt(p[1]), p[2].equals("1"), p[3].equals("1"));
@@ -356,7 +368,7 @@ public class RadioProbe {
                         ZomboidRadio.getInstance().Save();
                         readSave("" + step);
                         if (saveFile().exists())
-                            Files.copy(saveFile().toPath(), new File(crafted, p[1]).toPath(), StandardCopyOption.REPLACE_EXISTING);
+                            Files.copy(saveFile().toPath(), new File(gen, p[1]).toPath(), StandardCopyOption.REPLACE_EXISTING);
                     }
                     case "randcheck" -> line("RC", "" + step, Rand.Next(1000000) + " rand=" + randId());
                     case "scramble" -> {
@@ -397,6 +409,20 @@ public class RadioProbe {
                         line("XR", "" + step, "rand=" + randId());
                     }
                     case "trans" -> trans(p[1]);
+                    case "charmap" -> {
+                        int start = -1;
+                        for (int c = 0; c <= 0x10000; c++) {
+                            boolean isl = c < 0x10000 && Character.isLetter((char) c);
+                            if (isl && start < 0) start = c;
+                            if (!isl && start >= 0) { line("LT", "" + step, String.format("%04x %04x", start, c - 1)); start = -1; }
+                        }
+                        for (int c = 0; c < 0x10000; c++) {
+                            int d = Character.digit((char) c, 10);
+                            if (d >= 0) line("DG", "" + step, String.format("%04x %d", c, d));
+                            char lo = Character.toLowerCase((char) c), up = Character.toUpperCase((char) c);
+                            if (lo != c || up != c) line("CM", "" + step, String.format("%04x %04x %04x", c, (int) lo, (int) up));
+                        }
+                    }
                     default -> throw new IllegalArgumentException("unknown command " + l);
                 }
             } catch (Throwable t) {
@@ -407,9 +433,11 @@ public class RadioProbe {
 
     public static void main(String[] a) throws Exception {
         File crafted = new File(a[2]);
+        File real = a.length > 3 ? new File(a[3]) : null;
+        File gen = new File(a[0] + "-gen");
         ServerHarness.run(a[0], out -> {
-            crafted.mkdirs();
-            new RadioProbe(out, crafted).run(a[1]);
+            gen.mkdirs();
+            new RadioProbe(out, crafted, real, gen).run(a[1]);
         });
     }
 }

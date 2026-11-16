@@ -1,0 +1,2 @@
+<?xml  version = "1.0"  encoding = 'UTF-8' ?>
+<RadioData><RootInfo><Version>1</Version><FileGUID>g</FileGUID></RootInfo><Channels><ChannelEntry ID="c" name="V" cat="Radio" freq="1" startscript="m"/></Channels></RadioData>

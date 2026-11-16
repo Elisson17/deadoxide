@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- c -->
+<RadioData>
+  <!-- c2 -->
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <RootInfo><Version>9</Version></RootInfo>
+  <Unknown><Channels><ChannelEntry ID="u" name="Hidden" cat="Radio" freq="5" startscript="main"/></Channels></Unknown>
+  <ChannelEntry ID="u2" name="Loose" cat="Radio" freq="6" startscript="main"/>
+  <Channels>
+    text <![CDATA[ cdata ]]>
+  <ChannelEntry ID="o1" name="A &amp; B &lt;x&gt; &#233; &#x4E2D;" cat="Radio" freq="7" startscript="main">
+    <ScriptEntry ID="os1" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <ExitOptions>
+        <ExitOption script="main" chance="10" delay="0" />
+      </ExitOptions>
+<Note>x</Note>
+      <BroadcastEntry ID="ob1" timestamp="0" endstamp="10" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="xo-1" r="255" g="128" b="0" />
+      </BroadcastEntry>
+<LineEntry ID="stray" r="1" g="1" b="1"/>
+    </ScriptEntry>
+    <BroadcastEntry ID="loose" timestamp="0" endstamp="1" isSegment="false" advertCat="none"/>
+  </ChannelEntry>
+  </Channels>
+  <Adverts>
+    <ScriptEntry ID="oa" name="late" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="oab" timestamp="0" endstamp="0" type="ActivateBroadcast" day="0" advertCat="none" isSegment="true">
+        <LineEntry ID="xo-a" r="255" g="128" b="0" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </Adverts>
+  <Channels>
+  <ChannelEntry ID="o2" name="Second block" cat="Radio" freq="8" startscript="main">
+    <ScriptEntry ID="os2" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="ob2" timestamp="0" endstamp="10" type="ActivateBroadcast" day="0" advertCat="oa" isSegment="false">
+        <LineEntry ID="xo-2" r="255" g="128" b="0" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </ChannelEntry>
+  </Channels>
+</RadioData>

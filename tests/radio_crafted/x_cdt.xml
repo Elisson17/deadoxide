@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadioData>
+  <RootInfo>
+    <Version>3</Version>
+    <FileGUID>f0000000-0000-4000-8000-000000000001</FileGUID>
+  </RootInfo>
+  <Channels>
+  <ChannelEntry ID="c1" name="One" cat="Radio" freq="1000" startscript="main">
+    <ScriptEntry ID="s1" name="main" startdelay="0" timestampmode="Static" loopmin="1" loopmax="1">
+      <BroadcastEntry ID="cdb" timestamp="0" endstamp="100" type="ActivateBroadcast" day="0" advertCat="none" isSegment="false">
+        <LineEntry ID="cd-1" r="255" g="128" b="0" />
+        <LineEntry ID="cd-2" r="255" g="128" b="0" />
+        <LineEntry ID="cd-3" r="255" g="128" b="0" />
+        <LineEntry ID="cd-4" r="255" g="128" b="0" />
+        <LineEntry ID="cd-5" r="255" g="128" b="0" />
+        <LineEntry ID="cd-6" r="255" g="128" b="0" />
+        <LineEntry ID="cd-7" r="255" g="128" b="0" />
+        <LineEntry ID="cd-8" r="255" g="128" b="0" />
+        <LineEntry ID="cd-9" r="255" g="128" b="0" />
+        <LineEntry ID="cd-10" r="255" g="128" b="0" />
+        <LineEntry ID="cd-11" r="255" g="128" b="0" />
+        <LineEntry ID="cd-12" r="255" g="128" b="0" />
+        <LineEntry ID="cd-13" r="255" g="128" b="0" />
+        <LineEntry ID="cd-14" r="255" g="128" b="0" />
+        <LineEntry ID="cd-15" r="255" g="128" b="0" />
+        <LineEntry ID="cd-16" r="255" g="128" b="0" />
+        <LineEntry ID="cd-17" r="255" g="128" b="0" />
+        <LineEntry ID="cd-18" r="255" g="128" b="0" />
+        <LineEntry ID="cd-19" r="255" g="128" b="0" />
+        <LineEntry ID="cd-20" r="255" g="128" b="0" />
+        <LineEntry ID="cd-21" r="1" g="2" b="3" />
+        <LineEntry ID="cd-22" r="1" g="2" b="3" />
+        <LineEntry ID="cd-23" r="1" g="2" b="3" />
+        <LineEntry ID="cd-24" r="1" g="2" b="3" />
+        <LineEntry ID="cd-25" r="1" g="2" b="3" />
+        <LineEntry ID="cd-26" r="1" g="2" b="3" />
+        <LineEntry ID="cd-27" r="1" g="2" b="3" />
+        <LineEntry ID="cd-28" r="1" g="2" b="3" />
+        <LineEntry ID="cd-29" r="1" g="2" b="3" />
+        <LineEntry ID="cd-30" r="1" g="2" b="3" />
+        <LineEntry ID="cd-31" r="1" g="2" b="3" />
+        <LineEntry ID="cd-32" r="1" g="2" b="3" />
+        <LineEntry ID="cd-33" r="1" g="2" b="3" />
+        <LineEntry ID="cd-34" r="1" g="2" b="3" />
+        <LineEntry ID="cd-35" r="1" g="2" b="3" />
+        <LineEntry ID="cd-36" r="1" g="2" b="3" />
+        <LineEntry ID="cd-37" r="1" g="2" b="3" />
+        <LineEntry ID="cd-38" r="1" g="2" b="3" />
+        <LineEntry ID="cd-39" r="1" g="2" b="3" />
+        <LineEntry ID="cd-40" r="1" g="2" b="3" />
+        <LineEntry ID="cd-41" r="1" g="2" b="3" />
+        <LineEntry ID="cd-42" r="1" g="2" b="3" />
+        <LineEntry ID="cd-43" r="1" g="2" b="3" />
+        <LineEntry ID="cd-44" r="1" g="2" b="3" />
+        <LineEntry ID="cd-45" r="1" g="2" b="3" />
+        <LineEntry ID="cd-46" r="1" g="2" b="3" />
+        <LineEntry ID="cd-47" r="1" g="2" b="3" />
+        <LineEntry ID="cd-48" r="1" g="2" b="3" />
+      </BroadcastEntry>
+    </ScriptEntry>
+  </ChannelEntry>
+  </Channels>
+</RadioData>
