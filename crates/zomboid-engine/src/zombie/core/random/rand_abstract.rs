@@ -11,6 +11,10 @@ impl<R: JavaRandom> RandAbstract<R> {
     pub fn new(rand: R) -> Self {
         RandAbstract { id: 0, rand }
     }
+    /// zombie.core.random.RandAbstract.id: how many draws were made, modulo 10000 (the field the oracle prints).
+    pub fn id(&self) -> i32 {
+        self.id
+    }
     fn bump(&mut self) {
         self.id += 1;
         if self.id >= 10000 {

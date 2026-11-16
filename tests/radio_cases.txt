@@ -1,0 +1,15 @@
+# The radio of a world on the ORIGINAL classes and on the port (tests/original_probe/RadioProbe.java, pz-dump radio).
+# A new game on the default start
+seed 100
+sandbox 1
+gamemode Sandbox
+nights 0
+hour 9
+weather 0 0 0 0 0
+flags 0 0
+multiplier 1.0
+dynamic reset
+radiosave none
+init -1
+fulldump
+randcheck

@@ -216,6 +216,8 @@ sel isoregion && server_case isoregion IsoRegionProbe "$HERE/profile/Saves/Sandb
 sel erosionini && server_case erosionini ErosionIniProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/erosionini_crafted"
 # map_t.bin's GMTM header and map_ver.bin (IsoWorld.readWorldVersion, GameWindow.ReadString(DataInputStream)): the real files and the pairs the probe writes to tests/mapver_crafted
 sel mapver && server_case mapver MapVerProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/mapver_crafted"
+# The radio (ZomboidRadio, RadioScriptManager, RadioChannel/Script/BroadCast/Line, RadioData.xml, RADIO_SAVE.txt, RadioTranslationData): the commands of tests/radio_cases.txt on the original and on the port; files the probe writes or reads are in tests/radio_crafted
+sel radio && server_case radio RadioProbe "$HERE/tests/radio_cases.txt" "$HERE/tests/radio_crafted"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
