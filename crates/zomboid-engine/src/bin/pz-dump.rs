@@ -10,7 +10,6 @@
 //!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
 //!   pz-dump translator <game root> <scratch, unused> <command file>   (TranslatorProbe.java)
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
-//!   pz-dump xui <game root>                   (pairs with XuiProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
