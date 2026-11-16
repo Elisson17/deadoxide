@@ -306,3 +306,10 @@ fn luaclient_matches_original() {
     // media/lua/shared then media/lua/client, as the game's client loads them
     check("luaclient", &["-", "shared", "client"]);
 }
+
+#[test]
+fn translator_matches_original() {
+    // the second argument is the probe's scratch cache dir, unused by pz-dump
+    let commands = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/translator_cases.txt");
+    check("translator", &["-", commands.to_str().expect("utf-8 path")]);
+}

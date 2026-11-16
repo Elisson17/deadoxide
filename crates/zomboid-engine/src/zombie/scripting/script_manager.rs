@@ -104,7 +104,7 @@ impl ScriptManager {
         });
         game_files.dedup_by(|a, b| a.0 == b.0);
         let mut m = ScriptManager {
-            translator: Translator::load_files(root)?,
+            translator: Translator::start(root, "EN").map_err(|e| e.to_string())?,
             ..ScriptManager::default()
         };
         for (rel, path) in game_files {

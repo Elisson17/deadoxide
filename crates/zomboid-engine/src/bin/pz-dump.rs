@@ -8,6 +8,7 @@
 //!   pz-dump animalzones <game root> <save dir>   (pairs with AnimalZonesProbe.java)
 //!   pz-dump zoneoutlines <game root> <save dir> outlines   (MapZoneProbe.java ... outlines)
 //!   pz-dump zonetriangles <game root> <save dir> triangles (MapZoneProbe.java ... triangles)
+//!   pz-dump translator <game root> <scratch, unused> <command file>   (TranslatorProbe.java)
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -32,6 +33,7 @@ fn main() {
     let r = match a.get(1).map(String::as_str) {
         Some("tiledefs") if a.len() == 3 => tiledefs(Path::new(&a[2])),
         Some("fonts") if a.len() == 4 => fonts(Path::new(&a[2])),
+        Some("translator") if a.len() == 5 => translator(Path::new(&a[2]), Path::new(&a[4])),
         Some("lotheaders") if a.len() == 4 => lotheaders(Path::new(&a[2]), &a[3]),
         Some("lotpack") if a.len() == 8 => lotpack(Path::new(&a[2]), &a[3], &a[4..8]),
         Some("metagrid") if a.len() == 8 => metagrid(Path::new(&a[2]), &a[3], &a[4..8]),
@@ -5423,4 +5425,307 @@ fn luaload_client_state(
             let _ = writeln!(sb, "INPUTBINDINGSETS [{}]", names.join(","));
         }
     }
+}
+
+/// TranslatorProbe's output for the port: `zombie.core.Translator` over the game folder, driven by the same command
+/// file (see the probe's header). The scratch dir is unused: `json` texts go straight to the part of
+/// `tryFillMapFromFile` after its `File.exists` (the probe writes them as files first).
+fn translator(root: &Path, commands: &Path) -> Result<String, String> {
+    use std::collections::HashMap;
+    use zomboid_engine::java_formatter::FormatArg;
+    use zomboid_engine::zombie::core::translator::{self, Translator, BY_NAME};
+
+    fn esc(s: &str) -> String {
+        let mut b = String::from("\"");
+        for c in s.encode_utf16() {
+            if (0x20..0x7f).contains(&c) && c != 0x22 && c != 0x5c {
+                b.push(c as u8 as char);
+            } else {
+                let _ = write!(b, "\\u{c:04x}");
+            }
+        }
+        b.push('"');
+        b
+    }
+    fn esc_opt(s: Option<&str>) -> String {
+        s.map_or_else(|| "null".to_string(), esc)
+    }
+    // the command file's escapes, as bytes (\xHH a raw byte, the rest UTF-8; \u a UTF-16 unit in 3-byte form)
+    fn unescape(s: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            if c != '\\' {
+                let mut buf = [0u8; 4];
+                out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+                continue;
+            }
+            match it.next() {
+                Some('n') => out.push(b'\n'),
+                Some('t') => out.push(b'\t'),
+                Some('r') => out.push(b'\r'),
+                Some('\\') => out.push(b'\\'),
+                Some('x') => {
+                    let h: String = it.by_ref().take(2).collect();
+                    out.push(u8::from_str_radix(&h, 16).unwrap_or(0));
+                }
+                Some('u') => {
+                    let h: String = it.by_ref().take(4).collect();
+                    let u = u32::from_str_radix(&h, 16).unwrap_or(0);
+                    if u < 0x80 {
+                        out.push(u as u8);
+                    } else if u < 0x800 {
+                        out.extend_from_slice(&[0xc0 | (u >> 6) as u8, 0x80 | (u & 0x3f) as u8]);
+                    } else {
+                        out.extend_from_slice(&[
+                            0xe0 | (u >> 12) as u8,
+                            0x80 | ((u >> 6) & 0x3f) as u8,
+                            0x80 | (u & 0x3f) as u8,
+                        ]);
+                    }
+                }
+                Some(e) => {
+                    out.push(b'\\');
+                    let mut buf = [0u8; 4];
+                    out.extend_from_slice(e.encode_utf8(&mut buf).as_bytes());
+                }
+                None => out.push(b'\\'),
+            }
+        }
+        out
+    }
+    fn text(field: &str) -> String {
+        String::from_utf8_lossy(&unescape(field)).into_owned()
+    }
+    fn arg(a: &str) -> Result<FormatArg, String> {
+        if a == "n" {
+            return Ok(FormatArg::Null);
+        }
+        let v = text(a.get(2..).unwrap_or(""));
+        match a.as_bytes().first() {
+            Some(b's') => Ok(FormatArg::Str(v)),
+            Some(b'd') => java::parse_double(&v)
+                .map(FormatArg::Double)
+                .ok_or_else(|| format!("bad double {v}")),
+            Some(b'b') => Ok(FormatArg::Bool(java::equals_ignore_case(&v, "true"))),
+            _ => Err(format!("bad argument {a}")),
+        }
+    }
+    fn arg_text(o: &FormatArg) -> String {
+        match o {
+            FormatArg::Null => "n".into(),
+            FormatArg::Double(d) => format!("d:{:x}", d.to_bits()),
+            FormatArg::Bool(b) => format!("b:{b}"),
+            FormatArg::Str(s) => format!("s:{}", esc(s)),
+            FormatArg::Object { .. } => "?".into(),
+        }
+    }
+    fn fnv(mut h: u64, line: &str) -> u64 {
+        for &x in line.as_bytes() {
+            h ^= u64::from(x);
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    }
+    fn sorted(map: &HashMap<String, String>) -> Vec<(&String, &String)> {
+        let mut v: Vec<_> = map.iter().collect();
+        v.sort_by(|a, b| java::string_compare_to(a.0, b.0));
+        v
+    }
+    fn dump_map(sb: &mut String, name: &str, map: &HashMap<String, String>, full: bool) {
+        let entries = sorted(map);
+        if full {
+            let _ = writeln!(sb, "MAP {name} {}", entries.len());
+            for (k, v) in &entries {
+                let _ = writeln!(sb, "{} = {}", esc(k), esc(v));
+            }
+        } else {
+            let mut h: u64 = 0xcbf29ce484222325;
+            for (k, v) in &entries {
+                h = fnv(h, &format!("{} = {}\n", esc(k), esc(v)));
+            }
+            let _ = writeln!(sb, "MAP {name} {} {h:016x}", entries.len());
+        }
+    }
+    fn call(t: &mut Translator, method: &str, a: &[String]) -> Result<String, String> {
+        let s0 = a.first().map(|f| text(f)).unwrap_or_default();
+        let r: Result<Option<String>, String> = match method {
+            "getText" | "getTextOrNull" => {
+                let args = a[1..]
+                    .iter()
+                    .map(|x| arg(x))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let r = if method == "getText" {
+                    t.get_text(&s0, &args).map(Some)
+                } else {
+                    t.get_text_or_null(&s0, &args)
+                };
+                // a formatting the port does not print stops the dump (it would differ anyway)
+                return r.map(|v| esc_opt(v.as_deref()));
+            }
+            "getDisplayItemName" => Ok(Some(t.get_display_item_name(&s0))),
+            "getItemNameFromFullType" => t.get_item_name_from_full_type(&s0, None).map(Some),
+            "getItemEvolvedRecipeName" => t.get_item_evolved_recipe_name(&s0, None).map(Some),
+            "setDefaultItemEvolvedRecipeName" => t
+                .set_default_item_evolved_recipe_name(&s0, &text(&a[1]))
+                .map(|()| Some("(void)".to_string())),
+            "getMoveableDisplayName" => Ok(Some(t.get_moveable_display_name(&s0))),
+            "getMoveableDisplayNameOrNull" => Ok(t.get_moveable_display_name_or_null(&s0)),
+            "getRecipeName" => Ok(Some(t.get_recipe_name(&s0))),
+            "getRecipeGroupName" => Ok(Some(t.get_recipe_group_name(&s0))),
+            "getTextMediaEN" => Ok(Some(t.get_text_media_en(&s0))),
+            "getAttributeText" => Ok(t.get_attribute_text(&s0, false)),
+            "getAttributeTextOrNull" => Ok(t.get_attribute_text(&s0, true)),
+            "getFluidText" => Ok(Some(t.get_fluid_text(&s0))),
+            "getEntityText" => Ok(Some(t.get_entity_text(&s0))),
+            "getMapLabelText" => Ok(Some(t.get_map_label_text(&s0))),
+            _ => return Err(format!("unknown method {method}")),
+        };
+        Ok(match r {
+            Ok(v) => esc_opt(v.as_deref()),
+            Err(e) => format!("ERROR {e}"),
+        })
+    }
+    fn call_text(method: &str, a: &[String]) -> Result<String, String> {
+        let mut b = format!("CALL {method}(");
+        for (i, f) in a.iter().enumerate() {
+            if i > 0 {
+                b.push_str(", ");
+            }
+            if i == 0 || !method.starts_with("getText") {
+                b.push_str(&esc(&text(f)));
+            } else {
+                b.push_str(&arg_text(&arg(f)?));
+            }
+        }
+        b.push(')');
+        Ok(b)
+    }
+
+    let mut t = Translator::new(root);
+    t.languages.init(root);
+    let mut sb = String::new();
+    let mut langs = t.languages.languages.clone();
+    langs.sort_by(|a, b| java::string_compare_to(&a.name, &b.name));
+    let _ = writeln!(sb, "LANGUAGES {}", langs.len());
+    for l in &langs {
+        let _ = writeln!(
+            sb,
+            "LANG {} {} {} {}",
+            l.name,
+            esc_opt(l.text.as_deref()),
+            esc_opt(l.base.as_deref()),
+            l.azerty
+        );
+    }
+    let _ = writeln!(sb, "DEFAULT {}", t.languages.get_default_language().name);
+
+    let file =
+        std::fs::read_to_string(commands).map_err(|e| format!("{}: {e}", commands.display()))?;
+    let mut calls: Vec<Vec<String>> = Vec::new();
+    for line in file.lines() {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut f: Vec<String> = line.split('\t').map(str::to_string).collect();
+        let cmd = f.remove(0);
+        match cmd.as_str() {
+            "userlang" => {
+                t.user_language = text(&f[0]);
+                let _ = writeln!(sb, "USERLANG {}", esc(&text(&f[0])));
+            }
+            "call" => calls.push(f),
+            "load" => {
+                let option = if f[0] == "_" {
+                    String::new()
+                } else {
+                    text(&f[0])
+                };
+                let full = f[1] == "full";
+                t.option_language_name = option.clone();
+                let _ = writeln!(sb, "LOAD {}", esc(&option));
+                if let Err(e) = t.load_files() {
+                    let _ = writeln!(sb, "ERROR {}", e.cause.java_text());
+                    continue;
+                }
+                let _ = writeln!(sb, "LANGUAGE {}", t.get_language().name);
+                let mut stack = String::from("STACK");
+                for l in t.for_language_stack() {
+                    let _ = write!(stack, " {}", l.name);
+                }
+                let _ = writeln!(sb, "{stack}");
+                for name in BY_NAME {
+                    dump_map(&mut sb, name, t.map(name).ok_or("no map")?, full);
+                }
+                dump_map(&mut sb, "Recorded_Media_EN", &t.recorded_media_en, full);
+                for c in &calls {
+                    let args = &c[1..];
+                    let _ = writeln!(
+                        sb,
+                        "{} = {}",
+                        call_text(&c[0], args)?,
+                        call(&mut t, &c[0], args)?
+                    );
+                }
+                let mut missing: Vec<&String> = t.missing.iter().collect();
+                missing.sort_by(|a, b| java::string_compare_to(a, b));
+                let _ = writeln!(sb, "MISSING {}", missing.len());
+                for m in missing {
+                    let _ = writeln!(sb, "  {}", esc(m));
+                }
+                let br = sorted(&t.br_replacements);
+                let _ = writeln!(sb, "BR {}", br.len());
+                for (k, v) in br {
+                    let _ = writeln!(sb, "  {} = {}", esc(k), esc(v));
+                }
+            }
+            "fmt" => {
+                let template = text(&f[0]);
+                let mut args = f.clone();
+                t.get_ui().insert("UI_Probe".into(), template.clone());
+                args[0] = "UI_Probe".into();
+                let _ = writeln!(sb, "FMT {}", esc(&template));
+                for m in ["getText", "getTextOrNull"] {
+                    let _ = writeln!(
+                        sb,
+                        "  {} = {}",
+                        call_text(m, &args)?,
+                        call(&mut t, m, &args)?
+                    );
+                }
+                args[0] = f[0].clone();
+                let _ = writeln!(
+                    sb,
+                    "  {} = {}",
+                    call_text("getText", &args)?,
+                    call(&mut t, "getText", &args)?
+                );
+                t.get_ui().remove("UI_Probe");
+            }
+            "json" => {
+                let id = &f[0];
+                let mut map = HashMap::new();
+                let mut result = None;
+                for field in &f[1..] {
+                    if let Err(e) = translator::fill_map_from_bytes(&unescape(field), &mut map) {
+                        result = Some(format!("ERROR {}", e.java_text()));
+                        break;
+                    }
+                }
+                match result {
+                    Some(r) => {
+                        let _ = writeln!(sb, "JSON {id} {r}");
+                    }
+                    None => {
+                        let _ = writeln!(sb, "JSON {id} ok {}", map.len());
+                        for (k, v) in sorted(&map) {
+                            let _ = writeln!(sb, "  {} = {}", esc(k), esc(v));
+                        }
+                    }
+                }
+            }
+            _ => return Err(format!("unknown command {cmd}")),
+        }
+    }
+    Ok(sb)
 }

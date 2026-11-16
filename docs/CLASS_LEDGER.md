@@ -4,15 +4,15 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 248 of 3432 classes touched, 1062 of 46318 method names cited (2.3%), 965313 decompiled lines.**
+**Total: 252 of 3432 classes touched, 1091 of 46318 method names cited (2.4%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 65 | 7277 | 308 (4.2%) | 144530 |
-| zombie.core | 450 | 30 | 5920 | 106 (1.8%) | 93574 |
+| zombie.core | 450 | 33 | 5920 | 134 (2.3%) | 93574 |
 | zombie.characters | 200 | 29 | 5028 | 86 (1.7%) | 77144 |
-| zombie.network | 436 | 1 | 3229 | 1 (0.0%) | 60679 |
+| zombie.network | 436 | 2 | 3229 | 2 (0.1%) | 60679 |
 | zombie.scripting | 205 | 9 | 2713 | 27 (1.0%) | 52509 |
 | zombie.entity | 156 | 2 | 2517 | 3 (0.1%) | 36294 |
 | zombie.inventory | 40 | 15 | 2100 | 16 (0.8%) | 28391 |
@@ -159,8 +159,11 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.Color | 1 / 58 | crates/zomboid-engine/src/zombie/core/color.rs, crates/zomboid-engine/src/zombie/iso/weather/climate_color_info.rs |
 | zombie.core.Core | 2 / 513 | crates/zomboid-engine/src/zombie/core/core.rs, crates/zomboid-engine/src/zombie/core/mod.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
 | zombie.core.ImmutableColor | 0 / 26 | crates/zomboid-engine/src/zombie/core/immutable_color.rs |
+| zombie.core.Language | 0 / 6 | crates/zomboid-engine/src/zombie/core/language.rs |
+| zombie.core.LanguageFile | 0 / 1 | crates/zomboid-engine/src/zombie/core/language_file.rs |
+| zombie.core.Languages | 6 / 9 | crates/zomboid-engine/src/zombie/core/languages.rs |
 | zombie.core.TilePropertyAliasMap | 5 / 6 | crates/zomboid-engine/src/zombie/core/tile_property_alias_map.rs |
-| zombie.core.Translator | 6 / 41 | crates/zomboid-engine/src/zombie/core/translator.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-lua/src/text.rs |
+| zombie.core.Translator | 28 / 41 | crates/zomboid-engine/src/zombie/core/translator.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs, crates/zomboid-lua/src/text.rs |
 | zombie.core.fonts.AngelCodeFont | 10 / 23 | crates/zomboid-engine/src/zombie/core/fonts/angel_code_font.rs |
 | zombie.core.logger.ExceptionLogger | 1 / 3 | crates/zomboid-engine/src/zombie/lua/exposer.rs |
 | zombie.core.math.PZMath | 13 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
@@ -273,6 +276,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.worldgen.WorldGenUtils | 3 / 16 | crates/zomboid-engine/src/zombie/iso/worldgen/world_gen_utils.rs |
 | zombie.iso.zones.Zone | 25 / 68 | crates/zomboid-engine/src/zombie/iso/zones/zone.rs |
 | zombie.iso.zones.ZoneGeometryType | 0 / 0 | crates/zomboid-engine/src/zombie/iso/zones/zone_geometry_type.rs |
+| zombie.network.GameServer | 1 / 171 | crates/zomboid-engine/src/zombie/core/translator.rs |
 | zombie.network.id.ObjectID | 1 / 17 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs |
 | zombie.pathfind.LiangBarsky | 1 / 1 | crates/zomboid-engine/src/zombie/pathfind/liang_barsky.rs |
 | zombie.radio.devices.DeviceData | 1 / 116 | crates/zomboid-engine/src/zombie/radio/devices/device_data.rs |
@@ -295,7 +299,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.ui.UIFont | 1 / 1 | crates/zomboid-engine/src/zombie/ui/ui_font.rs |
 | zombie.util.LocationRNG | 4 / 5 | crates/zomboid-engine/src/zombie/util/location_rng.rs |
 | zombie.util.PZXmlUtil | 2 / 24 | crates/zomboid-engine/src/zombie/util/pz_xml_util.rs |
-| zombie.util.StringUtils | 4 / 36 | crates/zomboid-engine/src/zombie/util/string_utils.rs |
+| zombie.util.StringUtils | 4 / 36 | crates/zomboid-engine/src/zombie/core/language_file.rs, crates/zomboid-engine/src/zombie/util/string_utils.rs |
 | zombie.util.io.BitHeader | 1 / 27 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.util.io.BitHeaderRead | 0 / 0 | crates/zomboid-engine/src/java_nio.rs |
 | zombie.vehicles.BaseVehicle | 1 / 659 | crates/zomboid-engine/src/zombie/vehicles/base_vehicle.rs |
