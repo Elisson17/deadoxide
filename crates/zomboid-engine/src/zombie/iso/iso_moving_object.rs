@@ -14,6 +14,12 @@ pub struct IsoMovingObject {
     /// The saved int; `setForwardIsoDirection(IsoDirections.fromIndex(dir))` keeps `dir & 7`.
     pub dir: i32,
     pub table: Option<KahluaTable>,
+    /// `width` (field initialiser 0.24); characters set their own.
+    pub width: f32,
+    /// `weight` (field initialiser 1.0).
+    pub weight: f32,
+    /// `stateEventDelayTimer`: counted down by `GameTime.getMultiplier()` in `update`.
+    pub state_event_delay_timer: f32,
 }
 
 impl IsoMovingObject {
@@ -38,6 +44,26 @@ impl IsoMovingObject {
             z,
             dir,
             table,
+            width: 0.24,
+            weight: 1.0,
+            state_event_delay_timer: 0.0,
         })
+    }
+
+    /// zombie.iso.IsoMovingObject(cell, x, y, z) as a character's constructor calls it: the position and the field
+    /// initialisers; the world registration (`addMovingObject`), sprite and ids are not modelled.
+    pub fn at(x: f32, y: f32, z: f32) -> Self {
+        IsoMovingObject {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            x,
+            y,
+            z,
+            dir: 0,
+            table: None,
+            width: 0.24,
+            weight: 1.0,
+            state_event_delay_timer: 0.0,
+        }
     }
 }

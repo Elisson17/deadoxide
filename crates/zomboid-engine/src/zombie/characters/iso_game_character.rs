@@ -8,11 +8,16 @@ use super::player_cheats::PlayerCheats;
 use super::stats::Stats;
 use super::survivor_desc::SurvivorDesc;
 use super::traits::character_traits::CharacterTraits;
+use crate::java::JavaRandom;
 use crate::java_nio::{read_string, ByteBuffer};
+use crate::zombie::core::math::pz_math;
+use crate::zombie::core::random::rand_abstract::RandAbstract;
 use crate::zombie::core::skinnedmodel::visual::human_visual::HumanVisual;
 use crate::zombie::inventory::inventory_item::{not_ported, InventoryItem, ItemFactory};
 use crate::zombie::inventory::item_container::ItemContainer;
+use crate::zombie::iso::iso_directions::IsoDirections;
 use crate::zombie::iso::iso_moving_object::IsoMovingObject;
+use crate::zombie::iso::vector2::Vector2;
 
 /// zombie.characters.skills.PerkFactory.Perks: the ids `new Perk(id)` registers (`PerkById`), MAX last.
 pub const PERK_IDS: [&str; 46] = [
@@ -207,6 +212,92 @@ pub struct IsoGameCharacter {
     pub read_print_media: BTreeSet<String>,
     pub last_animal_pet: i64,
     pub cheats: PlayerCheats,
+}
+
+/// zombie.characters.IsoGameCharacter as its constructor leaves it, for the fields a zombie's construction and idle
+/// update read or write (the saved fields are `IsoGameCharacter`; a zombie keeps no inventory, stats or body damage
+/// there: its `bodyDamage`, `moodles` and `xp` are null). Everything else the original's 17,000 lines hold (animation
+/// player, action context, worn items, sound emitter ...) is not here.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IsoGameCharacterBase {
+    pub moving: IsoMovingObject,
+    /// `patienceMin` 20, `patienceMax` 150 (field initialisers) and `patience`, drawn in the constructor.
+    pub patience_min: i32,
+    pub patience_max: i32,
+    pub patience: i32,
+    pub health: f32,
+    /// `forwardDirection`
+    pub forward_direction: Vector2,
+    pub descriptor: Option<SurvivorDesc>,
+    /// the character's own `humanVisual` (`new HumanVisual(this)`: cleared)
+    pub human_visual: HumanVisual,
+    /// `characterGender == CharacterGender.FEMALE`
+    pub female: bool,
+    /// `turnDeltaNormal` 1.0
+    pub turn_delta_normal: f32,
+}
+
+impl IsoGameCharacterBase {
+    /// zombie.characters.IsoGameCharacter(cell, x, y, z), the part that sets these fields: `patience =
+    /// Rand.Next(patienceMin, patienceMax)`, then the position (`x + 0.5F`, `y + 0.5F`, `z`) and the default
+    /// `offsetX/offsetY` 0. (The constructor's other work, the emitter, inventory, state machine and file watcher,
+    /// draws nothing and is not modelled.)
+    pub fn new<R: JavaRandom>(rand: &mut RandAbstract<R>, x: f32, y: f32, z: f32) -> Self {
+        let mut moving = IsoMovingObject::at(x, y, z);
+        let patience_min = 20;
+        let patience_max = 150;
+        let patience = rand.next_range(patience_min, patience_max);
+        moving.x = x + 0.5;
+        moving.y = y + 0.5;
+        moving.z = z;
+        IsoGameCharacterBase {
+            moving,
+            patience_min,
+            patience_max,
+            patience,
+            health: 0.0,
+            forward_direction: Vector2::default(),
+            descriptor: None,
+            human_visual: HumanVisual::default(),
+            female: true,
+            turn_delta_normal: 1.0,
+        }
+    }
+
+    /// zombie.characters.IsoGameCharacter.setForwardIsoDirection: the moving object's direction, then
+    /// `setForwardDirectionFromIsoDirection`. `Err` is the IllegalStateException of a zero-length direction.
+    pub fn set_forward_iso_direction(&mut self, d: IsoDirections) -> Result<(), String> {
+        self.moving.dir = d as i32;
+        // IsoMovingObject.getVectorFromDirection(vec, dir): the direction's vector, normalized
+        let (x, y) = d.to_vector();
+        self.set_forward_direction(x, y)
+    }
+
+    /// zombie.characters.IsoGameCharacter.setForwardDirection(float, float): the vector normalized in place, the
+    /// iso direction from the (unnormalized) arguments.
+    pub fn set_forward_direction(&mut self, x: f32, y: f32) -> Result<(), String> {
+        self.forward_direction.x = x;
+        self.forward_direction.y = y;
+        let length = self.forward_direction.normalize();
+        self.moving.dir = IsoDirections::from_angle_xy(x, y) as i32;
+        if pz_math::equal(length, 0.0, 1.0e-7) {
+            return Err("Forward Direction cannot be zero length vector.".into());
+        }
+        Ok(())
+    }
+
+    /// `getForwardIsoDirection`
+    pub fn forward_iso_direction(&self) -> IsoDirections {
+        IsoDirections::from_index(self.moving.dir)
+    }
+
+    /// zombie.characters.IsoGameCharacter.setFemale: the character's gender and its descriptor's.
+    pub fn set_female(&mut self, female: bool) {
+        self.female = female;
+        if let Some(d) = self.descriptor.as_mut() {
+            d.female = female;
+        }
+    }
 }
 
 impl IsoGameCharacter {

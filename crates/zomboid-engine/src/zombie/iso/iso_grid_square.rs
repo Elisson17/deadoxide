@@ -335,6 +335,37 @@ impl IsoGridSquare {
     pub fn has_type(&self, t: IsoObjectType) -> bool {
         self.has_types & (1u64 << t.index()) != 0
     }
+    /// zombie.iso.IsoGridSquare.isFree: `movingObjects` is not kept here, so whether it is non-empty is an argument. The
+    /// original caches the answer in `cacheIsFree` until `RecalcProperties` clears it; with the properties
+    /// unchanged the cache returns what this computes.
+    pub fn is_free(&self, count_other_characters: bool, has_moving_objects: bool) -> bool {
+        if count_other_characters && has_moving_objects {
+            return false;
+        }
+        let mut free = true;
+        if self.has(F::solid) || self.has(F::solidtrans) || self.has_type(T::tree) {
+            free = false;
+        }
+        if !self.has(F::solidfloor) {
+            free = false;
+        }
+        // the original's `if (stairsBN || stairsMN || stairsTN) {...} else if (stairsBW || stairsMW || stairsTW) {...}`
+        // set the same value in both branches
+        if [
+            T::stairsBN,
+            T::stairsMN,
+            T::stairsTN,
+            T::stairsBW,
+            T::stairsMW,
+            T::stairsTW,
+        ]
+        .iter()
+        .any(|t| self.has_type(*t))
+        {
+            free = true;
+        }
+        free
+    }
     /// zombie.iso.IsoGridSquare.hasFloorOverWater
     pub fn has_floor_over_water(&self) -> bool {
         self.has(F::water) && !self.has(F::solidtrans)

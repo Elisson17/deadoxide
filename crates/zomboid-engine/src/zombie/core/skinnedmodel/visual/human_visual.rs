@@ -1,6 +1,8 @@
 //! zombie.core.skinnedmodel.visual.HumanVisual: skin, hair, beard, blood and the body's own item visuals.
 use super::item_visual::{load_color, ItemVisual, BLOOD_BODY_PART_COUNT};
+use crate::java::{math_max_f32, math_min_f32};
 use crate::java_nio::{read_string, ByteBuffer};
+use crate::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 use crate::zombie::util::string_utils;
 
 /// zombie.core.skinnedmodel.visual.HumanVisual, the saved fields. Colours are the three unsigned bytes of
@@ -62,6 +64,22 @@ fn load_fixed(b: &mut ByteBuffer, arr: &mut [i8; BLOOD_BODY_PART_COUNT]) -> Resu
 }
 
 impl HumanVisual {
+    /// zombie.core.skinnedmodel.visual.HumanVisual.setBlood: `(byte)(clamp(amount, 0, 1) * 255.0F)` at the body part's
+    /// index.
+    pub fn set_blood(&mut self, index: usize, amount: f32) {
+        let amount = math_max_f32(0.0, math_min_f32(1.0, amount));
+        self.blood[index] = (amount * 255.0) as i32 as i8;
+    }
+
+    /// zombie.core.skinnedmodel.visual.HumanVisual.randomBlood: one `OutfitRNG.Next(0.0F, 1.0F)` per body part, in
+    /// index order.
+    pub fn random_blood(&mut self, rng: &mut OutfitRng) {
+        for i in 0..BLOOD_BODY_PART_COUNT {
+            let amount = rng.next_float(0.0, 1.0);
+            self.set_blood(i, amount);
+        }
+    }
+
     /// zombie.core.skinnedmodel.visual.HumanVisual.load (after `clear()`).
     pub fn load(b: &mut ByteBuffer) -> Result<Self, String> {
         let mut v = HumanVisual::default();

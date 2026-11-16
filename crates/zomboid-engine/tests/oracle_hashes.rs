@@ -267,6 +267,36 @@ fn erosion_matches_original() {
 }
 
 #[test]
+fn zombie_matches_original() {
+    // ZombieProbe's scenarios; keep in step with the `zombie` line of tools/oracle.sh
+    check(
+        "zombie",
+        &[
+            "12345:40:0",
+            "1:40:0:Speed=4,SprinterPercentage=50",
+            "2:30:0:Speed=1",
+            "3:30:0:Speed=3",
+            "4:30:0:Speed=4,SprinterPercentage=0,Strength=4,Cognition=4,DoorOpeningPercentage=50",
+            "5:30:0:Memory=5,Sight=4,Hearing=4,CrawlUnderVehicle=2",
+            "6:30:0:Memory=6,Sight=5,Hearing=5,CrawlUnderVehicle=7,Strength=1,Cognition=1",
+            "7:30:0:Strength=3,Memory=1,CrawlUnderVehicle=1,Speed=4,SprinterPercentage=100",
+            "8:30:0:Memory=3,CrawlUnderVehicle=3,Sight=1,Hearing=3",
+            "9:30:0:Memory=4,CrawlUnderVehicle=4,Sight=3,Hearing=1",
+            "10:30:0:CrawlUnderVehicle=6,Speed=2,Cognition=2",
+            "12345:1:9000",
+            "1:1:12000",
+            "2:1:9000:Speed=1",
+            "3:1:9000:Speed=3",
+            "4:1:6000:Speed=4",
+            "5:1:15000",
+            "6:1:9000",
+            "7:1:9000",
+            "8:1:9000",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");
