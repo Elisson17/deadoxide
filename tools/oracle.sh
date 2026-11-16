@@ -97,6 +97,8 @@ game_measure() {
 want=${1:-all}
 sel() { [ "$want" = all ] || [ "$want" = "$1" ]; }
 sel tiledefs && run_case tiledefs TileDefsProbe
+# every media/fonts/**/*.fnt (and media/*.fnt) through AngelCodeFont, and TextManager.Init per language and font size
+sel fonts && game_case fonts FontsProbe
 sel sandbox && run_case sandbox SandboxProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13/map_sand.bin"
 sel lotheaders && run_case lotheaders LotHeadersProbe "Muldraugh, KY"
 sel worlddictionary && run_case worlddictionary WorldDictionaryProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13/WorldDictionary.bin"

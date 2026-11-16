@@ -302,7 +302,11 @@ impl TextManager {
     }
 
     /// zombie.ui.TextManager.MeasureStringX: the font's `getWidth`; 0 on a server without GUI or for a null string.
-    pub fn measure_string_x(&self, font: Option<UIFont>, str: Option<&[u16]>) -> Result<i32, String> {
+    pub fn measure_string_x(
+        &self,
+        font: Option<UIFont>,
+        str: Option<&[u16]>,
+    ) -> Result<i32, String> {
         if self.server_without_gui {
             return Ok(0);
         }
@@ -315,7 +319,11 @@ impl TextManager {
     }
 
     /// zombie.ui.TextManager.CentreStringYOffset
-    pub fn centre_string_y_offset(&self, font: Option<UIFont>, str: Option<&[u16]>) -> Result<i32, String> {
+    pub fn centre_string_y_offset(
+        &self,
+        font: Option<UIFont>,
+        str: Option<&[u16]>,
+    ) -> Result<i32, String> {
         let offset = self.measure_string_y_offset(font, str)?;
         let y = self.measure_string_y(font, str)?;
         let real = self.measure_string_y_real(font, str)?;
@@ -323,12 +331,20 @@ impl TextManager {
     }
 
     /// zombie.ui.TextManager.MeasureStringY(UIFont, String)
-    pub fn measure_string_y(&self, font: Option<UIFont>, str: Option<&[u16]>) -> Result<i32, String> {
+    pub fn measure_string_y(
+        &self,
+        font: Option<UIFont>,
+        str: Option<&[u16]>,
+    ) -> Result<i32, String> {
         self.measure_string_y_ext(font, str, false, false)
     }
 
     /// zombie.ui.TextManager.MeasureStringYReal
-    pub fn measure_string_y_real(&self, font: Option<UIFont>, str: Option<&[u16]>) -> Result<i32, String> {
+    pub fn measure_string_y_real(
+        &self,
+        font: Option<UIFont>,
+        str: Option<&[u16]>,
+    ) -> Result<i32, String> {
         self.measure_string_y_ext(font, str, true, false)
     }
 
@@ -383,7 +399,12 @@ impl TextManager {
     }
 
     /// zombie.ui.TextManager.WrapText(UIFont, String, int): no line limit.
-    pub fn wrap_text(&self, font: Option<UIFont>, str: &[u16], max_width: i32) -> Result<Vec<u16>, String> {
+    pub fn wrap_text(
+        &self,
+        font: Option<UIFont>,
+        str: &[u16],
+        max_width: i32,
+    ) -> Result<Vec<u16>, String> {
         self.wrap_text_ext(font, str, max_width, -1, &[])
     }
 
@@ -430,13 +451,13 @@ impl TextManager {
                             .wrapping_add(space_width);
                     } else {
                         let len = word.len() as i32;
-                        let mut chars_per_line_approx = (f64::from(max_width)
-                            / f64::from(new_line_length)
-                            * f64::from(len))
-                        .floor() as i32
-                            - 1;
+                        let mut chars_per_line_approx =
+                            (f64::from(max_width) / f64::from(new_line_length) * f64::from(len))
+                                .floor() as i32
+                                - 1;
                         chars_per_line_approx = chars_per_line_approx.max(min_chars_per_line);
-                        let lines = (f64::from(len) / f64::from(chars_per_line_approx)).ceil() as i32;
+                        let lines =
+                            (f64::from(len) / f64::from(chars_per_line_approx)).ceil() as i32;
                         for line in 0..lines - 1 {
                             let mut piece = substring(
                                 word,
@@ -447,8 +468,7 @@ impl TextManager {
                             piece.push(u16::from(b'-'));
                             out_lines.push(piece);
                         }
-                        let final_part =
-                            substring(word, (lines - 1) * chars_per_line_approx, len)?;
+                        let final_part = substring(word, (lines - 1) * chars_per_line_approx, len)?;
                         new_line.push(final_part.to_vec());
                         current_line_length = self
                             .measure_string_x(font, Some(final_part))?
@@ -495,7 +515,11 @@ fn split_line_breaks(s: &[u16]) -> Vec<&[u16]> {
     let mut found = false;
     for p in 0..s.len() {
         if s[p] == 10 {
-            let start = if p > index && s[p - 1] == 13 { p - 1 } else { p };
+            let start = if p > index && s[p - 1] == 13 {
+                p - 1
+            } else {
+                p
+            };
             parts.push(&s[index..start]);
             index = p + 1;
             found = true;

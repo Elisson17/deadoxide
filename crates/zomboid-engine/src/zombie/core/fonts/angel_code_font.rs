@@ -135,8 +135,8 @@ impl AngelCodeFont {
                 max_height = 0;
             } else if id != 32 && (id as usize) < self.chars.len() {
                 if let Some(char_def) = &self.chars[id as usize] {
-                    max_height = (i32::from(char_def.height) + i32::from(char_def.yoffset))
-                        .max(max_height);
+                    max_height =
+                        (i32::from(char_def.height) + i32::from(char_def.yoffset)).max(max_height);
                     min_offset = i32::from(char_def.yoffset).min(min_offset);
                 }
             }
@@ -411,8 +411,12 @@ impl AngelCodeFont {
 
 /// Integer.parseInt as the original calls it: `Err` is the NumberFormatException.
 fn parse_int(s: &str) -> Result<i32, String> {
-    java::parse_int(s)
-        .ok_or_else(|| format!("java.lang.NumberFormatException: {}", java::number_format_message(s)))
+    java::parse_int(s).ok_or_else(|| {
+        format!(
+            "java.lang.NumberFormatException: {}",
+            java::number_format_message(s)
+        )
+    })
 }
 
 /// Short.parseShort as the original calls it: `Err` is the NumberFormatException.
