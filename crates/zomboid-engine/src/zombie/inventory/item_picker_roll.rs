@@ -67,6 +67,10 @@ pub struct LootItem {
     pub class: ItemType,
     pub id: i32,
     pub uses: i32,
+    /// `condition` (`ConditionMax` at creation; `randomizeCondition` lowers it).
+    pub condition: i32,
+    /// The `Sharpness` attribute (`None` without one).
+    pub sharpness: Option<f32>,
     /// `actualWeight` of the instance (a drainable's `updateWeight` changes it).
     pub actual_weight: f32,
     /// `getDisplayName().equals(getFullType())`: the translation is missing, the weight reads as 0.
@@ -1013,7 +1017,11 @@ impl<'a> LootRoller<'a> {
             type_name: script.name.clone(),
             class,
             id: 0,
-            uses: 0,
+            uses: 1,
+            condition: script_int(script, "conditionMax"),
+            sharpness: script_complex(script, "sharpness")
+                .and_then(parse_float)
+                .map(|v| v.clamp(0.0, 1.0)),
             actual_weight: if script_weight < 0.0 {
                 0.0
             } else {
@@ -1324,14 +1332,18 @@ impl<'a> LootRoller<'a> {
                         if condition_max <= 0 {
                             return Err(unported("randomizeGeneralCondition with ConditionMax 0"));
                         }
-                        let mut condition = condition_max;
                         if !weapon || script_str(script, "physicsObject").is_some() {
-                            condition = 1.max(self.rand.next(condition_max + 1));
+                            // setCondition(con, false) keeps 0..=conditionMax
+                            spawn.condition = 1
+                                .max(self.rand.next(condition_max + 1))
+                                .clamp(0, condition_max);
                         }
                         if has_sharpness {
-                            // getMaxSharpness: condition / conditionMax
-                            let max_sharpness = condition as f32 / condition_max as f32;
-                            self.rand.next_float(0.0, max_sharpness);
+                            // getMaxSharpness: condition / conditionMax; setSharpness clamps to 0..=max (and 1)
+                            let max_sharpness = spawn.condition as f32 / condition_max as f32;
+                            let v = self.rand.next_float(0.0, max_sharpness);
+                            let v = v.min(max_sharpness).clamp(0.0, 1.0);
+                            spawn.sharpness = Some(v);
                         }
                     }
                     if !is_trash && weapon {
@@ -1374,6 +1386,9 @@ impl<'a> LootRoller<'a> {
                         return Err(unported("spawnWith"));
                     }
                     if has_tag(script, "SpawnFullUnlessLaundry") && !laundry {
+                        if spawn.class == ItemType::Food {
+                            return Err(unported("Food.setCurrentUses (consumeHunger)"));
+                        }
                         if drainable {
                             spawn.uses = Self::drainable_max_uses(script);
                             self.drainable_update_weight(&mut spawn)?;
@@ -1392,6 +1407,33 @@ impl<'a> LootRoller<'a> {
             }
         }
         Ok(())
+    }
+
+    /// InventoryItem.getActualWeight of an item of the container (what `weight` prints).
+    pub fn item_actual_weight(&self, it: &LootItem) -> Result<f32, String> {
+        self.actual_weight(it)
+    }
+
+    /// InventoryItem.getCurrentUses and its Food override (`(int)Math.abs(hungChange * 100)` once the food has a
+    /// base hunger).
+    pub fn item_current_uses(&self, it: &LootItem) -> Result<i32, String> {
+        if it.class == ItemType::Food {
+            let base_hunger = script_float(self.script(it.script)?, "hungerChange") / 100.0f32;
+            if base_hunger != 0.0 {
+                return Ok((base_hunger * 100.0f32).abs() as i32);
+            }
+        }
+        Ok(it.uses)
+    }
+
+    /// InventoryItem.getSharpness: the attribute capped at `getMaxSharpness()` (condition over `ConditionMax`), 0
+    /// without a `Sharpness` attribute.
+    pub fn item_sharpness(&self, it: &LootItem) -> Result<f32, String> {
+        let Some(v) = it.sharpness else {
+            return Ok(0.0);
+        };
+        let max = it.condition as f32 / script_int(self.script(it.script)?, "conditionMax") as f32;
+        Ok(if v > max { max } else { v })
     }
 
     /// ItemContainer.isShop for a container on a square (`getParent()` is null).

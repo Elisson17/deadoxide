@@ -243,6 +243,10 @@ public class LootProbe {
             StringBuilder b = new StringBuilder("FILL " + t + " draws=" + ((draws() - before + 10000) % 10000) + " n=" + c.getItems().size() + err);
             for (zombie.inventory.InventoryItem i : c.getItems()) b.append(' ').append(i.getFullType());
             out.println(b);
+            int n = 0;
+            for (zombie.inventory.InventoryItem i : c.getItems())
+                out.println("ITEM " + (n++) + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
+                        + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
         }
         out.println("END " + spec + " rand=" + draws());
     }

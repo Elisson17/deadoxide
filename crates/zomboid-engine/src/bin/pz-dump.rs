@@ -8514,6 +8514,21 @@ fn loot_scenario(
             let _ = write!(out, " {}", i.full_type);
         }
         out.push('\n');
+        for (n, i) in c.items.iter().enumerate() {
+            let weight = roller.item_actual_weight(i)?;
+            let sharp = roller.item_sharpness(i)?;
+            let uses = roller.item_current_uses(i)?;
+            let _ = writeln!(
+                out,
+                "ITEM {n} {} id={} uses={} cond={} weight={:x} sharp={:x}",
+                i.full_type,
+                i.id,
+                uses,
+                i.condition,
+                weight.to_bits(),
+                sharp.to_bits()
+            );
+        }
     }
     let _ = writeln!(out, "END {spec} rand={}", roller.rand.id());
     Ok(())
