@@ -21,6 +21,7 @@ pub mod radio;
 pub mod sandbox_options;
 pub mod sandbox_options_table;
 pub mod scripting;
+pub mod statistics;
 pub mod ui;
 pub mod util;
 pub mod vehicles;

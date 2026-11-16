@@ -24,6 +24,7 @@ pub mod map_files;
 pub mod map_meta;
 pub mod map_zone;
 pub mod meta_object;
+pub mod meta_tracker;
 pub mod objects;
 pub mod room_def;
 pub mod room_id;

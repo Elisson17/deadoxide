@@ -53,6 +53,7 @@ fn main() {
             sounds(Path::new(&a[2]), Some((Path::new(&a[3]), Path::new(&a[4]))))
         }
         Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
+        Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
         Some("scriptparser") if a.len() == 4 => scriptparser(Path::new(&a[3])),
         Some("sandbox") if a.len() == 4 => sandbox(Path::new(&a[2]), Path::new(&a[3])),
         Some("specialcollide") if a.len() == 5 || a.len() == 6 => {
@@ -4229,6 +4230,303 @@ pub fn gos(root: &Path, save: &Path, crafted: &Path) -> Result<String, String> {
             hash(&save_dump::table(&s.mod_data)),
             hash(&objs)
         );
+    }
+    Ok(sb)
+}
+
+/// Four small world-level save files read by their loaders, the player's real files, the files the original
+/// writers made from values chosen in the probe, hand-made broken ones and the first writer file cut at every length
+/// (pairs with SaveMetaProbe.java): `map_worldgen.bin`, `map_symbols.bin`, `statistics.bin`, `metadata.bin`.
+pub fn savemeta(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::java::{string_compare_to, string_hash_code};
+    use zomboid_engine::zombie::iso::meta_tracker::{self, Alarm, Helicopter};
+    use zomboid_engine::zombie::iso::worldgen::world_gen_params::{LoadResult, WorldGenParams};
+    use zomboid_engine::zombie::statistics::StatisticsManager;
+    use zomboid_engine::zombie::world_map::symbols::world_map_symbols::{
+        WorldMapSymbol, WorldMapSymbols,
+    };
+    /// The probe's `esc`: printable ASCII except quote and backslash stays, any other UTF-16 unit is `\uXXXX`.
+    fn esc(s: &str) -> String {
+        let mut o = String::from("\"");
+        for u in s.encode_utf16() {
+            if (0x20..0x7f).contains(&u) && u != u16::from(b'"') && u != u16::from(b'\\') {
+                o.push(char::from(u as u8));
+            } else {
+                let _ = write!(o, "\\u{u:04x}");
+            }
+        }
+        o.push('"');
+        o
+    }
+    fn hash(s: &str) -> String {
+        format!("{:x}", string_hash_code(s))
+    }
+    fn read(p: &Path) -> Result<Vec<u8>, String> {
+        std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))
+    }
+    /// The crafted files of one family sorted by name: (label, bytes).
+    fn family(dir: &Path, prefix: &str) -> Result<Vec<(String, Vec<u8>)>, String> {
+        let mut names = Vec::new();
+        for e in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let n = e
+                .map_err(|e| e.to_string())?
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+            if n.starts_with(prefix) && n.ends_with(".bin") {
+                names.push(n);
+            }
+        }
+        names.sort();
+        names
+            .into_iter()
+            .map(|n| {
+                let label = n[prefix.len()..n.len() - 4].to_string();
+                Ok((label, read(&dir.join(&n))?))
+            })
+            .collect()
+    }
+    let mut sb = String::new();
+
+    // WGEN
+    let wgen = |sb: &mut String, label: &str, data: Option<&[u8]>| {
+        let mut p = WorldGenParams::default();
+        p.set_seed_string("");
+        p.min_x_cell = -250;
+        p.min_y_cell = -250;
+        p.max_x_cell = 250;
+        p.max_y_cell = 250;
+        let (r, _err) = p.load_file(data);
+        let _ = writeln!(
+            sb,
+            "WGEN {label} {} seed={} {} cells={},{},{},{}",
+            match r {
+                LoadResult::NotPresent => "NOT_PRESENT",
+                LoadResult::Done => "DONE",
+            },
+            esc(&p.seed_string),
+            p.get_seed(),
+            p.min_x_cell,
+            p.min_y_cell,
+            p.max_x_cell,
+            p.max_y_cell
+        );
+    };
+    wgen(&mut sb, "missing", None);
+    wgen(
+        &mut sb,
+        "real",
+        Some(&read(&save.join("map_worldgen.bin"))?),
+    );
+    let files = family(crafted, "wgen_")?;
+    for (label, data) in &files {
+        wgen(&mut sb, label, Some(data));
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no wgen_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        wgen(&mut sb, &format!("cut{k}"), Some(&craft[..k]));
+    }
+
+    // MSYM
+    fn msym_text(label: &str, s: &WorldMapSymbols) -> String {
+        let mut o = format!("MSYM {label} n={}", s.symbols.len());
+        for sy in &s.symbols {
+            let (name, base) = match sy {
+                WorldMapSymbol::Text { base, .. } => ("WorldMapTextSymbol", base),
+                WorldMapSymbol::Texture { base, .. } => ("WorldMapTextureSymbol", base),
+            };
+            let _ = write!(o, "\t{name}");
+            for v in [
+                base.x,
+                base.y,
+                base.anchor_x,
+                base.anchor_y,
+                base.scale,
+                base.rotation,
+                base.r,
+                base.g,
+                base.b,
+                base.a,
+            ] {
+                let _ = write!(o, ",{}", save_dump::fh(v));
+            }
+            let flag = |v: bool| if v { '1' } else { '0' };
+            let _ = write!(
+                o,
+                ",{}{}{},{},{}",
+                flag(base.collide),
+                flag(base.match_perspective),
+                flag(base.apply_zoom),
+                save_dump::fh(base.min_zoom.unwrap_or(0.0)),
+                save_dump::fh(base.max_zoom.unwrap_or(24.0))
+            );
+            match sy {
+                WorldMapSymbol::Text {
+                    text,
+                    translated,
+                    layer_id,
+                    ..
+                } => {
+                    let _ = write!(
+                        o,
+                        ",{},{},{}",
+                        esc(text),
+                        flag(*translated),
+                        esc(layer_id.as_deref().unwrap_or("text-note"))
+                    );
+                }
+                WorldMapSymbol::Texture { symbol_id, .. } => {
+                    let _ = write!(o, ",{}", esc(symbol_id));
+                }
+            }
+        }
+        o
+    }
+    let msym = |sb: &mut String, label: &str, data: Option<&[u8]>, summary: bool| {
+        let mut s = WorldMapSymbols::default();
+        let _ = s.load_world_map(data);
+        let text = msym_text(label, &s);
+        if summary {
+            let _ = writeln!(
+                sb,
+                "MSYMCUT {label} n={} {}",
+                s.symbols.len(),
+                hash(&format!("{text}\n"))
+            );
+        } else {
+            let _ = writeln!(sb, "{text}");
+        }
+    };
+    msym(&mut sb, "missing", None, false);
+    msym(
+        &mut sb,
+        "real",
+        Some(&read(&save.join("map_symbols.bin"))?),
+        false,
+    );
+    let files = family(crafted, "msym_")?;
+    for (label, data) in &files {
+        msym(&mut sb, label, Some(data), false);
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no msym_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        msym(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
+    }
+
+    // STAT
+    let stat = |sb: &mut String, label: &str, data: Option<&[u8]>, summary: bool| {
+        let mut sm = StatisticsManager::default();
+        let _ = sm.load(data);
+        let mut parts = String::new();
+        let sorted = sm.sorted();
+        for st in &sorted {
+            let _ = write!(
+                parts,
+                "\t{},{},{},{},{}",
+                esc(&st.name),
+                esc(&st.name),
+                st.statistic_type.name(),
+                st.statistic_category.name(),
+                save_dump::fh(st.value)
+            );
+        }
+        let mut ach: Vec<_> = sm.achievements.iter().collect();
+        ach.sort_by(|a, b| string_compare_to(a.name, b.name));
+        let flags: String = ach
+            .iter()
+            .map(|a| if a.unlocked { '1' } else { '0' })
+            .collect();
+        if summary {
+            let _ = writeln!(
+                sb,
+                "STATCUT {label} n={} ach={flags} {}",
+                sorted.len(),
+                hash(&parts)
+            );
+        } else {
+            let _ = writeln!(sb, "STAT {label} n={} ach={flags}{parts}", sorted.len());
+        }
+    };
+    stat(&mut sb, "missing", None, false);
+    stat(
+        &mut sb,
+        "real",
+        Some(&read(&save.join("statistics.bin"))?),
+        false,
+    );
+    let files = family(crafted, "stat_")?;
+    for (label, data) in &files {
+        stat(&mut sb, label, Some(data), false);
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no stat_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        stat(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
+    }
+
+    // META
+    fn meta_text(h: &Helicopter, alarms: &[Alarm]) -> String {
+        let mut o = format!(
+            "active={} state={} x={} y={} alarms={}",
+            u8::from(h.active),
+            h.state.map_or("null", |s| s.name()),
+            save_dump::fh(h.x),
+            save_dump::fh(h.y),
+            alarms.len()
+        );
+        for a in alarms {
+            let _ = write!(o, " {},{},{}", a.x, a.y, save_dump::fh(a.end_game_time));
+        }
+        o
+    }
+    let meta = |sb: &mut String, label: &str, data: Option<&[u8]>, summary: bool| {
+        let mut h = Helicopter::default();
+        let mut alarms = Vec::new();
+        let _ = meta_tracker::load(data, &mut h, &mut alarms);
+        let text = meta_text(&h, &alarms);
+        if summary {
+            let _ = writeln!(sb, "METACUT {label} {}", hash(&text));
+        } else {
+            let _ = writeln!(sb, "META {label} {text}");
+        }
+    };
+    meta(&mut sb, "missing", None, false);
+    let real_meta = read(&save.join("metadata.bin"))?;
+    meta(&mut sb, "real", Some(&real_meta), false);
+    {
+        // MetaTracker.load into the server's own helicopter: the dedicated server's ambient manager reads nothing
+        let mut h = Helicopter::default();
+        let mut ignored = Vec::new();
+        let _ = meta_tracker::load(Some(&real_meta), &mut h, &mut ignored);
+        let t = meta_text(&h, &[]);
+        let _ = writeln!(
+            sb,
+            "METATRACKER real {}",
+            t.rsplit_once(" alarms=").map_or(t.as_str(), |(a, _)| a)
+        );
+    }
+    let files = family(crafted, "meta_")?;
+    for (label, data) in &files {
+        meta(&mut sb, label, Some(data), false);
+    }
+    let craft = &files
+        .iter()
+        .find(|(l, _)| l == "craft")
+        .ok_or("no meta_craft.bin")?
+        .1;
+    for k in 0..=craft.len() {
+        meta(&mut sb, &format!("cut{k}"), Some(&craft[..k]), true);
     }
     Ok(sb)
 }

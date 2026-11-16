@@ -177,7 +177,7 @@ impl SGlobalObjects {
             return Err("java.lang.IllegalArgumentException: newLimit < 0: (-1 < 0)".to_string());
         }
         let data = &data[..data.len().min(SLICE_BUFFER_SIZE)];
-        let mut bb = ByteBuffer::wrap(data);
+        let mut bb = ByteBuffer::wrap_slice_buffer(data);
         if bb.get_bytes(4)? != b"GLOS" {
             return Err(
                 "java.io.IOException: doesn't appear to be a GlobalObjectSystem file".to_string(),

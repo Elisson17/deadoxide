@@ -203,6 +203,9 @@ sel sounds && server_case sounds SoundsProbe "$HERE/tests/sounds_cases.txt" "$HE
 # ones; the second argument is the folder the probe (re)writes those crafted files into (tests/gos_crafted, our own
 # data, committed) for the Rust side to read
 sel gos && server_case gos GosProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/gos_crafted"
+# Small world-level files (map_worldgen.bin, map_symbols.bin, statistics.bin, metadata.bin): the real files, the ones the
+# ORIGINAL writers make, hand-made broken ones and the writer file cut at every length (tests/savemeta_crafted)
+sel savemeta && server_case savemeta SaveMetaProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/savemeta_crafted"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

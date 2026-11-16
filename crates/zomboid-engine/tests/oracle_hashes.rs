@@ -326,6 +326,18 @@ fn global_objects_match_original() {
     check("gos", &[&save, crafted.to_str().expect("utf-8 path")]);
 }
 
+/// `map_worldgen.bin`, `map_symbols.bin`, `statistics.bin` and `metadata.bin`: the player's real files plus the files in
+/// tests/savemeta_crafted (the original writers' own output and hand-made broken ones).
+#[test]
+fn save_meta_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED savemeta: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/savemeta_crafted");
+    check("savemeta", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

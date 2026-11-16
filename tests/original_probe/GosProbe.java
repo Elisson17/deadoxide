@@ -240,6 +240,7 @@ public class GosProbe {
                 Files.copy(f.toPath(), new File(ZomboidFileSystem.instance.getFileNameInCurrentSave("gos_real_" + name + ".bin")).toPath(),
                     StandardCopyOption.REPLACE_EXISTING);
                 SGlobalObjectSystem s = SGlobalObjects.newSystem("real_" + name);
+                java.util.Arrays.fill(zombie.iso.SliceY.SliceBuffer.array(), (byte) 0);
                 s.load();
                 dump(out, "real_" + name, s);
             }
@@ -266,7 +267,8 @@ public class GosProbe {
                     Files.copy(f.toPath(), new File(ZomboidFileSystem.instance.getFileNameInCurrentSave("gos_f_" + base + ".bin")).toPath(),
                         StandardCopyOption.REPLACE_EXISTING);
                     SGlobalObjectSystem s = SGlobalObjects.newSystem("f_" + base);
-                    s.load();
+                    java.util.Arrays.fill(zombie.iso.SliceY.SliceBuffer.array(), (byte) 0);
+                s.load();
                     dump(out, "f_" + base, s);
                 } else if (n.startsWith("payload_")) {
                     for (int v : new int[]{249, 100, 25}) {

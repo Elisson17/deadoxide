@@ -9,11 +9,34 @@ const UNDERFLOW: &str = "java.nio.BufferUnderflowException";
 pub struct ByteBuffer<'a> {
     data: &'a [u8],
     position: usize,
+    capacity: usize,
 }
 
+/// zombie.iso.SliceY.SliceBuffer's capacity: `ByteBuffer.allocate(10485760)`.
+const SLICE_BUFFER_CAPACITY: usize = 10_485_760;
+
 impl<'a> ByteBuffer<'a> {
+    /// `ByteBuffer.wrap(data)`: the capacity is the limit.
     pub fn wrap(data: &'a [u8]) -> Self {
-        ByteBuffer { data, position: 0 }
+        ByteBuffer {
+            data,
+            position: 0,
+            capacity: data.len(),
+        }
+    }
+    /// The shared `SliceY.SliceBuffer` holding a file that was read into it and limited to its length: the
+    /// capacity stays 10 MiB, so a `GameWindow.ReadString` whose count runs past the limit (a truncated file) reads
+    /// the buffer's bytes beyond the data. Those are whatever earlier loads left there; this port takes them as
+    /// zeros, the state of a buffer nothing has used (the oracle probes zero the buffer before such a load).
+    pub fn wrap_slice_buffer(data: &'a [u8]) -> Self {
+        ByteBuffer {
+            data,
+            position: 0,
+            capacity: SLICE_BUFFER_CAPACITY.max(data.len()),
+        }
+    }
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
     pub fn position(&self) -> usize {
         self.position
@@ -82,21 +105,29 @@ impl<'a> ByteBuffer<'a> {
 
 /// zombie.GameWindow.ReadString (ByteBuffer) -> GameWindow.StringUTF.load: a short byte count, then that many bytes
 /// decoded as UTF-8 with malformed input replaced (U+FFFD). A count of 0 or less is the empty string. A count past
-/// the end is `in.limit(in.position() + numBytes)` failing on the buffer's capacity (these buffers wrap exactly their
-/// bytes, so the capacity is the limit), not a `BufferUnderflowException`.
+/// the limit is `in.limit(in.position() + numBytes)`: past the capacity too it is an `IllegalArgumentException`
+/// (a buffer that wraps exactly its bytes); inside the capacity (the shared slice buffer) the string takes the
+/// bytes beyond the data (zeros, see `wrap_slice_buffer`) and the position ends at the limit.
 pub fn read_string(b: &mut ByteBuffer) -> Result<String, String> {
     let n = b.get_short()?;
     if n <= 0 {
         return Ok(String::new());
     }
-    if b.remaining() < n as usize {
-        return Err(format!(
-            "java.lang.IllegalArgumentException: newLimit > capacity: ({} > {})",
-            b.position() + n as usize,
-            b.array().len()
-        ));
+    let n = n as usize;
+    if b.remaining() < n {
+        if b.position + n > b.capacity {
+            return Err(format!(
+                "java.lang.IllegalArgumentException: newLimit > capacity: ({} > {})",
+                b.position + n,
+                b.capacity
+            ));
+        }
+        let mut bytes = b.data[b.position..].to_vec();
+        bytes.resize(n, 0);
+        b.position = b.data.len();
+        return Ok(String::from_utf8_lossy(&bytes).into_owned());
     }
-    Ok(String::from_utf8_lossy(b.get_bytes(n as usize)?).into_owned())
+    Ok(String::from_utf8_lossy(b.get_bytes(n)?).into_owned())
 }
 
 /// zombie.GameWindow.ReadString(DataInputStream): an int length (0 is ""; over 65536 the original throws, and a
