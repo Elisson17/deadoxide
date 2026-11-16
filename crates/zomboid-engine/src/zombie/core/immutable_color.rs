@@ -19,14 +19,15 @@ impl ImmutableColor {
         a: 1.0,
     };
 
-    /// zombie.core.ImmutableColor.<init>(float, float, float): each channel clamped to 0..1, alpha 1.
-    pub fn new_rgb(r: f32, g: f32, b: f32) -> Self {
-        use crate::zombie::core::math::pz_math::clamp;
+    /// zombie.core.ImmutableColor(float, float, float, float): each channel `Math.min(x, 1.0F)` (no lower bound;
+    /// NaN stays NaN).
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        let min1 = |x: f32| if x.is_nan() || x <= 1.0 { x } else { 1.0 };
         ImmutableColor {
-            r: clamp(r, 0.0, 1.0),
-            g: clamp(g, 0.0, 1.0),
-            b: clamp(b, 0.0, 1.0),
-            a: 1.0,
+            r: min1(r),
+            g: min1(g),
+            b: min1(b),
+            a: min1(a),
         }
     }
 
@@ -45,6 +46,17 @@ impl ImmutableColor {
                 b: 0.0,
                 a: 1.0,
             },
+        }
+    }
+
+    /// zombie.core.ImmutableColor(float, float, float): each channel `PZMath.clamp(x, 0.0F, 1.0F)`, alpha 1.
+    pub fn new_rgb(r: f32, g: f32, b: f32) -> Self {
+        use crate::zombie::core::math::pz_math::clamp;
+        ImmutableColor {
+            r: clamp(r, 0.0, 1.0),
+            g: clamp(g, 0.0, 1.0),
+            b: clamp(b, 0.0, 1.0),
+            a: 1.0,
         }
     }
 }
