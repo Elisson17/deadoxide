@@ -1120,6 +1120,14 @@ impl<'a> LootRoller<'a> {
         self.rand.next(GENERAL[paper as usize]);
     }
 
+    /// `ZomboidRadio.getInstance().getRecordedMedia().getRandomFromCategory(cat)` in the standalone state: nothing
+    /// registered the media (`RecordedMedia.init` and the Lua `OnInitRecordedMedia` run in a game's world load), so
+    /// `categorizedMap.containsKey(cat)` is false for every category and the call returns null without a draw.
+    /// UNKNOWN: the tables a running game has (CDs, Retail-VHS and Home-VHS draw from them).
+    fn recorded_media_random(_cat: &str) -> Option<i32> {
+        None
+    }
+
     /// The `getSpawnWith()` step of `doRollItemInternal` / `rollContainerItemInternal`:
     /// `ItemSpawner.spawnItem(spawnWith, container)` and then `spawnWithItem.copyClothing(spawnItem)`. Headless,
     /// `copyClothing` calls the Lua `copyClothingItem`, which fails on the first `getVisual()` (a `ClothingItem` asset
@@ -1514,8 +1522,14 @@ impl<'a> LootRoller<'a> {
                         self.check_stash_item(&container.items[idx])?;
                     }
                     // the freezer: Food.isFreezing needs `isPowered()`, false without a parent object
-                    if script_str(script, "recordedMediaCat").is_some() {
-                        return Err(unported("recorded media"));
+                    if let Some(cat) = script_str(script, "recordedMediaCat") {
+                        if Self::recorded_media_random(cat).is_some() {
+                            return Err(unported("recorded media data"));
+                        }
+                        // no media: `container.Remove(spawnItem)`; for "Home-VHS" the "Retail-VHS" fallback finds
+                        // none either; both end the roll
+                        container.items.remove(idx);
+                        return Ok(());
                     }
                     if !dist.no_auto_age {
                         let outermost = container.type_name.clone();
@@ -1872,8 +1886,14 @@ impl<'a> LootRoller<'a> {
                 if has_tag(script, "BuildingKey") {
                     return Err(unported("BuildingKey in a bag"));
                 }
-                if script_str(script, "recordedMediaCat").is_some() {
-                    return Err(unported("recorded media"));
+                if let Some(cat) = script_str(script, "recordedMediaCat") {
+                    if Self::recorded_media_random(cat).is_some() {
+                        return Err(unported("recorded media data"));
+                    }
+                    // no media: `container.Remove(spawnItem)`; for "Home-VHS" the "Retail-VHS" fallback finds
+                    // none either; both end the roll
+                    container_at_mut(root, bag).items.remove(idx);
+                    return Ok(());
                 }
                 if class == ItemType::Container {
                     if let Some(bags) = dist.bags.as_deref() {

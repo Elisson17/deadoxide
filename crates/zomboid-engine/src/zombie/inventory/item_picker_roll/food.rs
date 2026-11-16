@@ -171,8 +171,8 @@ impl FoodState {
     /// were decided: `baseHunger` is the smaller of the item's base hunger and its current hunger change, in
     /// hundredths and negated.
     fn trash_base_hunger(&self) -> f64 {
-        let base = (self.base_hunger * 100.0f32 * -1.0f32) as f64 + 0.1;
-        let hunger = (self.hunger_change() * 100.0f32 * -1.0f32) as f64 + 0.1;
+        let base = (-(self.base_hunger * 100.0f32)) as f64 + 0.1;
+        let hunger = (-(self.hunger_change() * 100.0f32)) as f64 + 0.1;
         if hunger < base {
             hunger
         } else {
@@ -326,12 +326,7 @@ impl LootRoller<'_> {
             if v > max {
                 v = max;
             }
-            if v < 0.0 {
-                v = 0.0;
-            }
-            if v > 1.0 {
-                v = 1.0;
-            }
+            v = v.clamp(0.0, 1.0);
             it.sharpness = Some(v);
         }
         Ok(())
