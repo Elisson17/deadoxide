@@ -63,9 +63,9 @@ impl LootRoller<'_> {
     /// loaded headless).
     pub(super) fn map_pick_random(&mut self, script: &Item) {
         if script_str(script, "map").is_none_or(|m| java::trim(m).is_empty())
-            && !self.map_definitions.is_empty()
+            && !self.stash.map_definitions.is_empty()
         {
-            self.rand.next(self.map_definitions.len() as i32);
+            self.rand.next(self.stash.map_definitions.len() as i32);
         }
     }
 

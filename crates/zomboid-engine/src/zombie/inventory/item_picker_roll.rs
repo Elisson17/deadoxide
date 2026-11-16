@@ -42,6 +42,9 @@ fn unported(msg: impl std::fmt::Display) -> String {
 pub struct StashInfo {
     pub possible: usize,
     pub items: HashSet<String>,
+    /// `MapDefinitions.definitions`, which is not the stash system's but a `MapItem` reads with it: the
+    /// `LootMaps.Init` keys of the Lua environment (the client Lua defines them; none headless).
+    pub map_definitions: Vec<String>,
 }
 
 /// A room of an IsoBuilding with the `proceduralSpawnedContainer` map of its RoomDef.
@@ -311,8 +314,6 @@ pub struct LootRoller<'a> {
     pub buildings: Vec<LootBuilding>,
     /// `Core.getOptionReloadDifficulty()` (option `reloadDifficulty`, default 2).
     pub reload_difficulty: i32,
-    /// `MapDefinitions.definitions`: the `LootMaps.Init` keys of the Lua environment (none headless).
-    pub map_definitions: Vec<String>,
     /// The Moveable scripts instanced so far: `Item.InstanceItem` writes the instance's weight back into the script
     /// (`this.actualWeight = moveable.getActualWeight()`), which the next `tryAddItemToContainer` reads. The
     /// original's scripts keep that for the whole process, so a caller running several scenarios hands the set on.
@@ -335,7 +336,6 @@ impl<'a> LootRoller<'a> {
             rand,
             buildings: Vec::new(),
             reload_difficulty: 2,
-            map_definitions: Vec::new(),
             moveables_instanced: HashSet::new(),
         }
     }

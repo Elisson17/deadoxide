@@ -8436,6 +8436,7 @@ pub fn loot(root: &Path, cache_dir: &str, scenarios: &[String]) -> Result<String
             }
         }
     }
+    stash.map_definitions = map_definitions;
     // the Moveable scripts instanced so far persist over the scenarios of one run (the original's scripts do)
     let mut moveables = std::collections::HashSet::new();
     for spec in scenarios {
@@ -8446,7 +8447,6 @@ pub fn loot(root: &Path, cache_dir: &str, scenarios: &[String]) -> Result<String
             &picker,
             &sandbox,
             &stash,
-            &map_definitions,
             &mut moveables,
         )?;
     }
@@ -8462,7 +8462,6 @@ fn loot_scenario(
     picker: &zomboid_engine::zombie::inventory::item_picker_java::ItemPickerJava,
     sandbox: &zomboid_engine::zombie::sandbox_options::SandboxOptions,
     stash: &zomboid_engine::zombie::inventory::item_picker_roll::StashInfo,
-    map_definitions: &[String],
     moveables: &mut std::collections::HashSet<usize>,
 ) -> Result<(), String> {
     use zomboid_engine::zombie::inventory::item_picker_roll::{
@@ -8489,7 +8488,6 @@ fn loot_scenario(
         stash,
         RandAbstract::new(java::Random::new(seed)),
     );
-    roller.map_definitions = map_definitions.to_vec();
     roller.moveables_instanced = std::mem::take(moveables);
     let mut square: Option<LootSquare> = None;
     for t in 0..times {
