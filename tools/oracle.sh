@@ -137,6 +137,10 @@ sel climate && server_case climate ClimateProbe 1984:1993:6:8:9.0:6 12:1995:2:10
   "5:1995:1:3:6.0:2:climate=6,fog=1" "5:1995:4:3:6.0:2:climate=3,fog=3,rain=5" "5:1995:4:3:6.0:2:climate=2,fog=2,rain=1" \
   "5:1995:5:3:6.0:2:climate=5" "5:1995:10:3:6.0:5:mode=Winter is Coming" "5:1995:5:3:6.0:3:mode=The Descending Fog" \
   "5:1995:7:3:6.0:2:mode=A Storm is Coming" "5:1995:5:3:6.0:1:daynight=2" "5:1995:5:3:6.0:1:daynight=3"
+# the original erosion system (ErosionMain with ErosionWorld, the eight categories, ErosionObj*, ErosionIceQueen, ErosionSeason)
+# run by the booted server over chunks of the real map: chunk load, LoadGridsquare/ChunkLoaded, then simulated days of 144
+# EveryTenMinutes; scenarios x1,y1,x2,y2:year:month:day:days:dumps[:options] (chunk coordinates; dump days separated by "/")
+sel erosion && server_case erosion ErosionProbe 1033,1457,1038,1462:1993:6:8:0:0:speed=1
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

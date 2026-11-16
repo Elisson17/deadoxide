@@ -35,8 +35,9 @@ import zombie.network.ServerMap;
 // 0-based as GameTime holds them, dumps a list of day counts separated by "/"; 0 is straight after the load):
 //  - the erosion.ini files (the save's and the cache's copy) are deleted, the sandbox options are set (options:
 //    speed=1..5 ErosionSpeed, edays=N ErosionDays, apo=1..13 TimeSinceApo, temp=1..5 Temperature; the defaults of a new
-//    server are speed 3, edays 0, apo 1, temp 3), GameTime is set to the date, and a new ErosionMain is made (it reads
-//    the config, builds the noise, season, ice queen and the four regions with their categories);
+//    server are speed 3, edays 0, apo 1, temp 3; keep=1 leaves the erosion.ini the previous scenario wrote in place, so
+//    that the new ErosionMain reads it), GameTime is set to the date, and a new ErosionMain is made (it reads the
+//    config, builds the noise, season, ice queen and the four regions with their categories);
 //  - the chunks are loaded by CellLoader.LoadCellBinaryChunk with the global Rand on java.util.Random(12345), then
 //    through IsoChunk.loadInWorldStreamerThread, and put into a ServerMap cell the way the server's loader leaves
 //    them (so IsoWorld.currentCell.getGridSquare finds them); loaded = true as ServerCell.RecalcAll2 sets it;
@@ -108,6 +109,7 @@ public class ErosionProbe {
         List<Integer> dumps = new ArrayList<>();
         for (String d : p[5].split("/")) dumps.add(Integer.parseInt(d));
         int speed = 3, edays = 0, apo = 1, temp = 3;
+        boolean keep = false;
         if (p.length > 6) {
             for (String kv : p[6].split(",")) {
                 String[] e = kv.split("=", 2);
@@ -116,13 +118,14 @@ public class ErosionProbe {
                     case "edays" -> edays = Integer.parseInt(e[1]);
                     case "apo" -> apo = Integer.parseInt(e[1]);
                     case "temp" -> temp = Integer.parseInt(e[1]);
+                    case "keep" -> keep = Integer.parseInt(e[1]) != 0;
                     default -> throw new IllegalArgumentException(kv);
                 }
             }
         }
         out.println("SCENARIO " + spec);
 
-        deleteIni();
+        if (!keep) deleteIni();
         SandboxOptions so = SandboxOptions.instance;
         so.erosionSpeed.setValue(speed);
         so.erosionDays.setValue(edays);
@@ -134,10 +137,11 @@ public class ErosionProbe {
         gt.setDay(day);
         gt.setTimeOfDay(12.0F);
         gt.setNightsSurvived(0);
+        int spritesBefore = zombie.iso.sprite.IsoSpriteManager.instance.namedMap.size();
         ErosionMain em = new ErosionMain(zombie.iso.sprite.IsoSpriteManager.instance, false);
         out.println("SETUP server=" + b(GameServer.server) + " speed=" + so.getErosionSpeed() + " edays=" + so.erosionDays.getValue()
             + " apo=" + so.timeSinceApo.getValue() + " temp=" + so.getTemperatureModifier() + " loadedCells=" + ServerMap.instance.loadedCells.size()
-            + " " + describe(em));
+            + " " + describe(em) + " newSprites=" + (zombie.iso.sprite.IsoSpriteManager.instance.namedMap.size() - spritesBefore));
 
         // chunks as the server's loader leaves them
         IsoCell cell = IsoWorld.instance.currentCell;
@@ -196,7 +200,7 @@ public class ErosionProbe {
         }
         out.println("RAND after load=" + g(RandStandard.INSTANCE, "id"));
         int dumped = 0;
-        if (dumps.contains(0)) { dump(out, em, chunks, 0); dumped++; }
+        if (dumps.contains(0)) { dump(out, em, chunks, 0, spritesBefore); dumped++; }
         for (int d = 1; d <= days; d++) {
             gt.setDay(gt.getDay() + 1);
             if (gt.getDay() >= gt.daysInMonth(gt.getYear(), gt.getMonth())) {
@@ -208,7 +212,7 @@ public class ErosionProbe {
                 }
             }
             for (int m = 0; m < 144; m++) ErosionMain.EveryTenMinutes();
-            if (dumps.contains(d)) { dump(out, em, chunks, d); dumped++; }
+            if (dumps.contains(d)) { dump(out, em, chunks, d, spritesBefore); dumped++; }
         }
         out.println("RAND end=" + g(RandStandard.INSTANCE, "id") + " dumps=" + dumped);
         File ini = new File(ZomboidFileSystem.instance.getFileNameInCurrentSave("erosion.ini"));
@@ -230,8 +234,8 @@ public class ErosionProbe {
         return l;
     }
 
-    static void dump(PrintStream out, ErosionMain em, List<IsoChunk> chunks, int day) throws Exception {
-        out.println("DUMP " + day + " " + describe(em));
+    static void dump(PrintStream out, ErosionMain em, List<IsoChunk> chunks, int day, int spritesBefore) throws Exception {
+        out.println("DUMP " + day + " " + describe(em) + " newSprites=" + (zombie.iso.sprite.IsoSpriteManager.instance.namedMap.size() - spritesBefore));
         List<IsoChunk> cs = new ArrayList<>(chunks);
         cs.sort((p, q) -> p.wx != q.wx ? Integer.compare(p.wx, q.wx) : Integer.compare(p.wy, q.wy));
         ByteBuffer bb = ByteBuffer.allocate(1 << 16);

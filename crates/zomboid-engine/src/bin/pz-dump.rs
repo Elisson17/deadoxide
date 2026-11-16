@@ -68,6 +68,7 @@ fn main() {
         Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
         Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
+        Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -6579,6 +6580,297 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
         let _ = writeln!(sb, "END {spec} rand={}", rand.id());
     }
     Ok(sb)
+}
+
+/// The original ErosionMain (with ErosionWorld, the eight categories, ErosionObj*, ErosionIceQueen and ErosionSeason)
+/// run over chunks of the real map the way a dedicated server runs it: chunk load, `LoadGridsquare` and `ChunkLoaded`,
+/// then simulated days of 144 ten-minute `EveryTenMinutes`; in ErosionProbe.java's format. The probe's draw counter of
+/// the global Rand is 0 on the Rust side by construction: the erosion code takes no Rand.
+pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    use zomboid_engine::java::float_to_string as f;
+    use zomboid_engine::zombie::erosion::erosion_data::{self, Square};
+    use zomboid_engine::zombie::erosion::erosion_main::{ErosionMain, ErosionOptions};
+    use zomboid_engine::zombie::game_time::GameTime;
+    use zomboid_engine::zombie::iso::server_map::ServerMap;
+
+    let mut rand = RandAbstract::new(java::Random::new(12345));
+    let alarm = AlarmSettings {
+        last_stand: false,
+        power_grid_exists: true,
+        alarm: 1,
+        alarm_decay: 1,
+    };
+    let mut world = IsoWorld::init(root, "Muldraugh, KY", &|_| false, &alarm, None, &mut rand)?;
+    let rands = erosion_data::load_rands(root)?;
+    let mut sb = String::new();
+    // the erosion.ini of the save: what the last ErosionMain.mainTimer wrote
+    let mut saved_ini: Option<String> = None;
+    for spec in scenarios {
+        let p: Vec<&str> = spec.split(':').collect();
+        if p.len() < 6 {
+            return Err(format!("bad scenario {spec}"));
+        }
+        let int = |s: &str| s.parse::<i32>().map_err(|e| format!("{spec}: {e}"));
+        let rc: Vec<i32> = p[0].split(',').map(int).collect::<Result<_, _>>()?;
+        if rc.len() != 4 {
+            return Err(format!("bad chunk range in {spec}"));
+        }
+        let (year, month, day, days) = (int(p[1])?, int(p[2])?, int(p[3])?, int(p[4])?);
+        let dumps: Vec<i32> = p[5].split('/').map(int).collect::<Result<_, _>>()?;
+        let mut opts = ErosionOptions::default();
+        let mut keep = false;
+        if p.len() > 6 {
+            for kv in p[6].split(',') {
+                let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+                match k {
+                    "speed" => opts.erosion_speed = int(v)?,
+                    "edays" => opts.erosion_days = int(v)?,
+                    "apo" => opts.time_since_apo = int(v)?,
+                    "temp" => opts.temperature_modifier = int(v)?,
+                    "keep" => keep = int(v)? != 0,
+                    _ => return Err(format!("bad option {kv}")),
+                }
+            }
+        }
+        let _ = writeln!(sb, "SCENARIO {spec}");
+        if !keep {
+            saved_ini = None;
+        }
+        let mut gt = GameTime {
+            year,
+            month,
+            day,
+            time_of_day: 12.0,
+            nights_survived: 0,
+            ..GameTime::default()
+        };
+        let sprites_before = world.sprites.named_map.len();
+        let mut em = ErosionMain::new(
+            opts,
+            saved_ini.as_deref(),
+            &gt,
+            &mut world.sprites,
+            &world.alias,
+            rands.clone(),
+        );
+        let describe = |em: &ErosionMain| {
+            format!(
+                "ticks={} eTicks={} epoch={} tickUnit={} date={}-{}-{} season={} seasonDay={} seasonDays={} progression={} snow={}",
+                em.ticks,
+                em.e_ticks,
+                em.epoch,
+                em.tick_unit,
+                em.year,
+                em.month,
+                em.day,
+                em.season.get_season(),
+                f(em.season.get_season_day()),
+                f(em.season.get_season_days()),
+                f(em.season.get_season_progression()),
+                u8::from(em.is_snow)
+            )
+        };
+        let mut map = ServerMap::new();
+        let _ = writeln!(
+            sb,
+            "SETUP server=1 speed={} edays={} apo={} temp={} loadedCells={} {} newSprites={}",
+            opts.erosion_speed,
+            opts.erosion_days,
+            opts.time_since_apo,
+            opts.temperature_modifier,
+            map.loaded_cells.len(),
+            describe(&em),
+            world.sprites.named_map.len() - sprites_before
+        );
+
+        let mut keys = Vec::new();
+        {
+            let IsoWorld {
+                sprites,
+                alias,
+                tile_definitions,
+                meta_grid,
+                ..
+            } = &mut world;
+            let mut ctx = LoadContext {
+                sprites,
+                alias,
+                glass_removed_window_sprite_map: &tile_definitions.glass_removed_window_sprite_map,
+                smashed_window_sprite_map: &tile_definitions.smashed_window_sprite_map,
+                meta_grid,
+                rand: &mut rand,
+                locked_houses: 6,
+                missing_tiles: Vec::new(),
+                lotpack_cache: None,
+            };
+            for wx in rc[0]..=rc[2] {
+                for wy in rc[1]..=rc[3] {
+                    *ctx.rand = RandAbstract::new(java::Random::new(12345));
+                    let mut ch = IsoChunk::new(wx, wy);
+                    cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut Vec::new());
+                    ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid);
+                    map.add_chunk(ch);
+                    keys.push((wx, wy));
+                }
+            }
+        }
+        map.set_all_cells_loaded();
+        for ch in map.chunks.values_mut() {
+            ch.set_loaded();
+        }
+
+        let _ = writeln!(sb, "RAND before=0");
+        let mut cells: Vec<(i32, i32)> = map.loaded_cells.iter().map(|c| (c.wx, c.wy)).collect();
+        cells.sort();
+        for (cwx, cwy) in cells {
+            for x in 0..8 {
+                for y in 0..8 {
+                    let key = (cwx * 8 + x, cwy * 8 + y);
+                    if !map.chunks.contains_key(&key) {
+                        continue;
+                    }
+                    let mut zz = map.chunks[&key].get_min_level();
+                    while zz <= map.chunks[&key].get_max_level() {
+                        for sx in 0..8 {
+                            for sy in 0..8 {
+                                let pos = map.chunks[&key]
+                                    .get_grid_square(sx, sy, zz)
+                                    .filter(|s| !s.objects.is_empty())
+                                    .map(|s| (s.x, s.y, s.z));
+                                if let Some(pos) = pos {
+                                    em.load_gridsquare(&gt, &mut map, &mut world.sprites, &world.alias, pos)?;
+                                }
+                            }
+                        }
+                        zz += 1;
+                    }
+                    em.load_chunk(&mut map, key.0, key.1)?;
+                }
+            }
+        }
+        let _ = writeln!(sb, "RAND after load=0");
+
+        let mut dumped = 0;
+        let do_dump = |sb: &mut String,
+                           em: &ErosionMain,
+                           map: &ServerMap,
+                           world: &IsoWorld,
+                           d: i32| {
+            let _ = writeln!(
+                sb,
+                "DUMP {d} {} newSprites={}",
+                describe(em),
+                world.sprites.named_map.len() - sprites_before
+            );
+            let mut all: Vec<(i32, i32, i32)> = Vec::new();
+            for ((wx, wy), ch) in &map.chunks {
+                let mut bb = Vec::new();
+                ch.erosion.save(&mut bb);
+                let _ = writeln!(
+                    sb,
+                    "C {wx} {wy} {} moisture={} minerals={}",
+                    hex(&bb),
+                    f(ch.erosion.moisture),
+                    f(ch.erosion.minerals)
+                );
+                for z in ch.get_min_level()..=ch.get_max_level() {
+                    for y in 0..8 {
+                        for x in 0..8 {
+                            if let Some(sq) = ch.get_grid_square(x, y, z) {
+                                if !sq.objects.is_empty() {
+                                    all.push((sq.x, sq.y, sq.z));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            all.sort();
+            for (x, y, z) in all {
+                let Some(sq) = map.get_grid_square(x, y, z) else {
+                    continue;
+                };
+                let default_ed = Square::default();
+                let ed = sq.erosion.as_deref().unwrap_or(&default_ed);
+                let mut bb = Vec::new();
+                ed.save(&mut bb);
+                let flags: Vec<&str> = sq
+                    .properties
+                    .get_flags_list()
+                    .iter()
+                    .map(|fl| fl.name())
+                    .collect();
+                let _ = write!(
+                    sb,
+                    "S {x} {y} {z} {} kudzu={:x} {} {} {:x}",
+                    hex(&bb),
+                    ed.noise_kudzu.to_bits(),
+                    u8::from(sq.have_roof),
+                    flags.join(","),
+                    sq.has_types
+                );
+                for o in &sq.objects {
+                    let sprite_name = |r: zomboid_engine::zombie::iso::sprite::iso_sprite_manager::SpriteRef| {
+                        world
+                            .sprites
+                            .sprite(r)
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| "null".to_string())
+                    };
+                    let _ = write!(
+                        sb,
+                        " {}:{}:{}",
+                        o.kind.class_name(),
+                        o.name.as_deref().unwrap_or("null"),
+                        o.sprite.map_or_else(|| "null".to_string(), sprite_name)
+                    );
+                    if let Some(att) = &o.attached_anim_sprite {
+                        for a in att {
+                            let _ = write!(sb, "+{}", sprite_name(*a));
+                        }
+                    }
+                    if let ObjectKind::IsoTree(t) = &o.kind {
+                        let _ = write!(sb, "{{s{}}}", t.size);
+                    }
+                }
+                sb.push('\n');
+            }
+        };
+        if dumps.contains(&0) {
+            do_dump(&mut sb, &em, &map, &world, 0);
+            dumped += 1;
+        }
+        for d in 1..=days {
+            gt.advance_one_day();
+            for _ in 0..144 {
+                em.main_timer(&gt, &mut map, &mut world.sprites, &world.alias)?;
+            }
+            if dumps.contains(&d) {
+                do_dump(&mut sb, &em, &map, &world, d);
+                dumped += 1;
+            }
+        }
+        let _ = writeln!(sb, "RAND end=0 dumps={dumped}");
+        let ini = em.ini_file.clone().or(if keep { saved_ini.clone() } else { None });
+        let _ = writeln!(sb, "INI exists={}", u8::from(ini.is_some()));
+        if let Some(text) = &ini {
+            for line in text.lines() {
+                let _ = writeln!(sb, "INI {line}");
+            }
+        }
+        saved_ini = ini;
+        let _ = writeln!(sb, "END {spec}");
+    }
+    Ok(sb)
+}
+
+fn hex(b: &[u8]) -> String {
+    let mut s = String::with_capacity(b.len() * 2);
+    for x in b {
+        let _ = write!(s, "{x:02x}");
+    }
+    s
 }
 
 /// The save's `map_t.bin` through `GameTime.load` as a single-player game reads it, into a new game time and climate;
