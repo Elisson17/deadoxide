@@ -15,6 +15,26 @@ Status and every measured/UNKNOWN fact: [docs/COMPATIBILITY.md](docs/COMPATIBILI
 - Placeholder behaviour (zombie speed/vision/wander) is labelled PLACEHOLDER in the code until measured.
 - Open each ported fn doc with the Java class/method it follows (`/// zombie.iso.IsoGridSquare.getRoom: ...`).
 
+## Parallel work: one worktree per slice
+
+Several agents (or you, in several terminals) can port different slices at once. Each gets its own git worktree, always a
+**sibling of the repo** (`../zomboid-rs-<name>`): `tools/oracle.sh` and `oracle_hashes.rs` find the game folder as the
+parent of the repo, and a worktree elsewhere cannot see `media/` or `projectzomboid.jar`.
+
+```sh
+sh tools/worktree.sh add <name> <branch> [base]   # symlinks decompiled/ and profile/, copies the luaexpose measurement
+sh tools/worktree.sh rm <name>                    # after the branch is merged; then git branch -d <branch>
+sh tools/worktree.sh ls
+```
+
+- A slice agent works only in its own worktree, builds only `-p zomboid-engine`, runs only its own oracle cases, commits to
+  its branch and does **not** push, regenerate `docs/CLASS_LEDGER.md` / `site/progress.json` or run the full gate.
+- One integrator merges the branches into `main` in the main checkout: resolve the doc/`oracle.sh`/`pz-dump.rs` conflicts
+  (both sides add a case: keep both), re-run the oracle cases of every module the branches share, then
+  `sh tools/engine_check.sh`, regenerate the ledger and progress, commit and push.
+- Never use bare `git stash` (the stash is shared by all worktrees); never edit `decompiled/` or `profile/` through the symlinks.
+- Disk: each worktree builds its own `target/` (0.2-0.5 GB for `-p zomboid-engine` release); the main one is ~11 GB.
+
 ## Skills (in `.claude/skills/`, adapted from Horizon)
 
 | Skill | Use |
