@@ -46,6 +46,8 @@ pub struct IsoSprite {
     pub fascia_edge: Option<FasciaEdge>,
     /// Name passed to `LoadSingleTexture`, the texture this sprite draws when it has no animation.
     pub texture_name: Option<String>,
+    /// zombie.iso.sprite.IsoSprite.snowSprite: the sprite drawn instead of this one while it snows.
+    pub snow_sprite: Option<SpriteRef>,
 }
 
 impl Default for IsoSprite {
@@ -79,6 +81,7 @@ impl Default for IsoSprite {
             treat_as_wall_order: false,
             fascia_edge: None,
             texture_name: None,
+            snow_sprite: None,
         }
     }
 }
@@ -103,6 +106,18 @@ impl IsoSprite {
     /// zombie.iso.sprite.IsoSprite.getName
     pub fn get_name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+    /// zombie.iso.sprite.IsoSprite.setName
+    pub fn set_name(&mut self, name: Option<String>) {
+        self.name = name;
+    }
+    /// zombie.iso.sprite.IsoSprite.setSnowSprite
+    pub fn set_snow_sprite(&mut self, sprite: Option<SpriteRef>) {
+        self.snow_sprite = sprite;
+    }
+    /// zombie.iso.sprite.IsoSprite.getSnowSprite
+    pub fn get_snow_sprite(&self) -> Option<SpriteRef> {
+        self.snow_sprite
     }
 }
 

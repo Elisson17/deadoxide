@@ -10,6 +10,8 @@ roxmltree = "0.21"
 # zombie.vehicles.VehiclesDB2.SQLStore and the other SQLite stores of a save; not in the browser build.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { version = "0.32", features = ["bundled"] }
+# zombie.erosion.ErosionData.Square.rands: the 8100-entry table is read from the player's own jar at run time.
+zip = { version = "2.6.1", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 sha2 = "0.10"

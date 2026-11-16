@@ -7483,6 +7483,7 @@ dependencies = [
  "roxmltree 0.21.2",
  "rusqlite",
  "sha2",
+ "zip",
 ]
 
 [[package]]

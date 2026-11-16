@@ -135,6 +135,8 @@ pub struct IsoObject {
     pub reroute_collide: bool,
     /// The object is also in `IsoGridSquare.specialObjects`.
     pub special: bool,
+    /// zombie.iso.IsoObject.name (`getName`/`setName`): what the erosion code marks its objects with.
+    pub name: Option<String>,
     /// What a save loaded for this object beyond the fields above (`None` for objects the map loader made).
     pub save: Option<Box<ObjectSave>>,
 }
@@ -153,6 +155,7 @@ impl IsoObject {
             outline_on_mouseover: false,
             reroute_collide: false,
             special: false,
+            name: None,
             save: None,
         }
     }

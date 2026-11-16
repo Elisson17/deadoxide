@@ -2,6 +2,10 @@ use std::collections::BTreeMap;
 
 use super::chunk_save::ChunkSave;
 use super::iso_grid_square::IsoGridSquare;
+use super::iso_meta_grid::IsoMetaGrid;
+use super::sprite::iso_sprite_manager::IsoSpriteManager;
+use super::sprite_details::iso_flag_type::IsoFlagType;
+use crate::zombie::erosion::erosion_data;
 
 /// zombie.iso.IsoChunk: an 8x8 column of squares over all levels. So far the square storage the map loader fills.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -14,6 +18,10 @@ pub struct IsoChunk {
     squares: BTreeMap<i32, Vec<Option<Box<IsoGridSquare>>>>,
     /// What a chunk save carried beyond the squares (`None` for chunks made from the map).
     pub save: Option<Box<ChunkSave>>,
+    /// zombie.iso.IsoChunk.erosion (`getErosionData`): the erosion state of the chunk.
+    pub erosion: erosion_data::Chunk,
+    /// zombie.iso.IsoChunk.loaded: set by `ServerMap.ServerCell.RecalcAll2` once the cell's squares are in place.
+    pub loaded: bool,
 }
 
 impl IsoChunk {
@@ -21,6 +29,7 @@ impl IsoChunk {
         IsoChunk {
             wx,
             wy,
+            erosion: erosion_data::Chunk::new(),
             ..Default::default()
         }
     }
@@ -67,6 +76,114 @@ impl IsoChunk {
         }
         if let Some(l) = self.squares.get_mut(&z) {
             l[(x + y * 8) as usize] = square.map(Box::new);
+        }
+    }
+}
+
+impl IsoChunk {
+    /// zombie.iso.IsoChunk.assignRoom: a square without a room takes the id of the meta grid's room at its position.
+    fn assign_room(sq: &mut IsoGridSquare, meta_grid: &IsoMetaGrid) {
+        if sq.room.is_none() {
+            sq.room_id = meta_grid
+                .get_room_at(sq.x, sq.y, sq.z)
+                .map_or(-1, |r| meta_grid.room(r).id);
+        }
+    }
+
+    /// zombie.iso.IsoChunk.ensureNotNull
+    fn ensure_not_null(
+        &mut self,
+        lx: i32,
+        ly: i32,
+        z: i32,
+        dx: i32,
+        dy: i32,
+        meta_grid: &IsoMetaGrid,
+    ) {
+        if lx + dx >= 0 && lx + dx < 8 && ly + dy >= 0 && ly + dy < 8 {
+            let (x, y) = (lx + dx, ly + dy);
+            if self.get_grid_square(x, y, z).is_none() {
+                let mut sq = IsoGridSquare::new(self.wx * 8 + x, self.wy * 8 + y, z);
+                Self::assign_room(&mut sq, meta_grid);
+                self.set_square(x, y, z, Some(sq));
+            }
+        }
+    }
+
+    /// zombie.iso.IsoChunk.ensureNotNull3x3: the square and its eight neighbours inside the chunk exist (DIRECTIONS
+    /// is the eight directions in `IsoDirections` order).
+    fn ensure_not_null_3x3(&mut self, lx: i32, ly: i32, z: i32, meta_grid: &IsoMetaGrid) {
+        self.ensure_not_null(lx, ly, z, 0, 0, meta_grid);
+        for d in super::iso_directions::VALUES {
+            self.ensure_not_null(lx, ly, z, d.dx(), d.dy(), meta_grid);
+        }
+    }
+
+    /// zombie.iso.IsoChunk.loadInWorldStreamerThread: the squares around objects exist, every square's properties
+    /// are built, the squares under a rain blocking tile get `haveRoof` (and lose `exterior`). The matrices that the
+    /// original's closing `RecalcAllWithNeighbours` pass computes are not modelled; the pass's property recalculation
+    /// is `recalc_properties` of every square.
+    pub fn load_in_world_streamer_thread(
+        &mut self,
+        sm: &IsoSpriteManager,
+        meta_grid: &IsoMetaGrid,
+    ) {
+        for z in self.min_level..=self.max_level {
+            for y in 0..8 {
+                for x in 0..8 {
+                    if self.get_grid_square(x, y, z).is_none() && z == 0 {
+                        let sq = IsoGridSquare::new(self.wx * 8 + x, self.wy * 8 + y, z);
+                        self.set_square(x, y, z, Some(sq));
+                    }
+                    let Some(sq) = self.get_grid_square(x, y, z) else {
+                        continue;
+                    };
+                    if !sq.objects.is_empty() {
+                        self.ensure_not_null_3x3(x, y, z, meta_grid);
+                        let mut zz = z - 1;
+                        while zz > self.min_level {
+                            self.ensure_not_null_3x3(x, y, zz, meta_grid);
+                            zz -= 1;
+                        }
+                    }
+                    if let Some(sq) = self.get_grid_square_mut(x, y, z) {
+                        sq.recalc_properties(sm);
+                    }
+                }
+            }
+        }
+        for y in 0..8 {
+            for x in 0..8 {
+                let mut z = self.max_level;
+                while z > 0 {
+                    if self
+                        .get_grid_square(x, y, z)
+                        .is_some_and(|s| s.has_rain_blocking_tile())
+                    {
+                        z -= 1;
+                        while z >= self.min_level {
+                            if let Some(sq) = self.get_grid_square_mut(x, y, z) {
+                                if !sq.have_roof {
+                                    sq.have_roof = true;
+                                    sq.properties.unset(IsoFlagType::exterior);
+                                }
+                            }
+                            z -= 1;
+                        }
+                        break;
+                    }
+                    z -= 1;
+                }
+            }
+        }
+        for z in self.min_level..=self.max_level {
+            for y in 0..8 {
+                for x in 0..8 {
+                    if let Some(sq) = self.get_grid_square_mut(x, y, z) {
+                        sq.recalc_properties(sm);
+                    }
+                }
+            }
         }
     }
 }

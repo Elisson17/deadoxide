@@ -34,6 +34,8 @@ pub struct IsoGridSquare {
     pub vision_matrix: i32,
     /// What a chunk save carried for this square beyond the fields above (`None` for squares made from the map).
     pub save: Option<Box<SquareSave>>,
+    /// zombie.iso.IsoGridSquare.erosion (`getErosionData` makes it on first use): the erosion state of the square.
+    pub erosion: Option<Box<crate::zombie::erosion::erosion_data::Square>>,
 }
 
 impl IsoGridSquare {
@@ -55,6 +57,7 @@ impl IsoGridSquare {
             vision_matrix: 0,
             objects: Vec::new(),
             save: None,
+            erosion: None,
         }
     }
 
@@ -1568,5 +1571,113 @@ impl IsoGridSquare {
         } else {
             z + self.get_sloped_surface_height_at(alias, dx, dy)
         }
+    }
+}
+
+/// A handle to an object on a square of a loaded map: the square's coordinates and the index in its object list
+/// (the original passes the `IsoObject` reference around).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObjectRef {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub index: usize,
+}
+
+/// zombie.iso.IsoGridSquare: the edge and rain helpers the erosion code reads.
+impl IsoGridSquare {
+    /// zombie.iso.IsoGridSquare.hasRainBlockingTile
+    pub fn has_rain_blocking_tile(&self) -> bool {
+        self.has(F::solidfloor) || self.has(F::BlockRain)
+    }
+
+    /// zombie.iso.IsoGridSquare.isWindow (GridSquareEdgeFacingDirection): `north` is NORTH_SOUTH.
+    fn is_window_facing(&self, north: bool) -> bool {
+        if north {
+            self.has(F::windowN)
+        } else {
+            self.has(F::windowW)
+        }
+    }
+
+    /// zombie.iso.IsoGridSquare.isWindowTo
+    pub fn is_window_to<G: GetSquare>(&self, other: &IsoGridSquare, g: &G) -> bool {
+        self.is_edge_element_to(other, g, &|s, ns| s.is_window_facing(ns))
+    }
+
+    /// zombie.iso.IsoGridSquare.isWindowBlockedTo
+    pub fn is_window_blocked_to<G: GetSquare>(&self, other: &IsoGridSquare, g: &G) -> bool {
+        self.is_edge_element_to(other, g, &|s, ns| s.has_blocked_window(ns))
+    }
+
+    /// zombie.iso.IsoGridSquare.getWindow (GridSquareEdge, GetSquare): the window on that edge of this square.
+    fn get_window_edge<G: GetSquare>(&self, edge: u8, g: &G) -> Option<ObjectRef> {
+        let (sq, north) = match edge {
+            0 => (Some(self), true),
+            1 => (Some(self), false),
+            2 => (g.get_grid_square(self.x, self.y + 1, self.z), true),
+            _ => (g.get_grid_square(self.x + 1, self.y, self.z), false),
+        };
+        let sq = sq?;
+        sq.get_window(north).map(|index| ObjectRef {
+            x: sq.x,
+            y: sq.y,
+            z: sq.z,
+            index,
+        })
+    }
+
+    /// zombie.iso.IsoGridSquare.getWindowTo (via getEdgeElementTo): the window between this square and `next`.
+    pub fn get_window_to<G: GetSquare>(&self, next: &IsoGridSquare, g: &G) -> Option<ObjectRef> {
+        const NORTH: u8 = 0;
+        const WEST: u8 = 1;
+        const SOUTH: u8 = 2;
+        const EAST: u8 = 3;
+        if std::ptr::eq(self, next) {
+            return None;
+        }
+        if self.x > next.x {
+            if let Some(w) = self
+                .get_window_edge(WEST, g)
+                .or_else(|| next.get_window_edge(EAST, g))
+            {
+                return Some(w);
+            }
+        }
+        if self.x < next.x {
+            if let Some(w) = next
+                .get_window_edge(WEST, g)
+                .or_else(|| self.get_window_edge(EAST, g))
+            {
+                return Some(w);
+            }
+        }
+        if self.y < next.y {
+            if let Some(w) = next
+                .get_window_edge(NORTH, g)
+                .or_else(|| self.get_window_edge(SOUTH, g))
+            {
+                return Some(w);
+            }
+        }
+        if self.y > next.y {
+            if let Some(w) = self
+                .get_window_edge(NORTH, g)
+                .or_else(|| next.get_window_edge(SOUTH, g))
+            {
+                return Some(w);
+            }
+        }
+        None
+    }
+
+    /// zombie.iso.IsoGridSquare.getTileInDirection: the neighbouring square (the cell's lookup), `None` for a
+    /// direction that is not one of the eight.
+    pub fn get_tile_in_direction<'a, G: GetSquare>(
+        &self,
+        d: IsoDirections,
+        g: &'a G,
+    ) -> Option<&'a IsoGridSquare> {
+        g.get_grid_square(self.x + d.dx(), self.y + d.dy(), self.z)
     }
 }
