@@ -39,7 +39,7 @@ impl LootRoller<'_> {
         let mut count = 0usize;
         for name in java::split_char(v, ';') {
             // a name `BloodClothingType.fromString` does not know is a null entry: getCoveredPartCount throws
-            let Some(n) = covered_part_count(java::trim(&name)) else {
+            let Some(n) = covered_part_count(java::trim(name)) else {
                 return Err(NPE.to_string());
             };
             count += n;
