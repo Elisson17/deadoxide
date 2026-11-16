@@ -189,6 +189,63 @@ pub fn hash_map_order(keys_in_insertion_order: &[&str]) -> Vec<usize> {
     order
 }
 
+/// java.util.HashMap<String, V> filled by `put` only (no removals): `get`, `len`, and iteration in Java's order (see
+/// `hash_map_order`; a `put` over an existing key keeps its position).
+#[derive(Clone, Debug)]
+pub struct JavaHashMap<V> {
+    keys: Vec<String>,
+    values: Vec<V>,
+}
+
+impl<V> Default for JavaHashMap<V> {
+    fn default() -> Self {
+        JavaHashMap {
+            keys: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+}
+
+impl<V> JavaHashMap<V> {
+    /// java.util.HashMap.put: the previous value of the key, replaced in place.
+    pub fn put(&mut self, key: String, value: V) -> Option<V> {
+        match self.keys.iter().position(|k| *k == key) {
+            Some(i) => Some(std::mem::replace(&mut self.values[i], value)),
+            None => {
+                self.keys.push(key);
+                self.values.push(value);
+                None
+            }
+        }
+    }
+
+    /// java.util.HashMap.get
+    pub fn get(&self, key: &str) -> Option<&V> {
+        self.keys
+            .iter()
+            .position(|k| k == key)
+            .map(|i| &self.values[i])
+    }
+
+    /// java.util.HashMap.size
+    pub fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    /// java.util.HashMap.isEmpty
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    /// java.util.HashMap.values(), in the map's iteration order.
+    pub fn values(&self) -> impl Iterator<Item = &V> {
+        let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
+        hash_map_order(&keys)
+            .into_iter()
+            .map(move |i| &self.values[i])
+    }
+}
+
 /// java.util.zip.CRC32 over `data` (the IEEE polynomial, reflected, as `getValue()` returns it).
 pub fn crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;

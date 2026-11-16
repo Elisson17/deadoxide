@@ -2,11 +2,17 @@
 //! javax.xml.bind conversions through which the `@XmlElement` classes get their values.
 use std::path::Path;
 
-/// A DOM child that JAXB looks at: an element or text (comments and processing instructions are left out).
+use crate::java;
+use crate::zombie::util::string_utils;
+use crate::zombie::zomboid_file_system::ZomboidFileSystem;
+
+/// A DOM child: an element, text (CDATA included), or a comment or processing instruction (`Other`: JAXB and
+/// `getTextContent` skip it, but it separates text nodes and makes an element not text-only for `PZXmlUtil.resolve`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum XmlNode {
     Element(XmlElement),
     Text(String),
+    Other,
 }
 
 /// org.w3c.dom.Element as far as the ported readers use it.
@@ -30,7 +36,7 @@ impl XmlElement {
     pub fn elements(&self) -> impl Iterator<Item = &XmlElement> {
         self.children.iter().filter_map(|c| match c {
             XmlNode::Element(e) => Some(e),
-            XmlNode::Text(_) => None,
+            _ => None,
         })
     }
 
@@ -40,9 +46,27 @@ impl XmlElement {
             .iter()
             .filter_map(|c| match c {
                 XmlNode::Text(t) => Some(t.as_str()),
-                XmlNode::Element(_) => None,
+                _ => None,
             })
             .collect()
+    }
+
+    /// org.w3c.dom.Node.getTextContent of an element: the text of every descendant text node, in document order
+    /// (comments and processing instructions left out).
+    pub fn text_content(&self) -> String {
+        let mut s = String::new();
+        self.append_text_content(&mut s);
+        s
+    }
+
+    fn append_text_content(&self, s: &mut String) {
+        for c in &self.children {
+            match c {
+                XmlNode::Text(t) => s.push_str(t),
+                XmlNode::Element(e) => e.append_text_content(s),
+                XmlNode::Other => {}
+            }
+        }
     }
 }
 
@@ -66,6 +90,8 @@ fn convert(node: roxmltree::Node) -> XmlElement {
             } else {
                 e.children.push(XmlNode::Text(t.to_string()));
             }
+        } else if c.is_comment() || c.is_pi() {
+            e.children.push(XmlNode::Other);
         }
     }
     e
@@ -76,19 +102,250 @@ fn convert(node: roxmltree::Node) -> XmlElement {
 /// `prefix:` (no game file seen so far uses one). `x_include` and `x_extends` (another file merged in by
 /// `PZXmlUtil.parseXml`) are not ported and are an `Err` here rather than a silent difference.
 pub fn parse_xml_str(text: &str) -> Result<XmlElement, String> {
-    let opt = roxmltree::ParsingOptions {
-        allow_dtd: true,
-        ..roxmltree::ParsingOptions::default()
-    };
-    let doc = roxmltree::Document::parse_with_options(text, opt)
-        .map_err(|e| format!("org.xml.sax.SAXParseException: {e}"))?;
-    let root = convert(doc.root_element());
+    let root = parse_document(text)?;
     for a in ["x_include", "x_extends"] {
         if !root.attribute(a).trim().is_empty() {
             return Err(format!("PZXmlUtil.parseXml: {a} is not ported"));
         }
     }
     Ok(root)
+}
+
+/// The document element of an XML text, normalized (`DocumentBuilder.parse`, then `Element.normalize()`).
+fn parse_document(text: &str) -> Result<XmlElement, String> {
+    let opt = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..roxmltree::ParsingOptions::default()
+    };
+    let doc = roxmltree::Document::parse_with_options(text, opt)
+        .map_err(|e| format!("org.xml.sax.SAXParseException: {e}"))?;
+    Ok(convert(doc.root_element()))
+}
+
+/// zombie.util.PZXmlUtil.parseXmlInternal: the file `file_name` (relative to the game folder, the original's working
+/// directory) parsed and normalized. `Err` is the original's IOException or SAXException.
+pub fn parse_xml_internal(fs: &ZomboidFileSystem, file_name: &str) -> Result<XmlElement, String> {
+    let path = fs.base().join(file_name);
+    let bytes = std::fs::read(&path).map_err(|e| format!("java.io.IOException: {file_name}: {e}"))?;
+    let text = String::from_utf8(bytes).map_err(|e| format!("{file_name}: {e}"))?;
+    parse_document(text.strip_prefix('\u{feff}').unwrap_or(&text))
+}
+
+/// zombie.util.PZXmlUtil.parseXml(String): the file a path or guid names (`resolveFileOrGUID`), with its `x_include`
+/// merged in, then, when its root has `x_extends`, resolved over the file that names (a guid, else a path relative to
+/// this file; parsed the same way, recursively). `Err` is PZXmlParserException.
+pub fn parse_xml_resolved(fs: &ZomboidFileSystem, source: &str) -> Result<XmlElement, String> {
+    let file_name = fs.resolve_file_or_guid(source);
+    let root = parse_xml_internal(fs, &file_name).map_err(|e| {
+        format!("Exception thrown while parsing XML file \"{file_name}\": {e}")
+    })?;
+    let root = include_another_file(fs, root, &file_name)?;
+    let extends_source = root.attribute("x_extends");
+    if java::trim(extends_source).is_empty() {
+        return Ok(root);
+    }
+    let extends_source = if fs.is_valid_file_path_guid(extends_source) {
+        extends_source.to_string()
+    } else {
+        fs.resolve_relative_path(&file_name, extends_source)
+    };
+    let extended_root = parse_xml_resolved(fs, &extends_source)?;
+    Ok(resolve(&root, &extended_root))
+}
+
+/// zombie.util.PZXmlUtil.includeAnotherFile: when the root has `x_include`, the elements of the root of the file it
+/// names (same tag name required, else the root is returned as is) are inserted before the root's first child, in
+/// order; then `normalize()`.
+fn include_another_file(
+    fs: &ZomboidFileSystem,
+    root: XmlElement,
+    file_name: &str,
+) -> Result<XmlElement, String> {
+    let include_source = root.attribute("x_include");
+    if java::trim(include_source).is_empty() {
+        return Ok(root);
+    }
+    let include_source = if fs.is_valid_file_path_guid(include_source) {
+        include_source.to_string()
+    } else {
+        fs.resolve_relative_path(file_name, include_source)
+    };
+    let include_root = parse_xml_resolved(fs, &include_source)?;
+    if include_root.name != root.name {
+        return Ok(root);
+    }
+    let mut copy = root;
+    let inserted: Vec<XmlNode> = include_root
+        .children
+        .into_iter()
+        .filter(|c| matches!(c, XmlNode::Element(_)))
+        .collect();
+    copy.children.splice(0..0, inserted);
+    normalize(&mut copy);
+    Ok(copy)
+}
+
+/// org.w3c.dom.Node.normalize: adjacent text nodes merged and empty ones removed, at every depth.
+fn normalize(e: &mut XmlElement) {
+    let mut out: Vec<XmlNode> = Vec::with_capacity(e.children.len());
+    for c in std::mem::take(&mut e.children) {
+        match c {
+            XmlNode::Text(t) => {
+                if t.is_empty() {
+                    continue;
+                }
+                if let Some(XmlNode::Text(prev)) = out.last_mut() {
+                    prev.push_str(&t);
+                } else {
+                    out.push(XmlNode::Text(t));
+                }
+            }
+            XmlNode::Element(mut c) => {
+                normalize(&mut c);
+                out.push(XmlNode::Element(c));
+            }
+            XmlNode::Other => out.push(XmlNode::Other),
+        }
+    }
+    e.children = out;
+}
+
+/// zombie.util.PZXmlUtil.isTextOnly: every child is a text node that is not all whitespace (and there is one).
+fn is_text_only(root: &XmlElement) -> bool {
+    let mut result = false;
+    for c in &root.children {
+        let is_text = match c {
+            XmlNode::Text(t) => !string_utils::is_null_or_whitespace(Some(t)),
+            _ => false,
+        };
+        if !is_text {
+            result = false;
+            break;
+        }
+        result = true;
+    }
+    result
+}
+
+/// zombie.util.PZXmlUtil.resolve(Element, Element, Document): a text-only `root` replaces `parent`; else a new
+/// element named after `root` with the parent's attributes overridden or extended by the root's, and the child
+/// elements of both merged by `TagTable` (the parent's in its order, each resolved with the root's element of the
+/// same tag and `x_name` (or, unnamed, the same index among that tag's entries), then the root's unmatched ones). Text
+/// of a merged element is dropped.
+pub fn resolve(root: &XmlElement, parent: &XmlElement) -> XmlElement {
+    if is_text_only(root) {
+        return root.clone();
+    }
+    let mut attributes = parent.attributes.clone();
+    for (name, value) in &root.attributes {
+        match attributes.iter_mut().find(|(n, _)| n == name) {
+            Some(a) => a.1 = value.clone(),
+            None => attributes.push((name.clone(), value.clone())),
+        }
+    }
+    let mut parent_table = TagTable::create(parent);
+    let child_table = TagTable::create(root);
+    parent_table.resolve_with(child_table);
+    XmlElement {
+        name: root.name.clone(),
+        attributes,
+        children: parent_table
+            .resolved_elements
+            .into_iter()
+            .map(|e| XmlNode::Element(e.element))
+            .collect(),
+    }
+}
+
+/// zombie.util.PZXmlUtil.NamedTagEntry
+#[derive(Clone)]
+struct NamedTagEntry {
+    tag: String,
+    name: String,
+    element: XmlElement,
+    index: i32,
+}
+
+impl NamedTagEntry {
+    /// zombie.util.PZXmlUtil.NamedTagEntry.getUniqueKey: the `x_name`, or "node_<index>" when blank.
+    fn unique_key(&self) -> String {
+        if string_utils::is_null_or_whitespace(Some(&self.name)) {
+            format!("node_{}", self.index)
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
+/// zombie.util.PZXmlUtil.TagTable: the entries in order (`resolvedElements`), and per tag the `NamedTags` HashMap from
+/// unique key to entry (an index into `resolved_elements`), iterated in Java's HashMap order where it matters.
+struct TagTable {
+    tags: std::collections::HashMap<String, java::JavaHashMap<usize>>,
+    resolved_elements: Vec<NamedTagEntry>,
+}
+
+impl TagTable {
+    /// zombie.util.PZXmlUtil.TagTable.createTagTable: an entry for each child element, in order.
+    fn create(root: &XmlElement) -> TagTable {
+        let mut t = TagTable {
+            tags: std::collections::HashMap::new(),
+            resolved_elements: Vec::new(),
+        };
+        for e in root.elements() {
+            t.add_element(e.clone());
+        }
+        t
+    }
+
+    /// zombie.util.PZXmlUtil.TagTable.getEntry: by `x_name` when the entry has one, else the first entry of the tag
+    /// (in HashMap order) whose index is the same.
+    fn get_entry(&self, child: &NamedTagEntry) -> Option<usize> {
+        let named = self.tags.get(&child.tag)?;
+        if string_utils::is_null_or_whitespace(Some(&child.name)) {
+            named
+                .values()
+                .find(|&&i| self.resolved_elements[i].index == child.index)
+                .copied()
+        } else {
+            named.get(&child.name).copied()
+        }
+    }
+
+    /// zombie.util.PZXmlUtil.TagTable.addEntry(Element): indexed by the number of keys its tag has so far.
+    fn add_element(&mut self, element: XmlElement) {
+        let tag = element.name.clone();
+        let index = self.tags.get(&tag).map_or(0, |m| m.len() as i32);
+        let name = element.attribute("x_name").to_string();
+        self.add_entry(NamedTagEntry {
+            tag,
+            name,
+            element,
+            index,
+        });
+    }
+
+    /// zombie.util.PZXmlUtil.TagTable.addEntry(NamedTagEntry)
+    fn add_entry(&mut self, entry: NamedTagEntry) {
+        let key = entry.unique_key();
+        let tag = entry.tag.clone();
+        self.resolved_elements.push(entry);
+        let i = self.resolved_elements.len() - 1;
+        self.tags.entry(tag).or_default().put(key, i);
+    }
+
+    /// zombie.util.PZXmlUtil.TagTable.resolveWith: each child entry in order resolves over its parent entry, or is
+    /// added.
+    fn resolve_with(&mut self, child_table: TagTable) {
+        for child in child_table.resolved_elements {
+            match self.get_entry(&child) {
+                None => self.add_entry(child),
+                Some(p) => {
+                    let merged = resolve(&child.element, &self.resolved_elements[p].element);
+                    self.resolved_elements[p].element = merged;
+                }
+            }
+        }
+    }
 }
 
 /// zombie.util.PZXmlUtil.parseXml(String) for a file path. The file must be UTF-8 (the original decodes the
