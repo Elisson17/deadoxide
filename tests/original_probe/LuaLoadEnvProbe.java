@@ -120,6 +120,12 @@ public class LuaLoadEnvProbe {
         return f.get(owner);
     }
 
+    static void setField(Object owner, Class<?> c, String name, Object v) throws Exception {
+        java.lang.reflect.Field f = c.getDeclaredField(name);
+        f.setAccessible(true);
+        f.set(owner, v);
+    }
+
     static Object field(Object owner, String name) throws Exception {
         return field(owner, owner.getClass(), name);
     }

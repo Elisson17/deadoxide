@@ -134,12 +134,141 @@ public class LootProbe {
         ItemPickerJava.InitSandboxLootSettings();
     }
 
+    /** Draw sites seen while rolling (loot.trace=1): the first frames outside java.util / zombie.core.random of each draw. */
+    static final TreeMap<String, Integer> sites = new TreeMap<>();
+
+    /** A java.util.Random that counts nothing itself (RandAbstract.id does) but, with loot.trace, notes who drew. */
+    static class TracedRandom extends java.util.Random {
+        TracedRandom(long seed) { super(seed); }
+        void note() {
+            if (!Boolean.getBoolean("loot.trace")) return;
+            StringBuilder b = new StringBuilder();
+            int n = 0;
+            for (StackTraceElement e : new Throwable().getStackTrace()) {
+                String c = e.getClassName();
+                if (c.startsWith("java.") || c.startsWith("zombie.core.random.") || c.equals("LootProbe$TracedRandom")) continue;
+                b.append(n++ == 0 ? "" : " < ").append(c).append('.').append(e.getMethodName()).append(':').append(e.getLineNumber());
+                if (n == 3) break;
+            }
+            sites.merge(b.toString(), 1, Integer::sum);
+        }
+        @Override public int nextInt(int bound) { note(); return super.nextInt(bound); }
+        @Override public float nextFloat() { note(); return super.nextFloat(); }
+        @Override public int nextInt() { note(); return super.nextInt(); }
+    }
+
+    static int draws() throws Exception {
+        return (Integer) LuaLoadEnvProbe.field(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "id");
+    }
+
+    static void swapRand(long seed) throws Exception {
+        java.lang.reflect.Field rf = zombie.core.random.RandAbstract.class.getDeclaredField("rand");
+        rf.setAccessible(true);
+        rf.set(zombie.core.random.RandStandard.INSTANCE, new TracedRandom(seed));
+        java.lang.reflect.Field idf = zombie.core.random.RandAbstract.class.getDeclaredField("id");
+        idf.setAccessible(true);
+        idf.set(zombie.core.random.RandStandard.INSTANCE, 0);
+    }
+
+    /** The room distribution a scenario names: a SuburbsDistributions room, or `veh/<VehicleDistributions key>` (its
+     * normal distribution). */
+    static ItemPickerRoom roomDist(String room) {
+        if (room.startsWith("veh/")) return ItemPickerJava.VehicleDistributions.get(room.substring(4)).normal;
+        return ItemPickerJava.rooms.get(room);
+    }
+
+    /** One scenario `seed:room:container:times[:capacity[:mode[:building]]]`: `times` containers of that type, each
+     * filled by ItemPickerJava.fillContainer from one seeded generator. The container sits on a square (an IsoGridSquare
+     * made without a cell) in an IsoRoom named `room` of an IsoBuilding with the rooms `building` (`+` separated, default
+     * just `room`); `mode` is `same` (every container in one room: its RoomDef's procedural counts persist) or `fresh`
+     * (a new room each time). No player and no map exist headless. Printed per container the items in order with the
+     * draws it took, then the generator's draw counter. `veh/<key>` as room fills from that vehicle distribution's
+     * normal room with fillContainerType (no square). */
+    static void scenario(String spec) throws Exception {
+        String[] p = spec.split(":");
+        long seed = Long.parseLong(p[0]);
+        String room = p[1], type = p[2];
+        int times = Integer.parseInt(p[3]);
+        int capacity = p.length > 4 ? Integer.parseInt(p[4]) : 50;
+        boolean same = p.length > 5 && p[5].equals("same");
+        String[] bld = p.length > 6 ? p[6].split("\\+") : new String[]{room};
+        out.println("SCENARIO " + spec);
+        swapRand(seed);
+        zombie.iso.RoomDef def = null;
+        zombie.iso.areas.IsoRoom isoRoom = null;
+        zombie.iso.IsoGridSquare sq = null;
+        for (int t = 0; t < times; t++) {
+            zombie.inventory.ItemContainer c;
+            if (room.startsWith("veh/")) {
+                c = new zombie.inventory.ItemContainer(type, null, null);
+            } else {
+                if (sq == null || !same) {
+                    // IsoBuilding's constructor draws (a probe artifact: the game builds them outside any loot roll), so it
+                    // runs on a scratch generator and the seeded one is put back untouched
+                    Object keep = LuaLoadEnvProbe.field(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "rand");
+                    int keepId = draws();
+                    swapRand(0);
+                    zombie.iso.areas.IsoBuilding building = new zombie.iso.areas.IsoBuilding();
+                    isoRoom = null;
+                    for (String name : bld) {
+                        zombie.iso.areas.IsoRoom r = new zombie.iso.areas.IsoRoom();
+                        r.roomDef = name;
+                        r.def = new zombie.iso.RoomDef(building.rooms.size(), name);
+                        r.building = building;
+                        building.rooms.add(r);
+                        if (isoRoom == null && name.equals(room)) isoRoom = r;
+                    }
+                    sq = new zombie.iso.IsoGridSquare(null, null, 100 + t, 200, 0);
+                    sq.setRoom(isoRoom);
+                    LuaLoadEnvProbe.setField(sq, zombie.iso.IsoGridSquare.class, "roomId", isoRoom.def.getID() + 1L);
+                    LuaLoadEnvProbe.setField(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "rand", keep);
+                    LuaLoadEnvProbe.setField(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "id", keepId);
+                }
+                c = new zombie.inventory.ItemContainer(type, sq, null);
+            }
+            c.setCapacity(capacity);
+            int before = draws();
+            String err = "";
+            try {
+                if (room.startsWith("veh/")) ItemPickerJava.fillContainerType(roomDist(room), c, "all", null);
+                else ItemPickerJava.fillContainer(c, null);
+            } catch (Throwable e) {
+                err = " EXC " + e.getClass().getName();
+                if (Boolean.getBoolean("loot.trace")) {
+                    StringBuilder tb = new StringBuilder("EXCTRACE " + e);
+                    for (int k = 0; k < 6 && k < e.getStackTrace().length; k++) tb.append(" < ").append(e.getStackTrace()[k]);
+                    System.err.println(tb);
+                }
+            }
+            StringBuilder b = new StringBuilder("FILL " + t + " draws=" + ((draws() - before + 10000) % 10000) + " n=" + c.getItems().size() + err);
+            for (zombie.inventory.InventoryItem i : c.getItems()) b.append(' ').append(i.getFullType());
+            out.println(b);
+        }
+        out.println("END " + spec + " rand=" + draws());
+    }
+
     public static void main(String[] a) throws Exception {
         out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, "UTF-8");
         System.setOut(System.err);
         LuaGameProbe.init(new String[]{a[0], "shared", "server"});
         parse();
         tables();
+        // IsoWorld.init: StashSystem.init() (the stash descriptions the Lua defined; possibleStashes starts with every stash building)
+        zombie.core.stash.StashSystem.init();
+        // a cell with no map: IsoWorld.instance.currentCell (AddItem adds each item to its process list; a car key
+        // looks for a vehicle in its vehicle set, which is empty)
+        try { new zombie.iso.IsoCell(300, 300); System.err.println("LOOT cell " + (zombie.iso.IsoWorld.instance.currentCell != null)); }
+        catch (Throwable e) { System.err.println("LOOT cell FAILED " + e); e.printStackTrace(); }
+        { zombie.SandboxOptions so = zombie.SandboxOptions.instance; System.err.println("LOOT gametime tod=" + zombie.GameTime.getInstance().getTimeOfDay() + " nights=" + zombie.GameTime.getInstance().getNightsSurvived() + " ageDays=" + zombie.GameTime.getInstance().getWorldAgeDaysSinceBegin() + " timeSinceApo=" + so.getTimeSinceApo()); System.err.println("LOOT sandbox MaximumDiminishedLoot=" + so.maximumDiminishedLoot.getValue() + " DaysUntil=" + so.daysUntilMaximumDiminishedLoot.getValue() + " Zombies=" + so.zombies.getValue() + " AnnotatedMapChance=" + so.annotatedMapChance.getValue() + " ZombiePopLootEffect=" + so.zombiePopLootEffect.getValue() + " RollsMultiplier=" + so.rollsMultiplier.getValue() + " reloadDifficulty=" + zombie.core.Core.getInstance().getOptionReloadDifficulty()); }
+        if (Boolean.getBoolean("loot.trace")) {
+            zombie.inventory.ItemContainer dc = new zombie.inventory.ItemContainer("fridge", null, null);
+            int n = 0;
+            for (ItemPickerJava.ItemPickerItem it : ItemPickerJava.ProceduralDistributions.get("FridgeGeneric").items) {
+                if (n++ < 12) System.err.println("CHANCE " + it.itemName + " " + it.chance + " -> " + ItemPickerJava.getActualSpawnChance(it, null, dc, 0.0F, false) + " mod=" + ItemPickerJava.getLootModifier(it.itemName));
+            }
+        }
+        for (int i = 1; i < a.length; i++) scenario(a[i]);
+        for (Map.Entry<String, Integer> e : sites.entrySet()) System.err.println("SITE " + e.getValue() + " " + e.getKey());
         out.flush();
         Runtime.getRuntime().halt(0);
     }

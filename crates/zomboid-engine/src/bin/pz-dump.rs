@@ -8121,12 +8121,15 @@ pub fn luagame(root: &Path, cache_dir: &str, dirs: &[String]) -> Result<String, 
 /// LootProbe on the port: the client's startup and the Lua state as luagame builds them, LoadDirBase of shared and
 /// server, IsoWorld.init's distribution merge events, `ItemPickerJava.Parse` and `InitSandboxLootSettings`, then the
 /// tables printed as LootProbe prints them.
-pub fn loot(root: &Path, cache_dir: &str, _scenarios: &[String]) -> Result<String, String> {
+pub fn loot(root: &Path, cache_dir: &str, scenarios: &[String]) -> Result<String, String> {
     use std::rc::Rc;
+    use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::KahluaTableImpl;
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
     use zomboid_engine::zombie::game_window::ClientStartup;
     use zomboid_engine::zombie::inventory::item_picker_java::{
         ItemPickerContainer, ItemPickerJava, ItemPickerRoom,
     };
+    use zomboid_engine::zombie::inventory::item_picker_roll::StashInfo;
     use zomboid_engine::zombie::lua::lua_manager::LuaManager;
 
     fn esc(s: Option<&str>) -> String {
@@ -8163,7 +8166,7 @@ pub fn loot(root: &Path, cache_dir: &str, _scenarios: &[String]) -> Result<Strin
             "0"
         }
     }
-    fn sorted<'a, V>(m: &'a std::collections::HashMap<String, V>) -> Vec<(&'a String, &'a V)> {
+    fn sorted<V>(m: &std::collections::HashMap<String, V>) -> Vec<(&String, &V)> {
         let mut v: Vec<_> = m.iter().collect();
         v.sort_by(|a, b| a.0.encode_utf16().cmp(b.0.encode_utf16()));
         v
@@ -8399,7 +8402,121 @@ pub fn loot(root: &Path, cache_dir: &str, _scenarios: &[String]) -> Result<Strin
     for s in &can {
         let _ = writeln!(out, "CANSPAWNITEM {s}");
     }
+
+    // StashSystem.initAllStashes: one possible stash building per `StashDescriptions` entry
+    let mut stash = StashInfo::default();
+    if let Object::Table(t) = KahluaTableImpl::rawget(&lm.env, &Object::str("StashDescriptions"))
+        .map_err(|e| format!("StashDescriptions: {e:?}"))?
+    {
+        for (_, v) in KahluaTableImpl::iterate_snapshot(&t) {
+            if let Object::Table(d) = v {
+                stash.possible += 1;
+                if let Some(item) = KahluaTableImpl::rawget_str(&d, "item")
+                    .map_err(|e| format!("stash item: {e:?}"))?
+                {
+                    stash.items.insert(item);
+                }
+            }
+        }
+    }
+    let sandbox = so.0.borrow();
+    eprintln!("LOOT sandbox MaximumDiminishedLoot={:?} DaysUntil={:?} Zombies={:?} AnnotatedMapChance={:?}", sandbox.get("MaximumDiminishedLoot"), sandbox.get("DaysUntilMaximumDiminishedLoot"), sandbox.get("Zombies"), sandbox.get("AnnotatedMapChance"));
+    for spec in scenarios {
+        loot_scenario(&mut out, spec, &startup, &picker, &sandbox, &stash)?;
+    }
     Ok(out)
+}
+
+/// One scenario `seed:room:container:times[:capacity[:same|fresh[:building rooms joined by +]]]` (see LootProbe.java):
+/// `times` containers filled one after another from one seeded generator.
+fn loot_scenario(
+    out: &mut String,
+    spec: &str,
+    startup: &zomboid_engine::zombie::game_window::ClientStartup,
+    picker: &zomboid_engine::zombie::inventory::item_picker_java::ItemPickerJava,
+    sandbox: &zomboid_engine::zombie::sandbox_options::SandboxOptions,
+    stash: &zomboid_engine::zombie::inventory::item_picker_roll::StashInfo,
+) -> Result<(), String> {
+    use zomboid_engine::zombie::inventory::item_picker_roll::{
+        LootBuilding, LootContainer, LootRoller, LootRoom, LootSquare,
+    };
+    let p: Vec<&str> = spec.split(':').collect();
+    if p.len() < 4 {
+        return Err(format!("bad loot scenario {spec}"));
+    }
+    let seed: i64 = p[0].parse().map_err(|_| format!("seed of {spec}"))?;
+    let (room, type_name) = (p[1], p[2]);
+    let times: usize = p[3].parse().map_err(|_| format!("times of {spec}"))?;
+    let capacity: i32 = p
+        .get(4)
+        .map_or(Ok(50), |c| c.parse())
+        .map_err(|_| format!("capacity of {spec}"))?;
+    let same = p.get(5) == Some(&"same");
+    let bld: Vec<&str> = p.get(6).map_or(vec![room], |b| b.split('+').collect());
+    let _ = writeln!(out, "SCENARIO {spec}");
+    let mut roller = LootRoller::new(
+        startup,
+        picker,
+        sandbox,
+        stash,
+        RandAbstract::new(java::Random::new(seed)),
+    );
+    let mut square: Option<LootSquare> = None;
+    for t in 0..times {
+        let mut c;
+        if let Some(key) = room.strip_prefix("veh/") {
+            c = LootContainer::new(type_name, capacity, None);
+            let _ = key;
+        } else {
+            if square.is_none() || !same {
+                let building = LootBuilding {
+                    rooms: bld
+                        .iter()
+                        .map(|n| LootRoom {
+                            name: (*n).to_string(),
+                            procedural_spawned: std::collections::HashMap::new(),
+                        })
+                        .collect(),
+                };
+                let ri = bld.iter().position(|n| *n == room).unwrap_or(0);
+                roller.buildings.push(building);
+                square = Some(LootSquare {
+                    building: roller.buildings.len() - 1,
+                    room: ri,
+                });
+            }
+            c = LootContainer::new(type_name, capacity, square);
+        }
+        let before = roller.rand.id();
+        let res = if let Some(key) = room.strip_prefix("veh/") {
+            let rd = picker
+                .vehicle_distributions
+                .get(key)
+                .and_then(|v| v.normal.as_ref());
+            roller.fill_container_type(rd, &mut c, "all")
+        } else {
+            roller.fill_container(&mut c)
+        };
+        let draws = (roller.rand.id() - before + 10000) % 10000;
+        match res {
+            Ok(()) => {
+                let _ = write!(out, "FILL {t} draws={draws} n={}", c.items.len());
+            }
+            Err(e) => {
+                let _ = write!(
+                    out,
+                    "FILL {t} draws={draws} n={} UNPORTED {e}",
+                    c.items.len()
+                );
+            }
+        }
+        for i in &c.items {
+            let _ = write!(out, " {}", i.full_type);
+        }
+        out.push('\n');
+    }
+    let _ = writeln!(out, "END {spec} rand={}", roller.rand.id());
+    Ok(())
 }
 
 fn luaload_after(
