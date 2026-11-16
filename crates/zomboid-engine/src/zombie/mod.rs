@@ -23,3 +23,4 @@ pub mod vehicles;
 pub mod world;
 pub mod world_map;
 pub mod zomboid_file_system;
+pub mod zomboid_globals;

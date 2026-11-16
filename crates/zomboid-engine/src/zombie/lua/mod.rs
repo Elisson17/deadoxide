@@ -1,5 +1,6 @@
 //! Package `zombie.Lua`: the game's Lua state, its loading of `media/lua`, events and the exposed Java API.
 pub mod event;
+pub mod exposed_boot;
 pub mod exposed_client;
 pub mod exposed_methods;
 #[rustfmt::skip] // generated, one entry per line

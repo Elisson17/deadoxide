@@ -65,7 +65,7 @@ fn the(s: &Rc<JavaStatics>, class: &str) -> Object {
 /// The argument count check of LuaJavaInvoker.prepareCall for a static method with `params` parameters: fewer
 /// arguments fail, and so do more, except one argument to a method without parameters (a `Class:method()` call
 /// of a static method).
-fn static_args(n: i32, params: i32) -> Result<(), Fail> {
+pub(super) fn static_args(n: i32, params: i32) -> Result<(), Fail> {
     if n < params || (n != params && !(n == 1 && params == 0)) {
         return Err(arg_count_error(params, n));
     }

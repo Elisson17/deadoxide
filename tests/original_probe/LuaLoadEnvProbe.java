@@ -97,7 +97,21 @@ public class LuaLoadEnvProbe {
             while (it.advance()) dump(path + "[" + key(it.getKey()) + "]", it.getValue());
         } else {
             sb.append(path).append(" = ").append(value(v)).append('\n');
+            if (v instanceof LuaClosure c) closure(c, path);
         }
+    }
+
+    /** The closures printed so far, in the order first printed, with the path they were printed at (for
+     * LuaBootProbe's upvalue section). */
+    static final IdentityHashMap<LuaClosure, Integer> closureIndex = new IdentityHashMap<>();
+    static final List<LuaClosure> closures = new ArrayList<>();
+    static final List<String> closurePaths = new ArrayList<>();
+
+    static void closure(LuaClosure c, String path) {
+        if (closureIndex.containsKey(c)) return;
+        closureIndex.put(c, closures.size());
+        closures.add(c);
+        closurePaths.add(path);
     }
 
     static Object field(Object owner, Class<?> c, String name) throws Exception {
@@ -305,15 +319,25 @@ public class LuaLoadEnvProbe {
         return -1;
     }
 
+    static final HashMap<Object, Object> initGlobals = new HashMap<>();
+    static final IdentityHashMap<Object, HashSet<Object>> initKeys = new IdentityHashMap<>();
+
     public static void main(String[] a) throws Exception {
         PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, "UTF-8");
         System.setOut(System.err);
+        load(a);
+        report();
+        out.print(sb);
+        out.flush();
+        Runtime.getRuntime().halt(0);
+    }
+
+    /** LuaManager.init, the state it leaves (to compare with), then LoadDirBase of each directory in a[1..]. */
+    static void load(String[] a) throws Exception {
         ZomboidFileSystem.instance.setCacheDir(a[0]);
         ZomboidFileSystem.instance.init();
         RandStandard.INSTANCE.init();
         LuaManager.init();
-        HashMap<Object, Object> initGlobals = new HashMap<>();
-        IdentityHashMap<Object, HashSet<Object>> initKeys = new IdentityHashMap<>();
         KahluaTableIterator it = LuaManager.env.iterator();
         while (it.advance()) {
             initGlobals.put(it.getKey(), it.getValue());
@@ -329,12 +353,16 @@ public class LuaLoadEnvProbe {
         for (Map.Entry<String, Object> e : staticCollections().entrySet())
             initCollections.put(e.getKey(), e.getValue() instanceof Map<?, ?> m ? "size " + m.size() : list(e.getValue()));
         for (int i = 1; i < a.length; i++) LuaManager.LoadDirBase(a[i]);
+    }
+
+    /** What the scripts left: loaded files, added keys and globals, event callbacks, then javaState. */
+    static void report() throws Exception {
         for (Object f : LuaManager.loaded) {
             String s = f.toString();
             sb.append("LOADED ").append(s.substring(s.indexOf("/media/lua/") + 1)).append('\n');
         }
         TreeMap<String, Object> globals = new TreeMap<>();
-        it = LuaManager.env.iterator();
+        KahluaTableIterator it = LuaManager.env.iterator();
         while (it.advance()) globals.put(key(it.getKey()), it.getKey());
         for (Map.Entry<String, Object> g : globals.entrySet()) {
             Object v = initGlobals.get(g.getValue());
@@ -358,11 +386,12 @@ public class LuaLoadEnvProbe {
         for (Event e : events) {
             if (e.callbacks.isEmpty()) continue;
             sb.append("EVENT ").append(e.name).append(" ").append(e.callbacks.size()).append('\n');
-            for (LuaClosure c : e.callbacks) sb.append("  ").append(value(c)).append('\n');
+            for (int i = 0; i < e.callbacks.size(); i++) {
+                LuaClosure c = e.callbacks.get(i);
+                sb.append("  ").append(value(c)).append('\n');
+                closure(c, "EVENT " + e.name + " " + i);
+            }
         }
         javaState(events);
-        out.print(sb);
-        out.flush();
-        Runtime.getRuntime().halt(0);
     }
 }

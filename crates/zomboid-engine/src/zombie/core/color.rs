@@ -22,6 +22,17 @@ impl Default for Color {
 }
 
 impl Color {
+    /// zombie.core.Color(float, float, float, float): each channel clamped to [0, 1] (PZMath.clamp).
+    pub fn new_clamped(r: f32, g: f32, b: f32, a: f32) -> Color {
+        use crate::zombie::core::math::pz_math::clamp;
+        Color {
+            r: clamp(r, 0.0, 1.0),
+            g: clamp(g, 0.0, 1.0),
+            b: clamp(b, 0.0, 1.0),
+            a: clamp(a, 0.0, 1.0),
+        }
+    }
+
     /// zombie.core.Color.HSBtoRGB(float, float, float): each channel rounded to a byte as `(int)(x * 255 + 0.5)`
     /// (float arithmetic, truncated), then divided by 255; alpha 1 (`set(r, g, b)`).
     pub fn hsb_to_rgb(hue: f32, saturation: f32, brightness: f32) -> Color {

@@ -19,6 +19,18 @@ impl ImmutableColor {
         a: 1.0,
     };
 
+    /// zombie.core.ImmutableColor(float, float, float, float): each channel `Math.min(x, 1.0F)` (no lower bound;
+    /// NaN stays NaN).
+    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        let min1 = |x: f32| if x.is_nan() || x <= 1.0 { x } else { 1.0 };
+        ImmutableColor {
+            r: min1(r),
+            g: min1(g),
+            b: min1(b),
+            a: min1(a),
+        }
+    }
+
     /// zombie.core.ImmutableColor(Color): the colour's channels; a null colour is opaque black.
     pub fn from_color(color: Option<&Color>) -> Self {
         match color {

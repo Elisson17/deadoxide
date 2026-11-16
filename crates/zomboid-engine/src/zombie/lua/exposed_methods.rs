@@ -51,6 +51,8 @@ pub struct State {
     /// CharacterInputBindingSet.loadedBindingSets and the CharacterJoypad*Binding enum statics.
     pub input_bindings:
         RefCell<crate::zombie::characters::character_input_binding_set::InputBindings>,
+    /// zombie.ZomboidGlobals' statics (ZomboidGlobals.Load runs after LoadDirBase).
+    pub zomboid_globals: RefCell<crate::zombie::zomboid_globals::ZomboidGlobals>,
 }
 
 /// zombie.SandboxOptions as a Lua value.
@@ -82,10 +84,14 @@ pub struct CoreObject {
     pub option_controller_button_style: i32,
     /// optionGamepadBindingPreset: `newOption("gamepadBindingPreset", "Original", ...)`
     pub option_gamepad_binding_preset: String,
+    /// optionTermsOfServiceVersion: `newFakeOption("termsOfServiceVersion", -1, 1000, -1)`
+    pub option_terms_of_service_version: i32,
 }
 
 /// zombie.core.Core.height (public static, 720 until the display is created).
 pub const CORE_HEIGHT: i32 = 720;
+/// zombie.core.Core.width (public static, 1280 until the display is created).
+pub const CORE_WIDTH: i32 = 1280;
 
 impl CoreObject {
     /// zombie.core.Core.<init>, the fields above.
@@ -98,6 +104,7 @@ impl CoreObject {
             option_font_size: 6,
             option_controller_button_style: 1,
             option_gamepad_binding_preset: "Original".into(),
+            option_terms_of_service_version: -1,
         }
     }
 
@@ -135,7 +142,12 @@ fn value_as_color_info(option: &[f64; 3], color: &Rc<ColorInfo>) -> Rc<ColorInfo
 }
 
 /// zombie.scripting.ScriptManager.instance with no scripts loaded.
-pub struct ScriptManagerObject;
+#[derive(Default)]
+pub struct ScriptManagerObject {
+    /// tagToItemMap: the list getAllItemsWithTag made for each ItemTag (by identity), returned again on the next
+    /// call.
+    pub tag_to_item_map: RefCell<Vec<(Object, Object)>>,
+}
 
 impl Userdata for ScriptManagerObject {
     fn class(&self) -> &'static JavaClass {
@@ -237,6 +249,9 @@ pub fn static_object(
             Object::Userdata(sandbox_options_instance(statics, thread)?)
         }
         (_, "instance" | "INSTANCE", c) if c == owner => singleton(statics, class),
+        ("zombie.characters.traits.ObservationFactory", "observationMap", _) => {
+            ud(Rc::new(super::exposed_boot::ObservationMapObject::default()))
+        }
         (_, _, "java.util.ArrayList") => Object::Userdata(Rc::new(ArrayListObject::default())),
         _ => Object::Userdata(Rc::new(JavaObject { class, id })),
     })
@@ -246,7 +261,7 @@ pub fn static_object(
 /// state for the classes it has written, an opaque object for the others.
 pub fn singleton(statics: &Rc<JavaStatics>, class: &'static JavaClass) -> Object {
     statics.singleton(class.name, || match class.name {
-        "zombie.scripting.ScriptManager" => ud(Rc::new(ScriptManagerObject)),
+        "zombie.scripting.ScriptManager" => ud(Rc::new(ScriptManagerObject::default())),
         name => super::exposed_world::make_singleton(name)
             .or_else(|| super::exposed_client::make_singleton(name))
             .unwrap_or_else(|| Object::Userdata(Rc::new(JavaObject { class, id: "" }))),
@@ -475,6 +490,9 @@ pub fn global(name: &str) -> Option<Imp> {
     if let Some(f) = super::exposed_world::global(name) {
         return Some(f);
     }
+    if let Some(f) = super::exposed_boot::global(name) {
+        return Some(f);
+    }
     if let Some(f) = super::exposed_client::global(name) {
         return Some(f);
     }
@@ -527,7 +545,7 @@ pub fn global(name: &str) -> Option<Imp> {
 /// zombie.core.Translator.getText in a state where no translation file is loaded: every key is missing, so the
 /// key itself is the text, formatted with the arguments (`String.formatted`, which a key without `%` leaves as
 /// it is) and with `<br>` turned into newlines.
-fn translator_get_text(desc: &str, _has_args: bool) -> Result<String, Fail> {
+pub(super) fn translator_get_text(desc: &str, _has_args: bool) -> Result<String, Fail> {
     if desc.contains('%') {
         return Err(Fail::Lua(Throwable::runtime(format!(
             "not ported: Translator.getText formatting of \"{desc}\""
@@ -562,7 +580,7 @@ pub fn copy_table(to: Option<TableRef>, from: Option<&TableRef>) -> R<TableRef> 
 }
 
 /// Core.getInstance()
-fn core(s: &Rc<JavaStatics>) -> Rc<CoreObject> {
+pub(super) fn core(s: &Rc<JavaStatics>) -> Rc<CoreObject> {
     s.state
         .core
         .borrow_mut()
@@ -636,6 +654,9 @@ fn registry_id(cf: &FrameRef) -> Result<&'static str, Fail> {
 
 fn static_method(class: &str, name: &str) -> Option<Imp> {
     if let Some(f) = super::exposed_world::static_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_boot::static_method(class, name) {
         return Some(f);
     }
     if let Some(f) = super::exposed_client::static_method(class, name) {
@@ -726,6 +747,9 @@ fn location_arg(cf: &FrameRef, i: i32) -> Object {
 
 fn instance_method(class: &str, name: &str) -> Option<Imp> {
     if let Some(f) = super::exposed_world::instance_method(class, name) {
+        return Some(f);
+    }
+    if let Some(f) = super::exposed_boot::instance_method(class, name) {
         return Some(f);
     }
     if let Some(f) = super::exposed_client::instance_method(class, name) {

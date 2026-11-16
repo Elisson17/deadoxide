@@ -325,3 +325,9 @@ fn translator_matches_original() {
     let commands = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/translator_cases.txt");
     check("translator", &["-", commands.to_str().expect("utf-8 path")]);
 }
+
+#[test]
+fn luaboot_matches_original() {
+    // the client load, then ZomboidGlobals.Load and the events the game fires on its way to the main menu
+    check("luaboot", &["-", "shared", "client"]);
+}
