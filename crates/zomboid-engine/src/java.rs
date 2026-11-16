@@ -632,6 +632,15 @@ pub fn double_to_string(d: f64) -> String {
             exp = e2;
         }
     }
+    // Of the decimals of that length that read back as `a`, Java takes the closest to `a` and, with two equally
+    // close (a tie of the exact value), the one with the even last digit: the correctly rounded (half-even)
+    // decimal of that length, when it reads back as `a`.
+    let exact = format!("{:.*e}", digits.len() - 1, a);
+    if exact.parse::<f64>().ok() == Some(a) {
+        let (d2, e2) = split_sci(&exact);
+        digits = d2;
+        exp = e2;
+    }
     java_decimal(d < 0.0, &digits, exp)
 }
 
@@ -664,6 +673,15 @@ pub fn float_to_string(f: f32) -> String {
             digits = d2;
             exp = e2;
         }
+    }
+    // Of the decimals of that length that read back as `a`, Java takes the closest to `a` and, with two equally
+    // close (a tie of the exact value), the one with the even last digit: the correctly rounded (half-even)
+    // decimal of that length, when it reads back as `a`.
+    let exact = format!("{:.*e}", digits.len() - 1, a);
+    if exact.parse::<f32>().ok() == Some(a) {
+        let (d2, e2) = split_sci(&exact);
+        digits = d2;
+        exp = e2;
     }
     java_decimal(f < 0.0, &digits, exp)
 }

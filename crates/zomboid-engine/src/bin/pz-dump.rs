@@ -61,6 +61,7 @@ fn main() {
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
         Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
+        Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -5186,6 +5187,454 @@ pub fn animalzones(root: &Path, save: &Path) -> Result<String, String> {
             }
             let _ = writeln!(sb, "AC {x} {y} {} {h:x}", cell.animal_zones.len());
         }
+    }
+    Ok(sb)
+}
+
+/// ClimateProbe.java's scenarios on the ported ClimateManager: the same clock core, season timer and
+/// `ClimateManager.update` per tick, printing the same lines (floats as `Float.toString`).
+///
+/// The inputs the probe reads from the booted original dedicated server and prints in its SETUP line (the sandbox's
+/// Rain, climate and fog cycles, day/night cycle, fog quality, the meta grid bounds of the harness's world, the game
+/// mode) are fixed here to what that line shows; the diff checks them against the original.
+pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    use zomboid_engine::java::{double_to_string as d, float_to_string as f};
+    use zomboid_engine::zombie::erosion::season::erosion_season::erosion_main_season;
+    use zomboid_engine::zombie::game_time::GameTime;
+    use zomboid_engine::zombie::iso::weather::climate_color_info::ClimateColorInfo;
+    use zomboid_engine::zombie::iso::weather::climate_forecaster::ForecastValue;
+    use zomboid_engine::zombie::iso::weather::climate_main_lua::apply_climate_main;
+    use zomboid_engine::zombie::iso::weather::climate_manager::{
+        AirFront, ClimateEnv, ClimateManager, BOOL_IS_SNOW, COLOR_GLOBAL_LIGHT, COLOR_NEW_FOG,
+        FLOAT_MAX,
+    };
+    use zomboid_engine::zombie::iso::weather::weather_period::WeatherPeriod;
+
+    let lua_path = root.join("media/lua/server/Climate/ClimateMain.lua");
+    let lua = std::fs::read_to_string(&lua_path).map_err(|e| format!("{}: {e}", lua_path.display()))?;
+    let b = |v: bool| u8::from(v);
+    let col = |c: &ClimateColorInfo| {
+        format!(
+            "{} {} {} {} {} {} {} {}",
+            f(c.interior[0]),
+            f(c.interior[1]),
+            f(c.interior[2]),
+            f(c.interior[3]),
+            f(c.exterior[0]),
+            f(c.exterior[1]),
+            f(c.exterior[2]),
+            f(c.exterior[3])
+        )
+    };
+    let front = |fr: &AirFront| {
+        format!(
+            "{} {} {} {} {} {} {} {}",
+            fr.type_,
+            f(fr.strength),
+            f(fr.days),
+            f(fr.max_noise),
+            f(fr.total_noise),
+            f(fr.noise_cache[0]),
+            f(fr.noise_cache[1]),
+            f(fr.front_wind_angle_degrees)
+        )
+    };
+    let fv = |v: &ForecastValue| {
+        [
+            v.day_min,
+            v.day_max,
+            v.day_mean,
+            v.night_min,
+            v.night_max,
+            v.night_mean,
+            v.total_min,
+            v.total_max,
+            v.total_mean,
+        ]
+        .iter()
+        .map(|x| f(*x))
+        .collect::<Vec<_>>()
+        .join(",")
+    };
+    let stages = |wp: &WeatherPeriod| {
+        let l: Vec<String> = wp.weather_stages.iter().map(|s| s.stage_id.to_string()).collect();
+        format!("[{}]", l.join(","))
+    };
+    let forecasts = |sb: &mut String, cm: &ClimateManager| {
+        let fc = &cm.climate_forecaster;
+        for (i, &id) in fc.forecasts.iter().enumerate() {
+            let df = &fc.days[id];
+            let wp = &df.weather_period;
+            let list: Vec<String> = df.weather_stages.iter().map(|x| x.to_string()).collect();
+            let _ = writeln!(
+                sb,
+                "FC {i} offset={} starts={} start={} end={} snow={} front={} fog={} fogStr={} fogDur={} overlap={} heavy={} storm={} tropical={} blizzard={} dawn={} dusk={} daylight={} stages=[{}]",
+                df.index_offset,
+                b(df.weather_starts),
+                f(df.weather_start_time),
+                f(df.weather_end_time),
+                b(df.chance_on_snow),
+                df.air_front_string,
+                b(df.has_fog),
+                f(df.fog_strength),
+                f(df.fog_duration),
+                fc.index_of(df.weather_overlap),
+                b(df.has_heavy_rain),
+                b(df.has_storm),
+                b(df.has_tropical_storm),
+                b(df.has_blizzard),
+                f(df.dawn),
+                f(df.dusk),
+                f(df.day_light_hours),
+                list.join(", ")
+            );
+            let _ = writeln!(
+                sb,
+                " FCA {} wp={} dur={} str={} angle={} {}",
+                front(&df.air_front),
+                b(wp.is_running),
+                d(wp.duration),
+                f(wp.get_total_strength()),
+                f(wp.get_wind_angle_degrees()),
+                stages(wp)
+            );
+            let _ = writeln!(
+                sb,
+                " FCV t={} h={} wd={} wp={} c={}",
+                fv(&df.temperature),
+                fv(&df.humidity),
+                fv(&df.wind_direction),
+                fv(&df.wind_power),
+                fv(&df.cloudiness)
+            );
+        }
+    };
+
+    let mut sb = String::new();
+    for spec in scenarios {
+        let p: Vec<&str> = spec.split(':').collect();
+        if p.len() != 6 {
+            return Err(format!("scenario {spec}: seed:year:month:day:hour:days"));
+        }
+        let num = |s: &str| s.parse::<i64>().map_err(|e| format!("{s}: {e}"));
+        let seed = num(p[0])?;
+        let (year, month, day) = (num(p[1])? as i32, num(p[2])? as i32, num(p[3])? as i32);
+        let hour: f32 = p[4].parse().map_err(|e| format!("{}: {e}", p[4]))?;
+        let days = num(p[5])?;
+        let _ = writeln!(sb, "SCENARIO {spec}");
+
+        let mut rand = RandAbstract::new(java::Random::new(seed));
+        let mut gt = GameTime::default();
+        gt.year = year;
+        gt.month = month;
+        gt.day = day;
+        gt.time_of_day = hour;
+        gt.nights_survived = 0;
+        gt.minutes_per_day = 60.0;
+        gt.multiplier = 1.0;
+        gt.fps_multiplier = 2.0;
+        gt.multiplier_bias = 1.0;
+        gt.per_object_multiplier = 1.0;
+        gt.set_minutes_stamp();
+
+        let env = ClimateEnv {
+            server: true,
+            client: false,
+            debug: false,
+            rain_modifier: 3,
+            climate_cycle: 1,
+            fog_cycle: 1,
+            day_night_cycle: 1,
+            fog_quality: 0,
+            weather_shader: false,
+            no_players: true,
+            disable_lightning_during_storms: false,
+        };
+        let grid = [-250, 250, -250, 250];
+
+        // ErosionMain's season (temperature option 3 = normal), set to the date as ErosionMain.mainTimer does.
+        let mut season = erosion_main_season(3, env.day_night_cycle);
+        let mut e_date = [gt.day, gt.month, gt.year];
+        season.set_day(e_date[0], e_date[1], e_date[2]);
+        let _ = writeln!(
+            sb,
+            "SETUP server=1 fogQuality={} multiplier={} unmodded={} rain={} climateCycle={} fogCycle={} dayNight={} gameMode=Multiplayer weatherShader={} offscreen=0 debug={} forceSnow=0 grid={},{},{},{}",
+            env.fog_quality,
+            f(gt.get_multiplier()),
+            f(gt.get_unmodded_multiplier()),
+            env.rain_modifier,
+            env.climate_cycle,
+            env.fog_cycle,
+            env.day_night_cycle,
+            b(env.weather_shader),
+            b(env.debug),
+            grid[0],
+            grid[1],
+            grid[2],
+            grid[3]
+        );
+        let _ = writeln!(
+            sb,
+            "SEASONCFG {} {} {} {} {} {} {} {} {} {}",
+            season.get_lat(),
+            season.get_temp_max(),
+            season.get_temp_min(),
+            season.get_temp_diff(),
+            season.get_season_lag(),
+            f(season.get_high_noon()),
+            season.get_seed_a(),
+            season.get_seed_b(),
+            season.get_seed_c(),
+            f(season.get_rain_year_average())
+        );
+
+        let mut cm = ClimateManager::new(&mut rand);
+        apply_climate_main(&mut cm, &lua)?;
+        cm.init(
+            season,
+            grid[0],
+            grid[1],
+            grid[2],
+            grid[3],
+            "Multiplayer",
+            &gt,
+            &env,
+        );
+        let ts = &cm.thunder_storm;
+        let _ = writeln!(
+            sb,
+            "OFFSETS {} {} {} {} map={},{},{},{} rand={}",
+            d(cm.simplex_offset_a),
+            d(cm.simplex_offset_b),
+            d(cm.simplex_offset_c),
+            d(cm.simplex_offset_d),
+            ts.map_min_x,
+            ts.map_max_x,
+            ts.map_min_y,
+            ts.map_max_y,
+            rand.id()
+        );
+        let _ = writeln!(
+            sb,
+            "COL night {} | noMoon {} | moon {}",
+            col(&cm.col_night),
+            col(&cm.col_night_no_moon),
+            col(&cm.col_night_moon)
+        );
+        let _ = writeln!(
+            sb,
+            "COL fog {} | legacy {} | new {}",
+            col(&cm.col_fog),
+            col(&cm.col_fog_legacy),
+            col(&cm.col_fog_new)
+        );
+        let _ = writeln!(
+            sb,
+            "COL storm {} | tropical {}",
+            col(&cm.fog_tint_storm),
+            col(&cm.fog_tint_tropical)
+        );
+        let wpm = &cm.weather_period;
+        let _ = writeln!(
+            sb,
+            "COL clouds {} | {} | {} | {} | {} | {}",
+            col(&wpm.cloud_color_reddish),
+            col(&wpm.cloud_color_greenish),
+            col(&wpm.cloud_color_blueish),
+            col(&wpm.cloud_color_purplish),
+            col(&wpm.cloud_color_tropical),
+            col(&wpm.cloud_color_blizzard)
+        );
+        for seg in 0..3i32 {
+            for temp in 0..3usize {
+                for s in 0..4usize {
+                    let c = cm
+                        .get_season_color(seg, temp, s)
+                        .ok_or("season colour out of range")?;
+                    let _ = writeln!(sb, "SEASONCOL {seg} {temp} {s} {}", col(c));
+                }
+            }
+        }
+        forecasts(&mut sb, &cm);
+
+        let mut minutes_mod =
+            ((gt.time_of_day - gt.time_of_day as i32 as f32) * 60.0) as i32 / 10;
+        let mut last_start = f64::NAN;
+        let mut last_running = false;
+        let ticks = days * 108_000;
+        for t in 1..=ticks {
+            if gt.update_clock(&mut minutes_mod) {
+                if gt.day != e_date[0] || gt.month != e_date[1] || gt.year != e_date[2] {
+                    e_date = [gt.day, gt.month, gt.year];
+                    cm.season.set_day(e_date[0], e_date[1], e_date[2]);
+                }
+                cm.update_every_ten_mins();
+            }
+            cm.update(&mut gt, &env, &mut rand);
+            if !cm.tick_is_climate_tick {
+                continue;
+            }
+            let _ = writeln!(
+                sb,
+                "T {t} {}-{}-{} {} age={} stamp={} hour={} day={} rand={}",
+                gt.year,
+                gt.month,
+                gt.day,
+                f(gt.time_of_day),
+                d(gt.get_world_age_hours()),
+                gt.minutes_stamp,
+                b(cm.tick_is_hour_change),
+                b(cm.tick_is_day_change),
+                rand.id()
+            );
+            let mut v = String::from("V");
+            let mut i_ = String::from("I");
+            for i in 0..FLOAT_MAX {
+                let cf = cm.get_climate_float(i);
+                v.push(' ');
+                v.push_str(&f(cf.final_value));
+                i_.push(' ');
+                i_.push_str(&f(cf.internal_value));
+            }
+            let _ = writeln!(sb, "{v}");
+            let _ = writeln!(sb, "{i_}");
+            let _ = writeln!(
+                sb,
+                "G {} | {} | {} | snow={}{}",
+                col(&cm.get_climate_color(COLOR_GLOBAL_LIGHT).final_value),
+                col(&cm.get_climate_color(COLOR_GLOBAL_LIGHT).internal_value),
+                col(&cm.get_climate_color(COLOR_NEW_FOG).final_value),
+                b(cm.get_climate_bool(BOOL_IS_SNOW).final_value),
+                b(cm.get_climate_bool(BOOL_IS_SNOW).internal_value)
+            );
+            let cs = cm.get_season();
+            let _ = writeln!(
+                sb,
+                "X {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} season={},{} moon={} view={},{} front={}",
+                f(cm.air_mass),
+                f(cm.air_mass_daily),
+                f(cm.air_mass_temperature),
+                f(cm.base_temperature),
+                f(cm.snow_fall),
+                f(cm.snow_strength),
+                f(cm.snow_melt_strength),
+                f(cm.snow_frac_now),
+                b(cm.can_do_winter_sprites),
+                b(cm.day_do_fog),
+                f(cm.day_fog_strength),
+                f(cm.fog_lerp_value),
+                f(cm.wind_power),
+                f(cm.day_light_lagged),
+                f(cm.night_lagged),
+                cs.get_season(),
+                f(cs.get_season_progression()),
+                cm.moon.get_current_moon_phase(),
+                f(gt.view_dist_min),
+                f(gt.view_dist_max),
+                front(&cm.current_front)
+            );
+            let wp = &cm.weather_period;
+            let start = wp.start_time;
+            if wp.is_running != last_running || start != last_start {
+                last_running = wp.is_running;
+                last_start = start;
+                let _ = writeln!(
+                    sb,
+                    "WP start={} running={} dur={} front={} dirMod={} cloud={}",
+                    d(start),
+                    b(wp.is_running),
+                    d(wp.duration),
+                    front(&wp.front_cache),
+                    f(wp.wind_angle_dir_mod),
+                    col(wp.cloud_color())
+                );
+                for (i, s) in wp.weather_stages.iter().enumerate() {
+                    let _ = writeln!(
+                        sb,
+                        " WS {i} {} {} {} {} {} {} {} {} {} {}",
+                        s.stage_id,
+                        d(s.stage_start),
+                        d(s.stage_end),
+                        d(s.stage_duration),
+                        f(s.entry_strength),
+                        f(s.exit_strength),
+                        f(s.target_strength),
+                        s.lerp_mid_val.map_or("null", |v| v.name()),
+                        s.lerp_end_val.map_or("null", |v| v.name()),
+                        f(s.fog_strength)
+                    );
+                }
+            }
+            if wp.is_running {
+                let cur = wp.current_stage.map(|i| &wp.weather_stages[i]);
+                let stage = match cur {
+                    None => "null".to_string(),
+                    Some(s) => format!(
+                        "{} {} {} {} {} {} {}",
+                        s.stage_id,
+                        f(s.linear_t),
+                        f(s.parabolic_t),
+                        b(s.is_cycle_first_half),
+                        b(s.has_started_cloud),
+                        f(s.entry_strength),
+                        f(s.exit_strength)
+                    ),
+                };
+                let _ = writeln!(
+                    sb,
+                    "W {} {} str={} rain={} noise={} total={} stage={} precip={} tinf={} flags={}{}{} cloud={}",
+                    wp.weather_stage_index,
+                    stage,
+                    f(wp.current_strength),
+                    f(wp.rain_threshold),
+                    d(f64::from(wp.weather_noise)),
+                    f(wp.total_progress),
+                    f(wp.stage_progress),
+                    f(wp.precipitation_final),
+                    f(wp.temperature_influence),
+                    b(wp.is_thunder_storm),
+                    b(wp.is_tropical_storm),
+                    b(wp.is_blizzard),
+                    col(wp.cloud_color())
+                );
+            }
+            let ts = &cm.thunder_storm;
+            for (i, c) in ts.clouds.iter().enumerate() {
+                if !c.is_running && c.start_time == 0.0 {
+                    continue;
+                }
+                let st = &c.suspend_timer;
+                let _ = writeln!(
+                    sb,
+                    "TC {i} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} timer={},{},{},{} strike={}",
+                    b(c.is_running),
+                    c.current_x,
+                    c.current_y,
+                    c.start_x,
+                    c.start_y,
+                    c.end_x,
+                    c.end_y,
+                    d(c.start_time),
+                    d(c.end_time),
+                    d(c.duration),
+                    f(c.strength),
+                    f(c.angle),
+                    f(c.radius),
+                    f(c.event_frequency),
+                    f(c.thunder_ratio),
+                    f(c.percentage_offset),
+                    f(st.elapsed),
+                    f(st.duration),
+                    b(st.finished),
+                    st.ticks,
+                    ts.strike_radius
+                );
+            }
+            if cm.tick_is_day_change {
+                forecasts(&mut sb, &cm);
+            }
+        }
+        let _ = writeln!(sb, "END {spec} rand={}", rand.id());
     }
     Ok(sb)
 }
