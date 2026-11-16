@@ -377,6 +377,18 @@ fn erosion_ini_matches_original() {
     );
 }
 
+/// `IsoWorld.readWorldVersion` and the `map_ver.bin` read over the player's real files and the hand-made pairs of
+/// tests/mapver_crafted.
+#[test]
+fn map_ver_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED mapver: the isolated profile's save is not present");
+        return;
+    };
+    let crafted = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/mapver_crafted");
+    check("mapver", &[&save, crafted.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

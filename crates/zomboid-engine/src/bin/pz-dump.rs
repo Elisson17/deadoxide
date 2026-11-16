@@ -54,6 +54,7 @@ fn main() {
         }
         Some("gos") if a.len() == 5 => gos(Path::new(&a[2]), Path::new(&a[3]), Path::new(&a[4])),
         Some("savemeta") if a.len() == 5 => savemeta(Path::new(&a[3]), Path::new(&a[4])),
+        Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
         Some("visited") if a.len() == 5 => {
@@ -4670,6 +4671,61 @@ pub fn visited(root: &Path, save: &Path, cases: &Path) -> Result<String, String>
                 }
             }
         }
+    }
+    Ok(sb)
+}
+
+/// `IsoWorld.readWorldVersion` and the `map_ver.bin` read of `IsoWorld.init` on the save's real files and the
+/// hand-made pairs of the crafted dir (pairs with MapVerProbe.java).
+pub fn mapver(save: &Path, crafted: &Path) -> Result<String, String> {
+    use zomboid_engine::zombie::iso::world_version::{read_map_ver, read_world_version};
+    /// The probe's `esc`: printable ASCII except quote and backslash stays, any other UTF-16 unit is `\uXXXX`.
+    fn esc(s: &str) -> String {
+        let mut o = String::from("\"");
+        for u in s.encode_utf16() {
+            if (0x20..0x7f).contains(&u) && u != u16::from(b'"') && u != u16::from(b'\\') {
+                o.push(char::from(u as u8));
+            } else {
+                let _ = write!(o, "\\u{u:04x}");
+            }
+        }
+        o.push('"');
+        o
+    }
+    fn one(sb: &mut String, label: &str, map_t: Option<&[u8]>, map_ver: Option<&[u8]>) {
+        let srv = read_world_version(true, map_t, map_ver);
+        let cli = read_world_version(false, map_t, map_ver);
+        let _ = writeln!(sb, "MV {label} srv={srv} cli={cli}");
+        let r = match map_ver {
+            None => "missing".to_string(),
+            Some(d) => match read_map_ver(d) {
+                Ok((v, m)) => format!("version={v} map={}", esc(&m)),
+                Err(e) => format!("exception {}", e.split(':').next().unwrap_or("")),
+            },
+        };
+        let _ = writeln!(sb, "MD {label} {r}");
+    }
+    let mut sb = String::new();
+    one(&mut sb, "none", None, None);
+    let t = std::fs::read(save.join("map_t.bin")).ok();
+    let v = std::fs::read(save.join("map_ver.bin")).ok();
+    one(&mut sb, "real", t.as_deref(), v.as_deref());
+    let mut labels: Vec<String> = std::fs::read_dir(crafted)
+        .map_err(|e| format!("{}: {e}", crafted.display()))?
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.strip_suffix(".map_t")
+                .or_else(|| n.strip_suffix(".map_ver"))
+                .map(str::to_string)
+        })
+        .collect();
+    labels.sort();
+    labels.dedup();
+    for l in labels {
+        let t = std::fs::read(crafted.join(format!("{l}.map_t"))).ok();
+        let v = std::fs::read(crafted.join(format!("{l}.map_ver"))).ok();
+        one(&mut sb, &l, t.as_deref(), v.as_deref());
     }
     Ok(sb)
 }

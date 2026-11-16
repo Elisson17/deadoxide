@@ -214,6 +214,8 @@ sel visited && server_case visited VisitedProbe "$HERE/tests/visited_cases.txt" 
 sel isoregion && server_case isoregion IsoRegionProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/isoregion_crafted"
 # erosion.ini (ErosionConfig.readFile/writeFile): the real file and the hand-made ones of tests/erosionini_crafted
 sel erosionini && server_case erosionini ErosionIniProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/erosionini_crafted"
+# map_t.bin's GMTM header and map_ver.bin (IsoWorld.readWorldVersion, GameWindow.ReadString(DataInputStream)): the real files and the pairs the probe writes to tests/mapver_crafted
+sel mapver && server_case mapver MapVerProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/mapver_crafted"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

@@ -33,5 +33,6 @@ pub mod sprite_details;
 pub mod tile_overlays;
 pub mod vector2;
 pub mod weather;
+pub mod world_version;
 pub mod worldgen;
 pub mod zones;
