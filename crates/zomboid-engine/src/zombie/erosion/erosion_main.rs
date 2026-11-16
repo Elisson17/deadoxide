@@ -90,7 +90,7 @@ impl ErosionMain {
     fn init_config(options: &ErosionOptions, existing_ini: Option<&str>) -> ErosionConfig {
         if let Some(text) = existing_ini {
             let mut cfg = ErosionConfig::default();
-            if cfg.read_text(text) {
+            if cfg.read_file(Some(text.as_bytes())) {
                 return cfg;
             }
         }
@@ -129,21 +129,21 @@ impl ErosionMain {
     ) -> Self {
         let cfg = Self::init_config(&options, existing_ini);
         let mut noise_main = Noise2D::default();
-        noise_main.add_layer(cfg.seeds.seed_main0, 0.5, 3.0);
-        noise_main.add_layer(cfg.seeds.seed_main1, 2.0, 5.0);
-        noise_main.add_layer(cfg.seeds.seed_main2, 5.0, 8.0);
+        noise_main.add_layer(cfg.seeds.seed_main[0], 0.5, 3.0);
+        noise_main.add_layer(cfg.seeds.seed_main[1], 2.0, 5.0);
+        noise_main.add_layer(cfg.seeds.seed_main[2], 5.0, 8.0);
         let mut noise_moisture = Noise2D::default();
-        noise_moisture.add_layer(cfg.seeds.seed_moisture0, 2.0, 3.0);
-        noise_moisture.add_layer(cfg.seeds.seed_moisture1, 1.6, 5.0);
-        noise_moisture.add_layer(cfg.seeds.seed_moisture2, 0.6, 8.0);
+        noise_moisture.add_layer(cfg.seeds.seed_moisture[0], 2.0, 3.0);
+        noise_moisture.add_layer(cfg.seeds.seed_moisture[1], 1.6, 5.0);
+        noise_moisture.add_layer(cfg.seeds.seed_moisture[2], 0.6, 8.0);
         let mut noise_minerals = Noise2D::default();
-        noise_minerals.add_layer(cfg.seeds.seed_minerals0, 2.0, 3.0);
-        noise_minerals.add_layer(cfg.seeds.seed_minerals1, 1.6, 5.0);
-        noise_minerals.add_layer(cfg.seeds.seed_minerals2, 0.6, 8.0);
+        noise_minerals.add_layer(cfg.seeds.seed_minerals[0], 2.0, 3.0);
+        noise_minerals.add_layer(cfg.seeds.seed_minerals[1], 1.6, 5.0);
+        noise_minerals.add_layer(cfg.seeds.seed_minerals[2], 0.6, 8.0);
         let mut noise_kudzu = Noise2D::default();
-        noise_kudzu.add_layer(cfg.seeds.seed_kudzu0, 6.0, 3.0);
-        noise_kudzu.add_layer(cfg.seeds.seed_kudzu1, 3.0, 5.0);
-        noise_kudzu.add_layer(cfg.seeds.seed_kudzu2, 0.5, 8.0);
+        noise_kudzu.add_layer(cfg.seeds.seed_kudzu[0], 6.0, 3.0);
+        noise_kudzu.add_layer(cfg.seeds.seed_kudzu[1], 3.0, 5.0);
+        noise_kudzu.add_layer(cfg.seeds.seed_kudzu[2], 0.5, 8.0);
 
         let mut season = ErosionSeason::default();
         let sc = &cfg.season;
@@ -179,7 +179,7 @@ impl ErosionMain {
             sc.seed_b,
             sc.seed_c,
         );
-        season.set_rain(sc.rain);
+        season.set_rain(sc.months);
         season.set_day(game_time.day, game_time.month, game_time.year);
         let mut ice_queen = ErosionIceQueen::new(sm, alias);
         let mut world = ErosionWorld::default();
@@ -293,7 +293,7 @@ impl ErosionMain {
         self.cfg.time.ticks = self.ticks;
         self.cfg.time.eticks = self.e_ticks;
         self.cfg.time.epoch = self.epoch;
-        self.ini_file = Some(self.cfg.file_text());
+        self.ini_file = Some(self.cfg.write_file());
         Ok(())
     }
 
