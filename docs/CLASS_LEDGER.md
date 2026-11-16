@@ -346,8 +346,3 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.worldMap.symbols.WorldMapSymbols | 1 / 23 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
 | zombie.worldMap.symbols.WorldMapTextSymbol | 0 / 23 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
 | zombie.worldMap.symbols.WorldMapTextureSymbol | 0 / 12 | crates/zomboid-engine/src/zombie/world_map/symbols/world_map_symbols.rs |
-
-## Citations that match no decompiled class or method (fix the comment)
-
-- zombie.entity.components.crafting.InputFlag.valueOf (crates/zomboid-engine/src/zombie/entity/components/crafting/input_flag.rs)
-- zombie.entity.components.crafting.OutputFlag.valueOf (crates/zomboid-engine/src/zombie/entity/components/crafting/output_flag.rs)

@@ -21,7 +21,7 @@ pub const NAMES: [&str; 12] = [
 ];
 
 impl OutputFlag {
-    /// zombie.entity.components.crafting.OutputFlag.valueOf: the constant of exactly that name, else the
+    /// java.lang.Enum.valueOf of OutputFlag (the implicit `OutputFlag.valueOf`): the constant of exactly that name, else the
     /// IllegalArgumentException.
     pub fn value_of(name: &str) -> Result<Self, String> {
         NAMES.iter().position(|n| *n == name).map(OutputFlag).ok_or_else(|| {
