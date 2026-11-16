@@ -130,6 +130,30 @@ public class ClimateProbe {
         int days = Integer.parseInt(p[5]);
         out.println("SCENARIO " + spec);
 
+        // Optional 7th field: comma-separated options, set before the manager is made and put back to the defaults
+        // by the next scenario: rain=1..5 (default 3), climate=1..6 (1), fog=1..3 (1), daynight=1..3 (1), mode=<game mode>.
+        int rainOpt = 3, climateOpt = 1, fogOpt = 1, dayNightOpt = 1;
+        String modeOpt = "Multiplayer";
+        if (p.length > 6) {
+            for (String kv : p[6].split(",")) {
+                String[] e = kv.split("=", 2);
+                switch (e[0]) {
+                    case "rain" -> rainOpt = Integer.parseInt(e[1]);
+                    case "climate" -> climateOpt = Integer.parseInt(e[1]);
+                    case "fog" -> fogOpt = Integer.parseInt(e[1]);
+                    case "daynight" -> dayNightOpt = Integer.parseInt(e[1]);
+                    case "mode" -> modeOpt = e[1];
+                    default -> throw new IllegalArgumentException(kv);
+                }
+            }
+        }
+        SandboxOptions.instance.rain.setValue(rainOpt);
+        SandboxOptions.instance.climateCycle.setValue(climateOpt);
+        SandboxOptions.instance.fogCycle.setValue(fogOpt);
+        SandboxOptions.instance.dayNightCycle.setValue(dayNightOpt);
+        IsoWorld.instance.setGameMode(modeOpt);
+        Core.getInstance().setForceSnow(false);
+
         set(RandStandard.INSTANCE, RandAbstract.class, "rand", new Random(seed));
         set(RandStandard.INSTANCE, RandAbstract.class, "id", 0);
 

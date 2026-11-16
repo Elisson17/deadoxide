@@ -215,7 +215,8 @@ fn game_time_matches_original() {
 
 #[test]
 fn climate_matches_original() {
-    // ClimateProbe's scenarios (the probe's first argument, its scratch dir, is not passed to pz-dump)
+    // ClimateProbe's scenarios (the probe's first argument, its scratch dir, is not passed to pz-dump); keep in step
+    // with the `climate` line of tools/oracle.sh
     check(
         "climate",
         &[
@@ -223,6 +224,15 @@ fn climate_matches_original() {
             "12:1995:2:10:6.0:4",
             "8:1995:0:10:6.0:4",
             "8:1995:5:5:6.0:5",
+            "5:1995:1:3:6.0:2:climate=6,fog=1",
+            "5:1995:4:3:6.0:2:climate=3,fog=3,rain=5",
+            "5:1995:4:3:6.0:2:climate=2,fog=2,rain=1",
+            "5:1995:5:3:6.0:2:climate=5",
+            "5:1995:10:3:6.0:5:mode=Winter is Coming",
+            "5:1995:5:3:6.0:3:mode=The Descending Fog",
+            "5:1995:7:3:6.0:2:mode=A Storm is Coming",
+            "5:1995:5:3:6.0:1:daynight=2",
+            "5:1995:5:3:6.0:1:daynight=3",
         ],
     );
 }

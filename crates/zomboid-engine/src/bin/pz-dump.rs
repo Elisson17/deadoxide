@@ -5313,8 +5313,10 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
     let mut sb = String::new();
     for spec in scenarios {
         let p: Vec<&str> = spec.split(':').collect();
-        if p.len() != 6 {
-            return Err(format!("scenario {spec}: seed:year:month:day:hour:days"));
+        if p.len() != 6 && p.len() != 7 {
+            return Err(format!(
+                "scenario {spec}: seed:year:month:day:hour:days[:options]"
+            ));
         }
         let num = |s: &str| s.parse::<i64>().map_err(|e| format!("{s}: {e}"));
         let seed = num(p[0])?;
@@ -5337,7 +5339,8 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
         gt.per_object_multiplier = 1.0;
         gt.set_minutes_stamp();
 
-        let env = ClimateEnv {
+        // The optional options field (rain, climate, fog, daynight, mode), as ClimateProbe reads it.
+        let mut env = ClimateEnv {
             server: true,
             client: false,
             debug: false,
@@ -5350,6 +5353,21 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
             no_players: true,
             disable_lightning_during_storms: false,
         };
+        let mut mode = "Multiplayer".to_string();
+        if let Some(opts) = p.get(6) {
+            for kv in opts.split(',') {
+                let (k, v) = kv.split_once('=').ok_or(format!("option {kv}"))?;
+                let n = || v.parse::<i32>().map_err(|e| format!("{kv}: {e}"));
+                match k {
+                    "rain" => env.rain_modifier = n()?,
+                    "climate" => env.climate_cycle = n()?,
+                    "fog" => env.fog_cycle = n()?,
+                    "daynight" => env.day_night_cycle = n()?,
+                    "mode" => mode = v.to_string(),
+                    _ => return Err(format!("option {kv}")),
+                }
+            }
+        }
         let grid = [-250, 250, -250, 250];
 
         // ErosionMain's season (temperature option 3 = normal), set to the date as ErosionMain.mainTimer does.
@@ -5358,7 +5376,7 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
         season.set_day(e_date[0], e_date[1], e_date[2]);
         let _ = writeln!(
             sb,
-            "SETUP server=1 fogQuality={} multiplier={} unmodded={} rain={} climateCycle={} fogCycle={} dayNight={} gameMode=Multiplayer weatherShader={} offscreen=0 debug={} forceSnow=0 grid={},{},{},{}",
+            "SETUP server=1 fogQuality={} multiplier={} unmodded={} rain={} climateCycle={} fogCycle={} dayNight={} gameMode={} weatherShader={} offscreen=0 debug={} forceSnow=0 grid={},{},{},{}",
             env.fog_quality,
             f(gt.get_multiplier()),
             f(gt.get_unmodded_multiplier()),
@@ -5366,6 +5384,7 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
             env.climate_cycle,
             env.fog_cycle,
             env.day_night_cycle,
+            mode,
             b(env.weather_shader),
             b(env.debug),
             grid[0],
@@ -5396,7 +5415,7 @@ pub fn climate(root: &Path, scenarios: &[String]) -> Result<String, String> {
             grid[1],
             grid[2],
             grid[3],
-            "Multiplayer",
+            &mode,
             &gt,
             &env,
         );
