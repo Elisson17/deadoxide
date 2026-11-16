@@ -71,6 +71,9 @@ pub struct LootItem {
     pub condition: i32,
     /// The `Sharpness` attribute (`None` without one).
     pub sharpness: Option<f32>,
+    /// The `HeadCondition` attribute (`None` without one) and the `HeadConditionMax` attribute if the script has it.
+    pub head_condition: Option<i32>,
+    pub head_condition_max: Option<i32>,
     /// `actualWeight` of the instance (a drainable's `updateWeight` changes it).
     pub actual_weight: f32,
     /// `getDisplayName().equals(getFullType())`: the translation is missing, the weight reads as 0.
@@ -212,6 +215,12 @@ fn script_complex<'i>(item: &'i Item, key: &str) -> Option<&'i str> {
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.as_str())
 }
+/// An `Int` attribute from a script value (`AttributeInstance.Int.setValueFromScriptString`: `Integer.parseInt`, a
+/// failure leaves the initial value 10), kept inside the bounds of `HeadCondition`/`HeadConditionMax` (0..=1000).
+fn script_int_attribute(v: &str) -> i32 {
+    java::parse_int(java::trim(v)).unwrap_or(10).clamp(0, 1000)
+}
+
 fn has_tag(item: &Item, tag: &str) -> bool {
     match ResourceLocation::of(tag) {
         Ok(t) => item.tags.contains(&t),
@@ -1145,7 +1154,7 @@ impl<'a> LootRoller<'a> {
         {
             return Err(unported(format!("firearm {}", script.full_name())));
         }
-        for key in ["ammotype", "headcondition", "headconditionmax"] {
+        for key in ["ammotype"] {
             if script_complex(script, key).is_some() {
                 return Err(unported(format!(
                     "script parameter {key} ({})",
@@ -1176,6 +1185,9 @@ impl<'a> LootRoller<'a> {
             sharpness: script_complex(script, "sharpness")
                 .and_then(parse_float)
                 .map(|v| v.clamp(0.0, 1.0)),
+            head_condition: script_complex(script, "headcondition").map(script_int_attribute),
+            head_condition_max: script_complex(script, "headconditionmax")
+                .map(script_int_attribute),
             actual_weight: if script_weight < 0.0 {
                 0.0
             } else {
@@ -1601,8 +1613,6 @@ impl<'a> LootRoller<'a> {
             "CarKey",
             "BuildingKey",
             "SpawnCooked",
-            "ApplyOwnerName",
-            "MonogramOwnerName",
         ] {
             if has_tag(script, tag) {
                 return Err(unported(format!("item tag {tag} ({full_type})")));
@@ -1641,13 +1651,43 @@ impl<'a> LootRoller<'a> {
                 .max(self.rand.next(condition_max + 1))
                 .clamp(0, condition_max);
         }
+        if it.head_condition.is_some() {
+            // randomizeHeadCondition: the original sets the item's *condition* again (not the head condition)
+            it.condition = 1
+                .max(self.rand.next(condition_max + 1))
+                .clamp(0, condition_max);
+        }
         if script_complex(script, "sharpness").is_some() {
-            // getMaxSharpness: condition / conditionMax; setSharpness clamps to 0..=max (and 1)
-            let max_sharpness = it.condition as f32 / condition_max as f32;
+            // randomizeSharpness: setSharpness(Rand.Next(0, getMaxSharpness())) clamps to 0..=max (and 1)
+            let max_sharpness = self.max_sharpness(it)?;
             let v = self.rand.next_float(0.0, max_sharpness);
             it.sharpness = Some(v.min(max_sharpness).clamp(0.0, 1.0));
         }
         Ok(())
+    }
+
+    /// InventoryItem.getHeadConditionMax: 0 without a head condition; the `HeadConditionMax` attribute, else
+    /// `getConditionMax()`.
+    fn head_condition_max(&self, it: &LootItem) -> Result<i32, String> {
+        if it.head_condition.is_none() {
+            return Ok(0);
+        }
+        Ok(match it.head_condition_max {
+            Some(m) => m,
+            None => script_int(self.script(it.script)?, "conditionMax"),
+        })
+    }
+
+    /// InventoryItem.getMaxSharpness: 1 without a sharpness attribute; `headCondition / headConditionMax` for an
+    /// item with a head condition, else `condition / conditionMax`.
+    fn max_sharpness(&self, it: &LootItem) -> Result<f32, String> {
+        if it.sharpness.is_none() {
+            return Ok(1.0);
+        }
+        if let Some(h) = it.head_condition {
+            return Ok(h as f32 / self.head_condition_max(it)? as f32);
+        }
+        Ok(it.condition as f32 / script_int(self.script(it.script)?, "conditionMax") as f32)
     }
 
     /// ItemPickerJava.itemSpawnSanityCheck(spawnItem[, container]): in a shop a bag is emptied unless it
@@ -1877,6 +1917,9 @@ impl<'a> LootRoller<'a> {
                 weight.to_bits(),
                 sharp.to_bits()
             );
+            if let Some(h) = i.head_condition {
+                let _ = write!(out, " head={h} hmax={}", self.head_condition_max(i)?);
+            }
             if let Some(inner) = &i.inner {
                 let (clo, chi) = self.bag_contents_weight(i)?;
                 let (ulo, uhi) = self.unequipped_weight(i)?;
@@ -1943,7 +1986,7 @@ impl<'a> LootRoller<'a> {
         let Some(v) = it.sharpness else {
             return Ok(0.0);
         };
-        let max = it.condition as f32 / script_int(self.script(it.script)?, "conditionMax") as f32;
+        let max = self.max_sharpness(it)?;
         Ok(if v > max { max } else { v })
     }
 

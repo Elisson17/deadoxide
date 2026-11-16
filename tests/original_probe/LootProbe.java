@@ -185,6 +185,7 @@ public class LootProbe {
             n++;
             StringBuilder b = new StringBuilder("ITEM " + path + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
                     + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
+ if (i.hasHeadCondition()) b.append(" head=" + i.getHeadCondition() + " hmax=" + i.getHeadConditionMax());
             if (i instanceof zombie.inventory.types.InventoryContainer ic) {
                 b.append(" cap=" + ic.getCapacity() + " icap=" + ic.getItemContainer().getCapacity() + " red=" + ic.getWeightReduction()
                         + " nin=" + ic.getItemContainer().getItems().size() + " cw=" + fbits(ic.getContentsWeight()) + " uw=" + fbits(ic.getUnequippedWeight())
