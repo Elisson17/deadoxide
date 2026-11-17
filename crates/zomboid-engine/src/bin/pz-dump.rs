@@ -84,7 +84,7 @@ fn main() {
         Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
         Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
-        Some("body") if a.len() == 4 => body(Path::new(&a[3])),
+        Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -8874,11 +8874,12 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
 /// BodyProbe's scenarios on the port: "seed:ticks:run:every:show[:options]" (see tests/original_probe/BodyProbe.java).
 /// The probe's player stands on a real square and is built by the game's constructors; the port's body is built from
 /// the same defaults and the options set the same fields.
-pub fn body(cases: &Path) -> Result<String, String> {
+pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
     use zomboid_engine::se::krka::kahlua::vm::object::Object;
     use zomboid_engine::zombie::characters::body_damage::body_sim::{BodyWorld, PlayerBody};
     use zomboid_engine::zombie::characters::stats::{CharacterStat, ALL_STATS};
     use zomboid_engine::zombie::game_time::GameTime;
+    use zomboid_engine::zombie::iso::weather::climate_manager::FLOAT_TEMPERATURE;
     use zomboid_engine::zombie::sandbox_options::SandboxOptions;
     use zomboid_engine::zombie::scripting::objects::resource_location::ResourceLocation;
 
@@ -8888,8 +8889,32 @@ pub fn body(cases: &Path) -> Result<String, String> {
     fn parse_f(v: &str) -> Result<f32, String> {
         v.parse::<f32>().map_err(|e| format!("float {v}: {e}"))
     }
+    use zomboid_engine::zombie::characters::body_damage::body_sim::SquareFacts;
+    use zomboid_engine::zombie::iso::weather::climate_manager::ClimateManager;
+    use zomboid_engine::zombie::lua::lua_manager::{run_lua, LuaManager};
+    use zomboid_engine::zombie::scripting::objects::moodle_type::ALL_MOODLE_TYPES;
     let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
     let mut sb = String::new();
+    // ZomboidGlobals.Load of the real defines.lua (the table the game reads them from)
+    let globals = {
+        let mut lm = LuaManager::init(root).map_err(|e| format!("lua: {e:?}"))?;
+        let defines = root.join("media/lua/shared/defines.lua");
+        run_lua(
+            &lm.loader,
+            &lm.platform,
+            &lm.env,
+            &mut lm.thread,
+            &defines.to_string_lossy(),
+        )
+        .map_err(|e| format!("defines.lua: {e:?}"))?;
+        let mut g = zomboid_engine::zombie::zomboid_globals::ZomboidGlobals::default();
+        g.load(&lm.env)
+            .map_err(|e| format!("ZomboidGlobals.Load: {e:?}"))?;
+        g
+    };
+    for (name, bits) in globals.fields() {
+        let _ = writeln!(sb, "GLOBALS {name} {bits}");
+    }
     for spec in text
         .lines()
         .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
@@ -8932,7 +8957,28 @@ pub fn body(cases: &Path) -> Result<String, String> {
                 }
             }
         }
-        let mut pl = PlayerBody::new(BodyWorld::new(gt, sandbox, seed));
+        let mut climate = ClimateManager::default();
+        let mut world = BodyWorld::new(gt, sandbox, globals.clone(), climate.clone(), seed);
+        world.hydro_power_on = true;
+        for (k, v) in &o {
+            match k.as_str() {
+                "temp" => climate.climate_floats[FLOAT_TEMPERATURE].final_value = parse_f(v)?,
+                "wind" => climate.wind_power = parse_f(v)?,
+                "daylight" => climate.day_light_lagged = parse_f(v)?,
+                "night" => climate.night_lagged = parse_f(v)?,
+                _ => {}
+            }
+        }
+        world.climate = climate;
+        let mut pl = PlayerBody::new(world);
+        // the headless player the probe builds: outdoors on (8280, 11670, 0), no `square` field, nothing carried
+        pl.ch.current_square = Some(SquareFacts {
+            in_room: false,
+            z: 0,
+        });
+        pl.ch.max_weight = 8;
+        pl.ch.bed_type = "averageBed".to_string();
+        pl.ch.sleep_blocked = true;
         for (k, v) in &o {
             match k.as_str() {
                 _ if k.starts_with("stat.") => {
@@ -8957,11 +9003,29 @@ pub fn body(cases: &Path) -> Result<String, String> {
                 "running" => pl.ch.running = v == "1",
                 "sprint" => pl.ch.sprinting = v == "1",
                 "asleep" => pl.ch.asleep = v == "1",
+                "sit" => pl.ch.sitting = v == "1",
+                "bed" => pl.ch.bed_type = v.clone(),
+                "delay" => pl.ch.delay_to_actually_sleep = parse_f(v)?,
+                "fitness" => pl.ch.perk_fitness = v.parse().map_err(|e| format!("fitness: {e}"))?,
+                "sleep" => pl.ch.sleep_blocked = v != "1",
+                "sqfield" => pl.ch.square_field_set = v == "1",
+                "building" => pl.ch.in_building = v == "1",
+                // the square the probe found for `room`: its facts, as FACTS prints them
+                "inroom" => {
+                    if let Some(sq) = pl.ch.current_square.as_mut() {
+                        sq.in_room = v == "1";
+                    }
+                }
+                "floor" => {
+                    if let Some(sq) = pl.ch.current_square.as_mut() {
+                        sq.z = v.parse().map_err(|e| format!("floor: {e}"))?;
+                    }
+                }
                 k if k.starts_with("sb.")
-                    || k == "mult"
-                    || k == "mpd"
-                    || k == "sneak"
-                    || k == "sit" => {}
+                    || matches!(
+                        k,
+                        "mult" | "mpd" | "sneak" | "temp" | "wind" | "daylight" | "night" | "room"
+                    ) => {}
                 _ => return Err(format!("option {k}")),
             }
         }
@@ -8975,10 +9039,33 @@ pub fn body(cases: &Path) -> Result<String, String> {
             hx(gt.minutes_per_day),
             hx(gt.get_delta_minutes_per_day())
         );
+        let sq = pl.ch.current_square;
+        let _ = writeln!(
+            sb,
+            "FACTS inroom={} z={} hydro={} capw={} maxw={} lastsq={} vehicle={} building={} toxic={} sleepblock={} allasleep={} instance={} heatsources=0 airtemp={} airwind={} windchill={} fitnessperk={} strperk=0",
+            u8::from(sq.is_some_and(|s| s.in_room)),
+            sq.map_or(0, |s| s.z),
+            u8::from(pl.world.hydro_power_on),
+            hx(pl.ch.capacity_weight),
+            pl.ch.max_weight,
+            if pl.ch.last_square_same { "same" } else { "null" },
+            u8::from(pl.ch.vehicle_inside_temperature.is_some()),
+            u8::from(pl.ch.in_building),
+            u8::from(pl.ch.in_toxic_building),
+            u8::from(pl.ch.sleep_blocked),
+            u8::from(pl.ch.all_players_asleep),
+            u8::from(pl.ch.is_local_instance),
+            hx(pl.ch.air_temperature_for_character(&pl.world, false)),
+            hx(pl.ch.air_temperature_for_character(&pl.world, true)),
+            hx(pl.ch.wind_chill_amount(&pl.world)),
+            pl.ch.perk_fitness
+        );
         for n in 1..=ticks {
             for r in &run {
                 match *r {
                     "nutrition" => pl.update_nutrition(),
+                    "calc" => pl.calculate_stats()?,
+                    "moodles" => pl.update_moodles()?,
                     _ => return Err(format!("run {r}")),
                 }
             }
@@ -9009,6 +9096,26 @@ pub fn body(cases: &Path) -> Result<String, String> {
                                 hx(nu.calories_max),
                                 hx(nu.calories_min)
                             );
+                        }
+                        "moodles" => {
+                            sb.push_str(" moodles");
+                            for t in ALL_MOODLE_TYPES {
+                                let m = &pl.moodles.moodles[t as usize];
+                                let _ = write!(sb, " {}", m.level);
+                                if matches!(
+                                    t,
+                                    zomboid_engine::zombie::scripting::objects::moodle_type::MoodleType::Hyperthermia
+                                        | zomboid_engine::zombie::scripting::objects::moodle_type::MoodleType::Hypothermia
+                                ) {
+                                    let _ = write!(
+                                        sb,
+                                        "/{}{}{}",
+                                        m.chevron_count,
+                                        u8::from(m.chevron_is_up),
+                                        m.chevron_color as u8
+                                    );
+                                }
+                            }
                         }
                         "traits" => {
                             sb.push_str(" traits");

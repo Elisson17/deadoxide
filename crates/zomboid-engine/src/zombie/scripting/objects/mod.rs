@@ -6,6 +6,7 @@ pub mod game_sound_script;
 pub mod item_tag;
 pub mod item_tag_table;
 pub mod model_attachment;
+pub mod moodle_type;
 pub mod resource_location;
 pub mod sound_timeline_script;
 pub mod timed_action_script;

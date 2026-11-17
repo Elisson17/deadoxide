@@ -969,6 +969,67 @@ impl ClimateManager {
         self.climate_floats[FLOAT_TEMPERATURE].final_value
     }
 
+    /// zombie.iso.weather.ClimateManager.getWindspeedKph
+    pub fn get_windspeed_kph(&self) -> f32 {
+        self.wind_power * 120.0
+    }
+
+    /// zombie.iso.weather.ClimateManager.getAirTemperatureForSquare for a square given as its facts: whether it is
+    /// in a room (`isInARoom`), its floor (`getZ`), the world's hydro power (`IsoWorld.isHydroPowerOn`) and, in a
+    /// vehicle, the vehicle's `getInsideTemperature`. The cell's heat sources are taken as none
+    /// (`IsoCell.getHeatSourceHighestTemperature` then answers the air temperature).
+    pub fn get_air_temperature_for_square(
+        &self,
+        in_room: bool,
+        z: i32,
+        hydro_power: bool,
+        vehicle_inside_temperature: Option<f32>,
+        do_wind_chill: bool,
+    ) -> f32 {
+        let mut temp = self.get_temperature();
+        let is_inside = in_room;
+        let vehicle = vehicle_inside_temperature;
+        if is_inside || vehicle.is_some() {
+            if temp <= 22.0 {
+                if is_inside && hydro_power {
+                    temp = 22.0;
+                }
+                let mut modv = 22.0 - temp;
+                if z < 1 {
+                    temp += modv * (0.4 + 0.2 * self.day_light_lagged);
+                } else {
+                    modv = (f64::from(modv) * 0.85) as f32;
+                    temp += modv * (0.4 + 0.2 * self.day_light_lagged);
+                }
+            } else {
+                if is_inside && hydro_power {
+                    temp = 22.0;
+                }
+                let mut modv = temp - 22.0;
+                if z < 1 {
+                    modv = (f64::from(modv) * 0.85) as f32;
+                    temp -= modv * (0.4 + 0.2 * self.day_light_lagged);
+                } else {
+                    temp -= modv * (0.4 + 0.2 * self.day_light_lagged + 0.2 * self.night_lagged);
+                }
+                if !is_inside && vehicle.is_some() {
+                    temp = temp + modv + modv * self.day_light_lagged;
+                }
+            }
+        } else if do_wind_chill {
+            temp = super::temperature::windchill_celsius_kph(temp, self.get_windspeed_kph());
+        }
+        // no heat sources in the cell
+        if let Some(v) = vehicle {
+            if !is_inside {
+                temp += v;
+            } else {
+                temp += if v > 0.0 { v } else { 0.0 };
+            }
+        }
+        temp
+    }
+
     /// zombie.iso.weather.ClimateManager.getSeason: the current day's season once there is one, else ErosionMain's.
     pub fn get_season(&self) -> &ErosionSeason {
         match self.current_day.as_ref().and_then(|d| d.season.as_ref()) {

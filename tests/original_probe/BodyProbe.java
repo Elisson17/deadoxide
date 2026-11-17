@@ -16,6 +16,7 @@ import zombie.iso.IsoCell;
 import zombie.iso.IsoChunk;
 import zombie.iso.IsoGridSquare;
 import zombie.iso.IsoWorld;
+import zombie.iso.weather.ClimateManager;
 import zombie.network.ServerMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,8 +60,8 @@ public class BodyProbe {
         sc.wy = cy;
         cellMap[(cy - sm.getMinY()) * width + (cx - sm.getMinX())] = sc;
         sm.loadedCells.add(sc);
-        for (int wx = 1034; wx <= 1035; wx++) {
-            for (int wy = 1458; wy <= 1459; wy++) {
+        for (int wx = 1034; wx <= 1037; wx++) {
+            for (int wy = 1458; wy <= 1461; wy++) {
                 IsoChunk ch = (IsoChunk) gp.invoke(null);
                 ch.wx = wx;
                 ch.wy = wy;
@@ -78,6 +79,15 @@ public class BodyProbe {
         ServerHarness.run(a[0], out -> {
             IsoCell cell = IsoWorld.instance.currentCell;
             load(cell);
+            // ZomboidGlobals, as the booted server loaded them (the port loads defines.lua itself)
+            java.util.TreeMap<String, String> gl = new java.util.TreeMap<>();
+            for (Field fd : zombie.ZomboidGlobals.class.getDeclaredFields()) {
+                if (!java.lang.reflect.Modifier.isStatic(fd.getModifiers())) continue;
+                fd.setAccessible(true);
+                if (fd.getType() == double.class) gl.put(fd.getName(), Long.toHexString(Double.doubleToRawLongBits(fd.getDouble(null))));
+                else if (fd.getType() == float.class) gl.put(fd.getName(), Integer.toHexString(Float.floatToRawIntBits(fd.getFloat(null))));
+            }
+            for (java.util.Map.Entry<String, String> e : gl.entrySet()) out.println("GLOBALS " + e.getKey() + " " + e.getValue());
             // the scenarios: the lines of the file a[1] (blank lines and '#' comments skipped)
             for (String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of(a[1]))) {
                 if (line.isBlank() || line.startsWith("#")) continue;
@@ -118,10 +128,24 @@ public class BodyProbe {
         out.println("SCENARIO " + spec);
         IsoPlayer pl = new IsoPlayer(cell, null, 8280, 11670, 0);
         IsoGridSquare sq = cell.getGridSquare(8280, 11670, 0);
+        // room=1: the first square of the loaded chunks that is in a room; room=2: the first square on floor 1
+        if (o.containsKey("room")) {
+            IsoGridSquare found = null;
+            int rz = o.get("room").equals("2") ? 1 : 0;
+            for (int y = 1458 * 8; y < 1462 * 8 && found == null; y++) {
+                for (int x = 1034 * 8; x < 1038 * 8 && found == null; x++) {
+                    IsoGridSquare c = cell.getGridSquare(x, y, rz);
+                    if (c != null && (rz == 1 || c.isInARoom())) found = c;
+                }
+            }
+            if (found == null) throw new IllegalStateException("no square for room=" + o.get("room"));
+            sq = found;
+        }
         pl.setCurrent(sq);
-        pl.setX(8280.5f);
-        pl.setY(11670.5f);
-        pl.setZ(0);
+        pl.setX(sq.getX() + 0.5f);
+        pl.setY(sq.getY() + 0.5f);
+        pl.setZ(sq.getZ());
+        if (o.getOrDefault("sqfield", "0").equals("1")) setField(pl, "square", sq);
         // the world: the clock multiplier and the day length, the sandbox options of the scenario
         GameTime gt = GameTime.instance;
         float oldMult = gt.getTrueMultiplier();
@@ -139,6 +163,18 @@ public class BodyProbe {
                 restore.add(() -> so.set(name, old));
             }
         }
+        // the climate: the values the character reads are set directly on the manager (the world's own are restored after)
+        ClimateManager clim = ClimateManager.getInstance();
+        for (String cf : new String[] {"temp", "wind", "daylight", "night"}) {
+            if (!o.containsKey(cf)) continue;
+            float v = Float.parseFloat(o.get(cf));
+            switch (cf) {
+                case "temp" -> { Object c = clim.getClimateFloat(ClimateManager.FLOAT_TEMPERATURE); float old = (Float) g(c, "finalValue"); setField(c, "finalValue", v); restore.add(() -> { try { setField(c, "finalValue", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
+                case "wind" -> { float old = (Float) g(clim, "windPower"); setField(clim, "windPower", v); restore.add(() -> { try { setField(clim, "windPower", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
+                case "daylight" -> { float old = (Float) g(clim, "dayLightLagged"); setField(clim, "dayLightLagged", v); restore.add(() -> { try { setField(clim, "dayLightLagged", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
+                default -> { float old = (Float) g(clim, "nightLagged"); setField(clim, "nightLagged", v); restore.add(() -> { try { setField(clim, "nightLagged", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
+            }
+        }
         for (java.util.Map.Entry<String, String> e : o.entrySet()) {
             String k = e.getKey(), v = e.getValue();
             if (k.startsWith("stat.")) pl.getStats().set(CharacterStat.getById(k.substring(5)), Float.parseFloat(v));
@@ -154,11 +190,32 @@ public class BodyProbe {
             else if (k.equals("sneak")) pl.setSneaking(v.equals("1"));
             else if (k.equals("asleep")) pl.setAsleep(v.equals("1"));
             else if (k.equals("sit")) pl.setSitOnGround(v.equals("1"));
+            else if (k.equals("bed")) pl.setBedType(v);
+            else if (k.equals("delay")) pl.setDelayToSleep(Float.parseFloat(v));
+            else if (k.equals("fitness")) pl.setPerkLevelDebug(zombie.characters.skills.PerkFactory.Perks.Fitness, Integer.parseInt(v));
+            else if (k.equals("sleep")) {
+                zombie.network.ServerOptions so2 = zombie.network.ServerOptions.instance;
+                boolean oa = so2.sleepAllowed.getValue(), on = so2.sleepNeeded.getValue();
+                so2.sleepAllowed.setValue(v.equals("1"));
+                so2.sleepNeeded.setValue(v.equals("1"));
+                restore.add(() -> { so2.sleepAllowed.setValue(oa); so2.sleepNeeded.setValue(on); });
+            }
         }
         set(RandStandard.INSTANCE, RandAbstract.class, "rand", new Random(seed));
         set(RandStandard.INSTANCE, RandAbstract.class, "id", 0);
         out.println("ENV mult=" + f(gt.getMultiplier()) + " delta=" + f(gt.getTimeDelta()) + " gwsslu=" + f(gt.getGameWorldSecondsSinceLastUpdate())
             + " mpd=" + f(gt.getMinutesPerDay()) + " dmpd=" + f(gt.getDeltaMinutesPerDay()));
+        // the facts of the headless player the port takes as inputs: its square, its inventory and the stats it was born with
+        out.println("FACTS inroom=" + (sq.isInARoom() ? 1 : 0) + " z=" + sq.getZ() + " hydro=" + (IsoWorld.instance.isHydroPowerOn() ? 1 : 0)
+            + " capw=" + f(pl.getInventory().getCapacityWeight()) + " maxw=" + pl.getMaxWeight() + " lastsq=" + (pl.getLastSquare() == null ? "null" : pl.getLastSquare() == sq ? "same" : "other")
+            + " vehicle=" + (pl.getVehicle() == null ? 0 : 1) + " building=" + (pl.getCurrentBuilding() == null ? 0 : 1) + " toxic=" + (pl.getCurrentBuilding() != null && pl.getCurrentBuilding().isToxic() ? 1 : 0)
+            + " sleepblock=" + ((zombie.network.GameServer.server && (!zombie.network.ServerOptions.instance.sleepAllowed.getValue() || !zombie.network.ServerOptions.instance.sleepNeeded.getValue())) ? 1 : 0)
+            + " allasleep=" + (IsoPlayer.allPlayersAsleep() ? 1 : 0)
+            + " instance=" + (IsoPlayer.getInstance() == pl ? 1 : 0)
+            + " heatsources=" + ((java.util.List<?>) g(cell, "heatSources")).size()
+            + " airtemp=" + f(clim.getAirTemperatureForCharacter(pl, false)) + " airwind=" + f(clim.getAirTemperatureForCharacter(pl, true))
+            + " windchill=" + f(zombie.iso.weather.Temperature.getWindChillAmountForPlayer(pl))
+            + " fitnessperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Fitness) + " strperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Strength));
         BodyDamage bd = pl.getBodyDamage();
         Method calc = IsoGameCharacter.class.getDeclaredMethod("calculateStats");
         calc.setAccessible(true);
@@ -186,6 +243,17 @@ public class BodyProbe {
                                 .append(' ').append(f(nu.getCarbohydrates())).append(' ').append(Long.toHexString(Double.doubleToRawLongBits(nu.getWeight())))
                                 .append(' ').append(nu.isIncWeight() ? 1 : 0).append(nu.isIncWeightLot() ? 1 : 0).append(nu.isDecWeight() ? 1 : 0)
                                 .append(' ').append(g(nu, "updatedWeight")).append(' ').append(f((Float) g(nu, "caloriesMax"))).append(' ').append(f((Float) g(nu, "caloriesMin")));
+                        }
+                        case "moodles" -> {
+                            sb.append(" moodles");
+                            for (zombie.scripting.objects.MoodleType mt : zombie.scripting.objects.Registries.MOODLE_TYPE.values()) {
+                                sb.append(' ').append(pl.getMoodles().getMoodleLevel(mt));
+                                if (mt == zombie.scripting.objects.MoodleType.HYPERTHERMIA || mt == zombie.scripting.objects.MoodleType.HYPOTHERMIA) {
+                                    zombie.characters.Moodles.Moodle m = (zombie.characters.Moodles.Moodle) ((java.util.Map<?, ?>) g(pl.getMoodles(), "moodles")).get(mt);
+                                    float r = m.getChevronColor().r;
+                                    sb.append('/').append(m.getChevronCount()).append(m.isChevronIsUp() ? 1 : 0).append(r == 1.0f ? 0 : r == 0.88235295f ? 1 : 2);
+                                }
+                            }
                         }
                         case "traits" -> {
                             sb.append(" traits");

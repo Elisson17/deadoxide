@@ -111,6 +111,15 @@ impl ZomboidGlobals {
         Ok(())
     }
 
+    /// The loaded double named `java_field` (`ZomboidGlobals.thirstIncrease`, ...). A name `Load` does not set is a
+    /// programming error: it answers NaN so the oracle diff shows it.
+    pub fn field(&self, java_field: &str) -> f64 {
+        LOADED
+            .iter()
+            .position(|(f, _)| *f == java_field)
+            .map_or(f64::NAN, |i| self.loaded[i])
+    }
+
     /// Every static double/float field by Java name with its raw bits as hex (`Double.doubleToRawLongBits`,
     /// `Float.floatToRawIntBits`), sorted by name (String order; the names are ASCII).
     pub fn fields(&self) -> Vec<(&'static str, String)> {

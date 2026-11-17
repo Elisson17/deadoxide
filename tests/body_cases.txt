@@ -11,3 +11,31 @@
 8:30:nutrition:10:nut:sb.Nutrition=1,moving=1,sprint=1
 9:30:nutrition:10:nut:sb.Nutrition=1,moving=1
 10:30:nutrition:10:nut:sb.Nutrition=0,weight=70,cal=-1000
+# -- stat updates (calculateStats) and moodles: the clock runs 1.0 per tick; the sleeping/awake, sitting and trait paths
+11:300:calc+moodles:100:stats+moodles+draws:mult=1
+12:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,stat.Hunger=0.1,stat.Thirst=0.1
+13:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,asleep=1,stat.Fatigue=0.5,stat.Thirst=0.2
+14:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,sit=1,stat.Endurance=0.6
+15:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,moving=1,running=1,stat.Hunger=0.3
+16:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,trait=highthirst+heartyappetite+needsmoresleep
+17:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,trait=lowthirst+lighteater+needslesssleep,sb.StatsDecrease=1
+18:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,stat.Stress=0.8,stat.Anger=0.6,stat.Boredom=60,stat.Unhappiness=50,stat.Panic=40
+19:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,stat.Wetness=50,stat.Discomfort=45,stat.Pain=30,stat.Intoxication=35,stat.Sickness=0.3
+20:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,temp=-5,wind=0.5,daylight=0.3,night=0.2
+21:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,stat.Temperature=39.5
+22:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,stat.Temperature=34
+# -- the server's fatigue switch (sleep=1: SleepAllowed and SleepNeeded) so fatigue runs; sleeping with beds, traits, fitness
+23:600:calc+moodles:200:stats+moodles:mult=1,mpd=1,sleep=1,stat.Fatigue=0.5
+24:600:calc+moodles:200:stats+moodles:mult=1,mpd=1,sleep=1,asleep=1,stat.Fatigue=0.8,stat.Endurance=0.3
+25:600:calc+moodles:200:stats+moodles:mult=1,mpd=1,sleep=1,asleep=1,stat.Fatigue=0.2,bed=goodBedPillow,trait=insomniac+needsmoresleep,fitness=5
+26:600:calc+moodles:200:stats+moodles:mult=1,mpd=1,sleep=1,asleep=1,stat.Fatigue=0.9,bed=floor,trait=nightowl+needslesssleep,delay=0.001,sb.EndRegen=1
+27:600:calc+moodles:200:stats+moodles:mult=1,mpd=1,sleep=1,asleep=1,stat.Fatigue=0.9,bed=badBedPillow,fitness=10,prot=-1200,lip=-1600,sb.Nutrition=1
+28:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,sleep=1,asleep=1,stat.Hunger=0.2,bed=averageBedPillow,sb.StatsDecrease=5,sb.EndRegen=5
+29:300:calc+moodles:100:stats+moodles:mult=1,mpd=1,sleep=1,sit=1,stat.Fatigue=0.6,fitness=3
+# -- the climate the character stands in: the outdoor square field set (sqfield=1) gives wind chill; a room (inroom=1) and floor 1 change the air
+30:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,temp=-5,wind=0.5,daylight=0.3,night=0.2
+31:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,temp=-20,wind=1,daylight=0
+32:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,temp=-5,wind=0.5,daylight=0.3,night=0.2
+33:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,temp=35,wind=0.2,daylight=0.9,night=0.1
+34:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=2,floor=1,inroom=0,temp=30,daylight=0.6,night=0.4
+35:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=2,floor=1,inroom=0,temp=5,daylight=0.6,night=0.4

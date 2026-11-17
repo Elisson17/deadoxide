@@ -35,6 +35,14 @@ pub const ORDERED_STATS: [(&str, f32, f32, f32); 24] = [
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stats {
     pub values: [f32; 24],
+    /// `lastEndurance`, field initialiser 1.0
+    pub last_endurance: f32,
+    pub tripping: bool,
+    pub tripping_rot_angle: f32,
+    /// `lastVeryCloseZombies` (`getNumVeryCloseZombies`)
+    pub last_very_close_zombies: i32,
+    /// `lastNumChasingZombies` (`getNumChasingZombies`)
+    pub last_num_chasing_zombies: i32,
 }
 
 impl Stats {
@@ -44,7 +52,10 @@ impl Stats {
         for (v, (_, min, max, _)) in values.iter_mut().zip(ORDERED_STATS) {
             *v = pz_math::clamp(b.get_float()?, min, max);
         }
-        Ok(Stats { values })
+        Ok(Stats {
+            values,
+            ..Stats::default()
+        })
     }
 }
 
@@ -159,7 +170,14 @@ impl Default for Stats {
         for (v, s) in values.iter_mut().zip(ORDERED_STATS) {
             *v = s.3;
         }
-        Stats { values }
+        Stats {
+            values,
+            last_endurance: 1.0,
+            tripping: false,
+            tripping_rot_angle: 0.0,
+            last_very_close_zombies: 0,
+            last_num_chasing_zombies: 0,
+        }
     }
 }
 
