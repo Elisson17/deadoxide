@@ -162,12 +162,52 @@ fn rotation_matrix(order: i32, rotation: Vec3) -> Mat4 {
         out = temp[ord[0]];
     }
     if !is_id[ord[1]] {
-        out = out.mul(&temp[ord[1]]);
+        out = mul_in_library_order(&out, &temp[ord[1]]);
     }
     if !is_id[ord[2]] {
-        out = out.mul(&temp[ord[2]]);
+        out = mul_in_library_order(&out, &temp[ord[2]]);
     }
     out
+}
+
+/// `a * b` with the sums in the order the compiled `GetRotationMatrix` evaluates them (column 4 first, then 3, 1, 2)
+fn mul_in_library_order(a: &Mat4, b: &Mat4) -> Mat4 {
+    let x = [
+        [a.a1, a.a2, a.a3, a.a4],
+        [a.b1, a.b2, a.b3, a.b4],
+        [a.c1, a.c2, a.c3, a.c4],
+        [a.d1, a.d2, a.d3, a.d4],
+    ];
+    let t = [
+        [b.a1, b.a2, b.a3, b.a4],
+        [b.b1, b.b2, b.b3, b.b4],
+        [b.c1, b.c2, b.c3, b.c4],
+        [b.d1, b.d2, b.d3, b.d4],
+    ];
+    let mut r = [[0.0f32; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            r[i][j] = ((x[i][3] * t[3][j] + x[i][2] * t[2][j]) + x[i][0] * t[0][j]) + x[i][1] * t[1][j];
+        }
+    }
+    Mat4 {
+        a1: r[0][0],
+        a2: r[0][1],
+        a3: r[0][2],
+        a4: r[0][3],
+        b1: r[1][0],
+        b2: r[1][1],
+        b3: r[1][2],
+        b4: r[1][3],
+        c1: r[2][0],
+        c2: r[2][1],
+        c3: r[2][2],
+        c4: r[2][3],
+        d1: r[3][0],
+        d2: r[3][1],
+        d3: r[3][2],
+        d4: r[3][3],
+    }
 }
 
 fn mat3_of(m: &Mat4) -> Mat3 {
@@ -866,7 +906,8 @@ impl<'a> Conv<'a> {
         &mut self,
         out_idx: usize,
         geo: &MeshGeometry,
-        absolute_transform: &Mat4,
+        // passed along by the library, which does not use it any more
+        _absolute_transform: &Mat4,
         material_index: i64,
         output_vert_start_indices: Option<&Vec<u32>>,
     ) -> R<()> {
@@ -924,7 +965,6 @@ impl<'a> Conv<'a> {
                 &out_indices,
                 &index_out,
                 &count_out,
-                absolute_transform,
             );
         }
         self.bone_map.clear();
@@ -940,7 +980,6 @@ impl<'a> Conv<'a> {
         out_indices: &[usize],
         index_out_indices: &[usize],
         count_out_indices: &[usize],
-        absolute_transform: &Mat4,
     ) {
         let Kind::Model(_) = &cl.node.kind else {
             return;
@@ -948,8 +987,8 @@ impl<'a> Conv<'a> {
         let deformer_name = cl.node.name.clone();
         let bone_name = fix_node_name(&deformer_name);
         if !self.bone_map.contains_key(&deformer_name) {
-            let mut offset = cl.transform_link.inverse();
-            offset = offset.mul(absolute_transform);
+            // the library's bone offset matrix is the cluster's `Transform` as it is (no inverse, no absolute transform)
+            let offset = cl.transform;
             let mut weights = Vec::with_capacity(out_indices.len());
             for (i, &index_index) in index_out_indices.iter().enumerate() {
                 if index_index == usize::MAX {
