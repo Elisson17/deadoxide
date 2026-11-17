@@ -4,5 +4,7 @@
 pub mod body_damage;
 pub mod body_part;
 pub mod body_part_type;
+pub mod body_sim;
 pub mod fitness;
+pub mod metabolics;
 pub mod nutrition;

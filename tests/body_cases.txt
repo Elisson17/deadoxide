@@ -1,0 +1,13 @@
+# BodyProbe scenarios, one per line: seed:ticks:run:every:show[:options]
+# (tests/original_probe/BodyProbe.java documents the fields; the Rust side is `pz-dump body`)
+# -- Nutrition: calories and macronutrients drain, weight moves, the weight traits change every 2000 updates
+1:200:nutrition:50:nut+traits+draws:sb.Nutrition=1,mult=1
+2:60:nutrition:20:nut+traits:sb.Nutrition=1,moving=1,running=1,mpd=60
+3:40:nutrition:20:nut:sb.Nutrition=1,asleep=1,weight=105,cal=2000
+4:2100:nutrition:700:nut+traits:sb.Nutrition=1,weight=84.99,cal=3500,carb=800,mpd=1
+5:2100:nutrition:700:nut+traits:sb.Nutrition=1,weight=70.01,cal=-1500,mpd=1
+6:30:nutrition:10:nut+traits:sb.Nutrition=1,trait=weightgain,weight=60,cal=900,mpd=5
+7:30:nutrition:10:nut+traits:sb.Nutrition=1,trait=weightloss,weight=80,cal=-200,mpd=5
+8:30:nutrition:10:nut:sb.Nutrition=1,moving=1,sprint=1
+9:30:nutrition:10:nut:sb.Nutrition=1,moving=1
+10:30:nutrition:10:nut:sb.Nutrition=0,weight=70,cal=-1000

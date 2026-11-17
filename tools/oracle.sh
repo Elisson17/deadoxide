@@ -274,6 +274,8 @@ sel erosionini && server_case erosionini ErosionIniProbe "$HERE/profile/Saves/Sa
 sel mapver && server_case mapver MapVerProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" "$HERE/tests/mapver_crafted"
 # The radio (ZomboidRadio, RadioScriptManager, RadioChannel/Script/BroadCast/Line, RadioData.xml, RADIO_SAVE.txt, RadioTranslationData): the commands of tests/radio_cases.txt on the original and on the port; crafted files are in tests/radio_crafted, the 4th argument is the player's own save (its RADIO_SAVE.txt is read as @real)
 sel radio && server_case radio RadioProbe "$HERE/tests/radio_cases.txt" "$HERE/tests/radio_crafted" "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
+# zombie.characters.BodyDamage and the stat updates of IsoGameCharacter on a headless IsoPlayer in the booted server
+sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

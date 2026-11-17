@@ -84,6 +84,7 @@ fn main() {
         Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
         Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
+        Some("body") if a.len() == 4 => body(Path::new(&a[3])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -8864,6 +8865,164 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
                 let chunks = zombie_chunks(root)?;
                 let grid = ZombieGrid::new(&chunks);
                 zombie_ticks(&mut sb, &mut z, &mut world, &grid, ticks)?;
+            }
+        }
+    }
+    Ok(sb)
+}
+
+/// BodyProbe's scenarios on the port: "seed:ticks:run:every:show[:options]" (see tests/original_probe/BodyProbe.java).
+/// The probe's player stands on a real square and is built by the game's constructors; the port's body is built from
+/// the same defaults and the options set the same fields.
+pub fn body(cases: &Path) -> Result<String, String> {
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::characters::body_damage::body_sim::{BodyWorld, PlayerBody};
+    use zomboid_engine::zombie::characters::stats::{CharacterStat, ALL_STATS};
+    use zomboid_engine::zombie::game_time::GameTime;
+    use zomboid_engine::zombie::sandbox_options::SandboxOptions;
+    use zomboid_engine::zombie::scripting::objects::resource_location::ResourceLocation;
+
+    fn hx(v: f32) -> String {
+        format!("{:x}", v.to_bits())
+    }
+    fn parse_f(v: &str) -> Result<f32, String> {
+        v.parse::<f32>().map_err(|e| format!("float {v}: {e}"))
+    }
+    let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    let mut sb = String::new();
+    for spec in text
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .map(str::trim)
+    {
+        let p: Vec<&str> = spec.splitn(6, ':').collect();
+        if p.len() < 5 {
+            return Err(format!("body scenario {spec}"));
+        }
+        let seed: i64 = p[0].parse().map_err(|e| format!("seed: {e}"))?;
+        let ticks: i32 = p[1].parse().map_err(|e| format!("ticks: {e}"))?;
+        let run: Vec<&str> = p[2].split('+').collect();
+        let every: i32 = p[3].parse().map_err(|e| format!("every: {e}"))?;
+        let show: Vec<&str> = p[4].split('+').collect();
+        let mut o: Vec<(String, String)> = Vec::new();
+        if p.len() > 5 && !p[5].is_empty() {
+            for kv in p[5].split(',') {
+                let (k, v) = kv.split_once('=').ok_or_else(|| format!("option {kv}"))?;
+                o.push((k.to_string(), v.to_string()));
+            }
+        }
+        let opt = |name: &str, default: &str| -> String {
+            o.iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| default.to_string())
+        };
+        let _ = writeln!(sb, "SCENARIO {spec}");
+        let gt = GameTime {
+            multiplier: parse_f(&opt("mult", "1.0"))?,
+            minutes_per_day: parse_f(&opt("mpd", "30.0"))?,
+            ..GameTime::default()
+        };
+        let mut sandbox = SandboxOptions::new();
+        for (k, v) in &o {
+            if let Some(name) = k.strip_prefix("sb.") {
+                let d: f64 = v.parse().map_err(|e| format!("sandbox {k}: {e}"))?;
+                if !sandbox.set_by_name(name, &Object::Number(d)) {
+                    return Err(format!("sandbox option {name}"));
+                }
+            }
+        }
+        let mut pl = PlayerBody::new(BodyWorld::new(gt, sandbox, seed));
+        for (k, v) in &o {
+            match k.as_str() {
+                _ if k.starts_with("stat.") => {
+                    let st = CharacterStat::by_id(&k[5..]).ok_or_else(|| format!("stat {k}"))?;
+                    pl.stats.set(st, parse_f(v)?);
+                }
+                "weight" => {
+                    let _ = pl
+                        .nutrition
+                        .set_weight(v.parse().map_err(|e| format!("weight: {e}"))?);
+                }
+                "cal" => pl.nutrition.set_calories(parse_f(v)?),
+                "carb" => pl.nutrition.set_carbohydrates(parse_f(v)?),
+                "lip" => pl.nutrition.set_lipids(parse_f(v)?),
+                "prot" => pl.nutrition.set_proteins(parse_f(v)?),
+                "trait" => {
+                    for t in v.split('+') {
+                        pl.ch.traits.set(ResourceLocation::of(t)?, true);
+                    }
+                }
+                "moving" => pl.ch.player_moving = v == "1",
+                "running" => pl.ch.running = v == "1",
+                "sprint" => pl.ch.sprinting = v == "1",
+                "asleep" => pl.ch.asleep = v == "1",
+                k if k.starts_with("sb.")
+                    || k == "mult"
+                    || k == "mpd"
+                    || k == "sneak"
+                    || k == "sit" => {}
+                _ => return Err(format!("option {k}")),
+            }
+        }
+        let gt = &pl.world.game_time;
+        let _ = writeln!(
+            sb,
+            "ENV mult={} delta={} gwsslu={} mpd={} dmpd={}",
+            hx(gt.get_multiplier()),
+            hx(gt.get_time_delta()),
+            hx(gt.get_game_world_seconds_since_last_update()),
+            hx(gt.minutes_per_day),
+            hx(gt.get_delta_minutes_per_day())
+        );
+        for n in 1..=ticks {
+            for r in &run {
+                match *r {
+                    "nutrition" => pl.update_nutrition(),
+                    _ => return Err(format!("run {r}")),
+                }
+            }
+            if n <= 3 || n % every == 0 || n == ticks {
+                let _ = write!(sb, "TICK {n}");
+                for sec in &show {
+                    match *sec {
+                        "stats" => {
+                            sb.push_str(" stats");
+                            for st in ALL_STATS {
+                                let _ = write!(sb, " {}", hx(pl.stats.get(st)));
+                            }
+                        }
+                        "nut" => {
+                            let nu = &pl.nutrition;
+                            let _ = write!(
+                                sb,
+                                " nut {} {} {} {} {:x} {}{}{} {} {} {}",
+                                hx(nu.calories),
+                                hx(nu.proteins),
+                                hx(nu.lipids),
+                                hx(nu.carbohydrates),
+                                nu.weight.to_bits(),
+                                u8::from(nu.inc_weight),
+                                u8::from(nu.inc_weight_lot),
+                                u8::from(nu.dec_weight),
+                                nu.updated_weight,
+                                hx(nu.calories_max),
+                                hx(nu.calories_min)
+                            );
+                        }
+                        "traits" => {
+                            sb.push_str(" traits");
+                            for t in &pl.ch.traits.known_traits {
+                                let _ = write!(sb, " {t}");
+                            }
+                        }
+                        "draws" => {
+                            let _ = write!(sb, " draws={}", pl.world.rand.id());
+                        }
+                        _ => return Err(format!("show {sec}")),
+                    }
+                }
+                sb.push('\n');
             }
         }
     }

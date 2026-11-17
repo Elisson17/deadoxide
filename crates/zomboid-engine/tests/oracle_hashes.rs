@@ -496,6 +496,14 @@ fn radio_matches_original() {
 
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
+fn body_matches_original() {
+    // BodyProbe's scenarios: tests/body_cases.txt, shared with the `body` line of tools/oracle.sh
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = root.join("tests/body_cases.txt");
+    check("body", &[cases.to_str().expect("utf-8 path")]);
+}
+
+#[test]
 fn scriptparser_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/script_parser_cases.txt");
     check("scriptparser", &[cases.to_str().expect("utf-8 path")]);

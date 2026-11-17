@@ -114,6 +114,32 @@ impl GameTime {
         multiplier * 0.8
     }
 
+    /// zombie.GameTime.getTimeDelta: `getTimeDeltaFromMultiplier(getMultiplier())`.
+    pub fn get_time_delta(&self) -> f32 {
+        self.get_multiplier() / 0.8 / self.multiplier_bias / 60.0
+    }
+
+    /// zombie.GameTime.getGameWorldSecondsSinceLastUpdate: the time delta times the game seconds per real second.
+    pub fn get_game_world_seconds_since_last_update(&self) -> f32 {
+        let dif = 1440.0f32 / self.minutes_per_day;
+        self.get_time_delta() * dif
+    }
+
+    /// zombie.GameTime.getThirtyFPSMultiplier
+    pub fn get_thirty_fps_multiplier(&self) -> f32 {
+        self.get_multiplier() / 1.6
+    }
+
+    /// zombie.GameTime.getInvMultiplier
+    pub fn get_inv_multiplier(&self) -> f32 {
+        1.0 / self.get_multiplier()
+    }
+
+    /// zombie.GameTime.getDeltaMinutesPerDay
+    pub fn get_delta_minutes_per_day(&self) -> f32 {
+        30.0 / self.minutes_per_day
+    }
+
     /// zombie.GameTime.getUnmoddedMultiplier (no player asleep).
     pub fn get_unmodded_multiplier(&self) -> f32 {
         self.multiplier * self.fps_multiplier * self.per_object_multiplier
