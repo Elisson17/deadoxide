@@ -586,6 +586,12 @@ fn body_matches_original() {
     check("body", &[cases.to_str().expect("utf-8 path")]);
 }
 
+/// The FMOD bank list of `FMODManager.init()` (per-bank event and VCA counts) and the RIFF container of the bank files.
+#[test]
+fn fmodbanks_matches_original() {
+    check("fmodbanks", &["-", "banks"]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

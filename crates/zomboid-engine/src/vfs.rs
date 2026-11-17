@@ -105,3 +105,38 @@ pub fn read_dir(p: &Path) -> io::Result<Vec<String>> {
     }
     Ok(names)
 }
+
+/// Length of a file in bytes (without reading it).
+pub fn len(p: &Path) -> io::Result<u64> {
+    if !mounted() {
+        return Ok(std::fs::metadata(p)?.len());
+    }
+    MEM.with(|m| {
+        m.borrow()
+            .as_ref()
+            .and_then(|m| m.get(&key(p)).map(|d| d.len() as u64))
+    })
+    .ok_or_else(|| not_found(p))
+}
+
+/// `len` bytes of a file from `offset` (fewer when the file ends first), for files too big to read whole (the FMOD
+/// sound banks hold hundreds of MB of samples behind a small metadata head).
+pub fn read_range(p: &Path, offset: u64, len: usize) -> io::Result<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    if !mounted() {
+        let mut f = std::fs::File::open(p)?;
+        f.seek(SeekFrom::Start(offset))?;
+        let mut out = Vec::new();
+        f.take(len as u64).read_to_end(&mut out)?;
+        return Ok(out);
+    }
+    MEM.with(|m| {
+        m.borrow().as_ref().and_then(|m| {
+            m.get(&key(p)).map(|d| {
+                let start = (offset as usize).min(d.len());
+                d[start..(start + len).min(d.len())].to_vec()
+            })
+        })
+    })
+    .ok_or_else(|| not_found(p))
+}

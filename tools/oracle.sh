@@ -329,6 +329,10 @@ sel xmodels && ai_case xmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last
 sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x anim x media/anims_X
 # zombie.characters.BodyDamage and the stat updates of IsoGameCharacter on a headless IsoPlayer in the booted server
 sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
+# FMOD sound banks (E64): the game's own FMODManager.init() headless (natives of this OS, game root as cwd) loads the four
+# banks media/sound/banks/Desktop/{ZomboidSound.strings,ZomboidMusic,ZomboidSound,ZomboidSoundMP}.bank; the probe prints what the
+# Studio API reports (FmodBanksProbe <mode>), pz-dump the same from a parse of the bank files, which are RE'd (no FMOD source)
+sel fmodbanks && game_case fmodbanks FmodBanksProbe banks
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

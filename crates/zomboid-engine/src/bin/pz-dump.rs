@@ -12,6 +12,9 @@
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 //!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
 //!   pz-dump sounds <game root> [<command file> <scratch dir>]   (pairs with SoundsProbe.java)
+//!   pz-dump fmodbanks <game root> <scratch, unused> banks   (pairs with FmodBanksProbe.java)
+#[path = "pz-dump-fmod/mod.rs"]
+mod fmod_dump;
 #[path = "pz-dump-models/mod.rs"]
 mod models;
 
@@ -99,6 +102,7 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
+        Some("fmodbanks") if a.len() == 5 => fmod_dump::dump(Path::new(&a[2]), &a[4]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
