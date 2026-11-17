@@ -4,13 +4,13 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 438 of 3432 classes touched, 1780 of 46318 method names cited (3.8%), 965313 decompiled lines.**
+**Total: 448 of 3432 classes touched, 1780 of 46318 method names cited (3.8%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 78 | 7277 | 416 (5.7%) | 144530 |
-| zombie.core | 450 | 84 | 5920 | 225 (3.8%) | 93574 |
+| zombie.core | 450 | 94 | 5920 | 225 (3.8%) | 93574 |
 | zombie.characters | 200 | 47 | 5028 | 136 (2.7%) | 77144 |
 | zombie.network | 436 | 4 | 3229 | 4 (0.1%) | 60679 |
 | zombie.scripting | 205 | 36 | 2713 | 175 (6.5%) | 52509 |
@@ -248,6 +248,16 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.skinnedmodel.animation.AnimationClip | 0 / 14 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_clip.rs |
 | zombie.core.skinnedmodel.animation.AnimationTrack | 0 / 102 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_track.rs |
 | zombie.core.skinnedmodel.animation.BoneAxis | 0 / 0 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/bone_axis.rs |
+| zombie.core.skinnedmodel.animation.Keyframe | 0 / 11 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/keyframe.rs |
+| zombie.core.skinnedmodel.model.ModelLoader | 0 / 7 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/model_loader.rs |
+| zombie.core.skinnedmodel.model.ModelTxt | 0 / 0 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/model_txt.rs |
+| zombie.core.skinnedmodel.model.SkinningData | 0 / 10 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/skinning_data.rs |
+| zombie.core.skinnedmodel.model.VertexBufferObject | 0 / 25 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/vertex_buffer_object.rs |
+| zombie.core.skinnedmodel.model.jassimp.ImportedSkeleton | 0 / 14 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/jassimp/imported_skeleton.rs |
+| zombie.core.skinnedmodel.model.jassimp.ImportedSkinnedMesh | 0 / 3 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/jassimp/imported_skinned_mesh.rs |
+| zombie.core.skinnedmodel.model.jassimp.ImportedStaticMesh | 0 / 2 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/jassimp/imported_static_mesh.rs |
+| zombie.core.skinnedmodel.model.jassimp.JAssImpImporter | 0 / 15 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/jassimp/jassimp_importer.rs |
+| zombie.core.skinnedmodel.model.jassimp.ProcessedAiScene | 0 / 10 | crates/zomboid-engine/src/zombie/core/skinnedmodel/model/jassimp/processed_ai_scene.rs |
 | zombie.core.skinnedmodel.population.ClothingDecalGroup | 1 / 2 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_decals.rs |
 | zombie.core.skinnedmodel.population.ClothingDecals | 3 / 7 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_decals.rs |
 | zombie.core.skinnedmodel.population.ClothingItem | 3 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/population/clothing_item.rs |
