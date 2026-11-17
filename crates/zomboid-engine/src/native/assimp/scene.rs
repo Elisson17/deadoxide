@@ -382,7 +382,8 @@ impl Mat4 {
             + self.a4 * self.b3 * self.c2 * self.d1
     }
 
-    /// aiMatrix4x4::Decompose(scaling, rotation, position)
+    /// aiMatrix4x4::Decompose(scaling, rotation, position), with the arithmetic order of the compiled library: the
+    /// column lengths add the squares as z, x, y and the columns are normalized by multiplying with `1 / scale`.
     pub fn decompose(&self) -> (Vec3, Quat, Vec3) {
         let pos = Vec3::new(self.a4, self.b4, self.c4);
         let mut cols = [
@@ -390,30 +391,16 @@ impl Mat4 {
             Vec3::new(self.a2, self.b2, self.c2),
             Vec3::new(self.a3, self.b3, self.c3),
         ];
-        let mut scaling = Vec3::new(cols[0].length(), cols[1].length(), cols[2].length());
-        if self.determinant() < 0.0 {
+        let len = |v: &Vec3| (v.z * v.z + v.x * v.x + v.y * v.y).sqrt();
+        let mut scaling = Vec3::new(len(&cols[0]), len(&cols[1]), len(&cols[2]));
+        if !(0.0 <= self.determinant()) {
             scaling = Vec3::new(-scaling.x, -scaling.y, -scaling.z);
         }
-        if scaling.x != 0.0 {
-            cols[0] = Vec3::new(
-                cols[0].x / scaling.x,
-                cols[0].y / scaling.x,
-                cols[0].z / scaling.x,
-            );
-        }
-        if scaling.y != 0.0 {
-            cols[1] = Vec3::new(
-                cols[1].x / scaling.y,
-                cols[1].y / scaling.y,
-                cols[1].z / scaling.y,
-            );
-        }
-        if scaling.z != 0.0 {
-            cols[2] = Vec3::new(
-                cols[2].x / scaling.z,
-                cols[2].y / scaling.z,
-                cols[2].z / scaling.z,
-            );
+        for (col, s) in cols.iter_mut().zip([scaling.x, scaling.y, scaling.z]) {
+            if s != 0.0 {
+                let inv = 1.0f32 / s;
+                *col = Vec3::new(col.x * inv, col.y * inv, col.z * inv);
+            }
         }
         let m = Mat3 {
             a1: cols[0].x,

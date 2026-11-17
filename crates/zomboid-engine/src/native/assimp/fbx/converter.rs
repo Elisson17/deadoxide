@@ -2003,9 +2003,10 @@ impl<'a> Conv<'a> {
                 let r = out_quat[i].value;
                 let s = out_scale[i].value;
                 let t = out_translation[i].value;
+                // translation * rotation * scaling (the library multiplies the rotation in before the scaling)
                 let mut mat = Mat4::translation(t);
-                mat = mat.mul(&Mat4::scaling(s));
                 mat = mat.mul(&mat4_of(&r.get_matrix()));
+                mat = mat.mul(&Mat4::scaling(s));
                 let (ds, dr, dt) = mat.decompose();
                 out_scale[i].value = ds;
                 out_quat[i].value = dr;
