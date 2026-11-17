@@ -2,6 +2,7 @@
 //! table the animator reads) and the animation track.
 pub mod animation_clip;
 pub mod animation_clips;
+pub mod animation_player;
 pub mod animation_track;
 pub mod bone_axis;
 pub mod keyframe;

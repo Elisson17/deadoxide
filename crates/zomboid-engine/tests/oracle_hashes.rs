@@ -324,6 +324,40 @@ fn actioncontext_matches_original() {
 }
 
 #[test]
+fn zombieai_matches_original() {
+    // ZombieAiProbe's scenarios; keep in step with the `zombieai` line of tools/oracle.sh
+    check(
+        "zombieai",
+        &[
+            "zai:12345:200:0.6:0:force",
+            "zai:1:60:0.6:0:force",
+            "zai:2:60:0.6:0:force",
+            "zai:3:60:0.6:0:force",
+            "zai:4:60:0.6:0:force",
+            "zai:1:9:0:0.6:force",
+            "zai:2:9:-0.6:0:force",
+            "zai:3:9:0:-0.6:force",
+            "zai:4:9:0.6:0.6:force",
+            "zai:5:9:2.0:0:force",
+            "zai:6:9:0:2.0:force",
+            "zai:7:9:-2.0:0:force",
+            "zai:8:9:0:-2.0:force",
+            "zai:9:9:3.0:0:force",
+            "zai:5:60:-1.0:-1.0:force",
+            "zai:6:60:-2.0:2.0:force",
+            "zai:12345:60:5.0:5.0:force",
+            "zai:12345:2000:3.0:0:none",
+            "zai:7:2000:3.0:0:none",
+            "zai:2:2000:3.0:0:none",
+            "zai:12:2200:3.0:0:none",
+            "zai:3:1389:3.0:0:none",
+            "zai:1:2269:3.0:0:none",
+            "zai:9:1774:3.0:0:none",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");

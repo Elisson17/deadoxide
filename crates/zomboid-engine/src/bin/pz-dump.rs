@@ -99,6 +99,7 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
+        Some("zombieai") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -8810,6 +8811,7 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
             } else {
                 None
             },
+            sp: None,
         };
         let b = |v: bool| u8::from(v);
         for i in 0..count {
@@ -9356,6 +9358,19 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
 
 /// The chunks 1034..=1035 x 1458..=1459 of the real map as ZombieProbe loads them, with their squares' properties.
 fn zombie_chunks(root: &Path) -> Result<Vec<IsoChunk>, String> {
+    zombie_chunks_alias(root).map(|(chunks, _)| chunks)
+}
+
+/// `zombie_chunks` with the world's tile property aliases (the squares' floor and slope tests need them).
+fn zombie_chunks_alias(
+    root: &Path,
+) -> Result<
+    (
+        Vec<IsoChunk>,
+        zomboid_engine::zombie::core::tile_property_alias_map::TilePropertyAliasMap,
+    ),
+    String,
+> {
     let mut rand = RandAbstract::new(java::Random::new(12345));
     let alarm = AlarmSettings {
         last_stand: false,
@@ -9402,7 +9417,7 @@ fn zombie_chunks(root: &Path) -> Result<Vec<IsoChunk>, String> {
             }
         }
     }
-    Ok(chunks)
+    Ok((chunks, std::mem::take(&mut world.alias)))
 }
 
 struct ZombieGrid<'a>(std::collections::HashMap<(i32, i32, i32), &'a IsoGridSquare>);
@@ -10466,6 +10481,7 @@ fn zombie_anim_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), 
         multiplier: 0.8,
         raining: false,
         anim_assets: Some(assets),
+        sp: None,
     };
     let _ = writeln!(sb, "SCENARIO {spec}");
     anim_options_line(sb);
@@ -10747,6 +10763,205 @@ pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String
         let _ = writeln!(sb, "END {spec}");
     }
     Ok(sb)
+}
+
+/// The `zombieai` case: `ZombieAiProbe`'s scenarios `zai:<seed>:<ticks>:<dx>:<dy>:<force|none>`, run by the port.
+pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    let mut sb = String::new();
+    // the files are read once; every scenario gets its own copies of the mutable parts
+    let survivors = zombie_survivors(root)?;
+    let assets = zombie_anim_assets(root)?;
+    let (chunks, alias) = zombie_chunks_alias(root)?;
+    let alias = std::rc::Rc::new(alias);
+    for spec in scenarios {
+        zombie_ai_scenario(&mut sb, spec, &survivors, &assets, &chunks, &alias)?;
+    }
+    Ok(sb)
+}
+
+/// ZombieAiProbe.scenario: the zombie of a seed on the square (8280, 11670, 0) and a player stand-in (8280.5 + dx,
+/// 11670.5 + dy) in the single-player world, ticked as the world ticks its objects (`tick_sp`). `force` sets the
+/// zombie's target to the player (and `timeSinceSeenFlesh` to 0) before every tick.
+fn zombie_ai_scenario(
+    sb: &mut String,
+    spec: &str,
+    survivors: &zomboid_engine::zombie::characters::survivor_factory::SurvivorFactory,
+    assets: &zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets,
+    chunks: &[IsoChunk],
+    alias: &std::rc::Rc<
+        zomboid_engine::zombie::core::tile_property_alias_map::TilePropertyAliasMap,
+    >,
+) -> Result<(), String> {
+    use zomboid_engine::java::{float_to_string as fl, Random};
+    use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
+    use zomboid_engine::zombie::characters::iso_zombie_sp::{
+        PlayerStandIn, SinglePlayerWorld, SpRead,
+    };
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
+
+    const VARS: [&str; 33] = [
+        "bLunge",
+        "bMoving",
+        "bPathfind",
+        "bHasTarget",
+        "bCanSeeTarget",
+        "bAttack",
+        "isFacingTarget",
+        "alerted",
+        "bThump",
+        "bKnockedDown",
+        "bOnFloor",
+        "bStaggerBack",
+        "hashitreaction",
+        "AttackType",
+        "AttackOutcome",
+        "AttackDidDamage",
+        "ZombieBiteDone",
+        "angle",
+        "animAngle",
+        "twist",
+        "targetTwist",
+        "shoulderTwist",
+        "excessTwist",
+        "angleStepDelta",
+        "angleTwistDelta",
+        "isTurning",
+        "isTurning90",
+        "isTurningAround",
+        "previousState",
+        "bStopLunging",
+        "lungeTimer",
+        "distanceToTarget",
+        "stateEventDelayTimer",
+    ];
+    const RAG: [&str; 7] = [
+        "canRagdoll",
+        "isUpright",
+        "isOnBack",
+        "anyGrappleAnim",
+        "grappleAnim",
+        "numTwistBones",
+        "useRagdollVehicleCollision",
+    ];
+    let p: Vec<&str> = spec.split(':').collect();
+    if p.len() != 6 || p[0] != "zai" {
+        return Err(format!("bad scenario {spec}"));
+    }
+    let seed: i64 = p[1].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let ticks: usize = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let dx: f32 = p[3].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let dy: f32 = p[4].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let force = p[5] == "force";
+    let sandbox = zombie_sandbox(None)?;
+    let lore = Lore::from_sandbox(&sandbox)?;
+    let grid = ZombieGrid::new(chunks);
+    let spw = SinglePlayerWorld {
+        player: PlayerStandIn {
+            x: 8280.5f32 + dx,
+            y: 11670.5f32 + dy,
+            z: 0.0,
+            width: 0.24,
+            health: 1.0,
+        },
+        loaded_chunks: vec![(1034, 1458), (1034, 1459), (1035, 1458), (1035, 1459)],
+        alias: alias.clone(),
+        zombie_object_id: 1,
+    };
+    let mut outfit_rng = OutfitRng::default();
+    outfit_rng.set_seed(seed);
+    let mut world = ZombieWorld {
+        rand: RandAbstract::new(Random::new(seed)),
+        outfit_rng,
+        lore,
+        survivors: survivors.clone(),
+        survivor_id_count: 0,
+        multiplier: 0.8,
+        raining: false,
+        anim_assets: Some(assets.clone()),
+        sp: Some(spw.clone()),
+    };
+    let _ = writeln!(sb, "SCENARIO {spec}");
+    anim_options_line(sb);
+    let mut z = IsoZombie::new(&mut world)?;
+    let rd = SpRead::new(&grid, &spw);
+    let _ = writeln!(
+        sb,
+        "ZOMBIE draws={} vars={} id={} zombieId={}",
+        world.rand.id(),
+        z.sp_variable_count(),
+        spw.zombie_object_id,
+        z.zombie_id
+    );
+    for l in z.sp_variable_dump(&rd) {
+        let _ = writeln!(sb, "{l}");
+    }
+    rd.check()?;
+    z.place(8280.5, 11670.5, 0.0);
+    let mut prev = world.rand.id();
+    for n in 1..=ticks {
+        if force {
+            z.sp.target = true;
+            z.time_since_seen_flesh = 0.0;
+        }
+        z.tick_sp(&mut world, &grid)?;
+        let draws = world.rand.id();
+        let anim = z.anim.as_ref().ok_or("the zombie has no animator")?;
+        let mut vars = String::new();
+        for name in VARS {
+            let slot = anim
+                .action_context
+                .get_variable(name)
+                .or_else(|| z.sp_get_variable(name, &rd));
+            vars.push_str(name);
+            vars.push('=');
+            match slot {
+                None => vars.push('-'),
+                Some(s) => vars.push_str(&s.get_value_string().unwrap_or_else(|| "null".into())),
+            }
+            vars.push(' ');
+        }
+        let made = z.sp.anim_player.is_some();
+        for name in RAG {
+            let text = if !made {
+                "?".to_string()
+            } else {
+                match anim
+                    .action_context
+                    .get_variable(name)
+                    .or_else(|| z.sp_get_variable(name, &rd))
+                {
+                    None => "-".to_string(),
+                    // numTwistBones is an Int slot
+                    Some(s) if name == "numTwistBones" => format!("{}", s.get_value_float() as i32),
+                    Some(s) => s.get_value_string().unwrap_or_else(|| "null".into()),
+                }
+            };
+            vars.push_str(&format!("{name}={text} "));
+        }
+        rd.check()?;
+        let _ = writeln!(
+            sb,
+            "T {n} draws={} ctx={} child=[{}] ai={} x={} y={} dir={} fwd={},{} look={} hp={} target={} php={} goal={} {}",
+            draws - prev,
+            anim.action_context.get_current_state_name(),
+            anim.action_context.get_child_state_names().join(","),
+            z.current_state.map_or("null", |s| s.name()),
+            fl(z.character.moving.x),
+            fl(z.character.moving.y),
+            z.character.forward_iso_direction().name(),
+            fl(z.character.forward_direction.x),
+            fl(z.character.forward_direction.y),
+            fl(z.look_angle_radians()),
+            fl(z.character.health),
+            if z.sp.target { "player" } else { "-" },
+            fl(spw.player.health),
+            z.path.goal.name(),
+            vars.trim_end()
+        );
+        prev = draws;
+    }
+    let _ = writeln!(sb, "END {spec} draws={}", world.rand.id());
+    Ok(())
 }
 
 /// Every animation set of `media/AnimSets` and every action group of `media/actiongroups`, in the format of

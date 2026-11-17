@@ -52,7 +52,7 @@ PZ_NATIVES=${PZ_NATIVES:-"$HOME/Library/Application Support/Steam/steamapps/comm
 server_case() {
   name=$1; probe=$2; shift 2
   [ -d "$PZ_NATIVES" ] || { echo "FAIL $name: no natives in $PZ_NATIVES (set PZ_NATIVES)"; fail=1; return; }
-  javac -nowarn -encoding UTF-8 -cp "$ROOT/projectzomboid.jar" -d target/original-probe tests/original_probe/ServerHarness.java "tests/original_probe/$probe.java" 2>target/oracle/$name.javac \
+  javac -nowarn -encoding UTF-8 -cp "$ROOT/projectzomboid.jar" -sourcepath tests/original_probe -d target/original-probe tests/original_probe/ServerHarness.java "tests/original_probe/$probe.java" 2>target/oracle/$name.javac \
     || { cat target/oracle/$name.javac; echo "FAIL $name (javac)"; fail=1; return; }
   (cd "$ROOT" && java -Djava.awt.headless=true --enable-final-field-mutation=ALL-UNNAMED -Djava.library.path="$PZ_NATIVES" -Xmx4g -cp "$HERE/target/original-probe:projectzomboid.jar" "$probe" "$HERE/target/oracle/pz-oracle-$name" "$@" >"$HERE/target/oracle/$name.java.txt" 2>"$HERE/target/oracle/$name.java.err") \
     || { grep -n 'ORACLE\|Exception' target/oracle/$name.java.err | tail -5; echo "FAIL $name (server probe)"; fail=1; return; }
@@ -217,6 +217,16 @@ sel actioncontext && server_case actioncontext ActionContextProbe \
   "anim:zombie-crawler:61:1200" \
   "anim:player:41:1500:idle,aim,aim-strafe,run,sprint,strafe,movement,melee,ext" "anim:player:43:1500" \
   "anim:player:45:1500:idle,movement,run,sprint,strafe,melee,actions,aim,aim-strafe,ext,sneak" "anim:player-vehicle:62:1200"
+# the ORIGINAL zombie AI run headless in single-player mode (ZombieAiProbe: GameServer.server false, one player stand-in,
+# zai:<seed>:<ticks>:<dx>:<dy>:<force|none>): the idle/face-target/lunge/attack/path-find/walk-toward states per tick with
+# the animation variables, the draws and the angles; scenarios end before the deferred (animation root) movement starts
+sel zombieai && server_case zombieai ZombieAiProbe \
+  "zai:12345:200:0.6:0:force" "zai:1:60:0.6:0:force" "zai:2:60:0.6:0:force" "zai:3:60:0.6:0:force" \
+  "zai:4:60:0.6:0:force" "zai:1:9:0:0.6:force" "zai:2:9:-0.6:0:force" "zai:3:9:0:-0.6:force" "zai:4:9:0.6:0.6:force" \
+  "zai:5:9:2.0:0:force" "zai:6:9:0:2.0:force" "zai:7:9:-2.0:0:force" "zai:8:9:0:-2.0:force" "zai:9:9:3.0:0:force" \
+  "zai:5:60:-1.0:-1.0:force" "zai:6:60:-2.0:2.0:force" "zai:12345:60:5.0:5.0:force" "zai:12345:2000:3.0:0:none" \
+  "zai:7:2000:3.0:0:none" "zai:2:2000:3.0:0:none" "zai:12:2200:3.0:0:none" "zai:3:1389:3.0:0:none" \
+  "zai:1:2269:3.0:0:none" "zai:9:1774:3.0:0:none"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

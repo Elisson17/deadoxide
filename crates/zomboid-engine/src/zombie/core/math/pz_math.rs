@@ -162,6 +162,28 @@ pub fn wrap(val: f32, min_v: f32, max_v: f32) -> f32 {
     real_min + wrap_range(rel_val, range)
 }
 
+/// zombie.core.math.PZMath.degToRad: `(float) (Math.PI / 180.0) * degrees`.
+pub fn deg_to_rad(degrees: f32) -> f32 {
+    (std::f64::consts::PI / 180.0) as f32 * degrees
+}
+
+/// zombie.core.math.PZMath.radToDeg
+pub fn rad_to_deg(radians: f32) -> f32 {
+    (180.0f32 / std::f64::consts::PI as f32) * radians
+}
+
+/// zombie.core.math.PZMath.getClosestAngle: both angles wrapped to one turn, their difference wrapped to (-PI, PI).
+pub fn get_closest_angle(rads_a: f32, rads_b: f32) -> f32 {
+    let angle_a = wrap_range(rads_a, (std::f64::consts::PI * 2.0) as f32);
+    let angle_b = wrap_range(rads_b, (std::f64::consts::PI * 2.0) as f32);
+    let diff = angle_b - angle_a;
+    wrap(
+        diff,
+        -(std::f64::consts::PI as f32),
+        std::f64::consts::PI as f32,
+    )
+}
+
 /// zombie.core.math.PZMath.lerpFunc_EaseOutQuad
 pub fn lerp_func_ease_out_quad(x: f32) -> f32 {
     x * x
