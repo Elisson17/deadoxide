@@ -1,6 +1,7 @@
 //! zombie.core.skinnedmodel.animation.AnimationPlayer, the body-angle part: `setTargetDirection`, `DoAngles`
 //! (`interpolateBodyAngle`, `interpolateBodyTwist`, `interpolateShoulderTwist`) and the fields they keep. The bone
-//! transforms, the twist bones, the deferred (root) movement and the ragdoll controller are not here (UNKNOWN).
+//! transforms, the twist bones and the ragdoll controller are not here (UNKNOWN). The deferred (root) movement the
+//! tracks produce is accumulated here (`calculateDeferredMovement`, in `AdvancedAnimator`, fills the fields).
 use crate::zombie::core::math::pz_math;
 use crate::zombie::iso::vector2::Vector2;
 
@@ -27,9 +28,13 @@ pub struct AnimationPlayer {
     pub angle_step_delta: f32,
     pub angle_twist_delta: f32,
     target_dir: Vector2,
-    /// `deferredRotationWeight` (the deferred rotation of the tracks is not computed: always 0, UNKNOWN)
-    deferred_rotation_weight: f32,
-    deferred_angle_delta: f32,
+    /// `deferredRotationWeight` and `deferredAngleDelta` of the last `calculateDeferredMovement`
+    pub deferred_rotation_weight: f32,
+    pub deferred_angle_delta: f32,
+    /// `deferredMovementAccum`: the movement not yet taken by `getDeferredMovement(result, true)`
+    pub deferred_movement_accum: Vector2,
+    /// `deferredMovement`: the accumulated movement as of the last calculation
+    pub deferred_movement: Vector2,
     pub character_allows_twist: bool,
 }
 
@@ -49,6 +54,8 @@ impl Default for AnimationPlayer {
             target_dir: Vector2::default(),
             deferred_rotation_weight: 0.0,
             deferred_angle_delta: 0.0,
+            deferred_movement_accum: Vector2::default(),
+            deferred_movement: Vector2::default(),
             character_allows_twist: false,
         }
     }
@@ -82,6 +89,29 @@ impl AnimationPlayer {
                 pz_math::get_closest_angle(target_twist_clamped, self.target_twist_angle);
             self.target_dir = Vector2::new(dir_x, dir_y);
         }
+    }
+
+    /// AnimationPlayer.getRenderedAngle: `angle + (float) (Math.PI / 2)`.
+    pub fn get_rendered_angle(&self) -> f32 {
+        self.angle + (std::f64::consts::PI / 2.0) as f32
+    }
+
+    /// AnimationPlayer.getDeferredMovement(result, reset): the movement of the last calculation; `reset` clears the
+    /// accumulation (not `deferredMovement`).
+    pub fn get_deferred_movement(&mut self, reset: bool) -> Vector2 {
+        let result = self.deferred_movement;
+        if reset {
+            self.deferred_movement_accum.set(0.0, 0.0);
+        }
+        result
+    }
+
+    /// AnimationPlayer.applyRotationToDeferredMovement(result, angle): the movement turned to the body's angle and
+    /// negated.
+    pub fn apply_rotation_to_deferred_movement(result: &mut Vector2, angle: f32) {
+        let len = result.normalize();
+        result.rotate(angle);
+        result.set_length(-len);
     }
 
     /// AnimationPlayer.setAngleToTarget

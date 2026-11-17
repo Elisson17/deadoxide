@@ -985,14 +985,23 @@ impl IsoZombie {
                 "IsoZombie.makeInactive: the zombie's activity phase changed (not ported)".into(),
             );
         }
-        // (doDeferredMovement: the animation tracks' root movement is not ported, UNKNOWN: a zombie that walks in the
-        // original stays where it is here; `updateEmitter`, `checkZombieEntersPlayerBuilding`,
-        // `updateMovementStatistics`, `OnZombieUpdate` change nothing the oracle shows)
+        // doDeferredMovement: the root movement the animation player accumulated goes to the next position
+        // (`updateEmitter`, `checkZombieEntersPlayerBuilding`, `updateMovementStatistics`, `OnZombieUpdate` change
+        // nothing the oracle shows)
+        let updating = self
+            .anim
+            .as_ref()
+            .is_some_and(|a| a.animation_updating_this_frame);
+        self.do_deferred_movement(updating, rd);
         self.bonus_spot_time = pz_math::clamp(self.bonus_spot_time - mult, 0.0, f32::MAX);
         self.time_since_seen_flesh =
             pz_math::clamp(self.time_since_seen_flesh + mult, 0.0, f32::MAX);
         // super.update() = IsoGameCharacter.updateInternal: the state timer, then StateMachine.update
         self.character.moving.state_event_delay_timer -= thirty;
+        // IsoGameCharacter.updateInternal / IsoMovingObject.update: `lastX/Y/Z` are where the zombie stands now
+        self.sp.last_x = self.character.moving.x;
+        self.sp.last_y = self.character.moving.y;
+        self.sp.last_z = self.character.moving.z;
         self.state_execute(world, rd)?;
         let cur = self.current_state;
         // `cur == PathFindState && finder.progress == notyetfound`: PlayAnim("ZombieIdle"), then
@@ -1142,6 +1151,11 @@ impl IsoZombie {
             .anim
             .take()
             .ok_or("IsoZombie.postupdate: the zombie was made without the animation assets")?;
+        // super.postupdate() (IsoMovingObject): the movement is realised before postUpdateAnimating
+        if let Err(e) = self.moving_postupdate(world, rd) {
+            self.anim = Some(anim);
+            return Err(e);
+        }
         let r = if anim.animation_updating_this_frame {
             self.post_update_animating_sp(&mut anim, world, rd)
         } else {
@@ -1220,8 +1234,10 @@ impl IsoZombie {
             anim.animator.update_animation_player(dt, &mut env)?;
         }
         rd.check()?;
+        // updateAnimation_NonVisualOnly: DoAngles, then calculateDeferredMovement
         if let Some(p) = self.sp.anim_player.as_mut() {
             p.do_angles(dt);
+            anim.animator.calculate_deferred_movement(p)?;
         }
         Ok(())
     }

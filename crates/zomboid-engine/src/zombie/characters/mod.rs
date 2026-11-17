@@ -9,6 +9,7 @@ pub mod faction;
 pub mod iso_game_character;
 pub mod iso_player;
 pub mod iso_zombie;
+pub mod iso_zombie_move;
 pub mod iso_zombie_sp;
 pub mod moodles;
 pub mod player_cheats;

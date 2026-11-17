@@ -28,9 +28,12 @@ use crate::java::{self, Random};
 use crate::zombie::core::math::pz_math;
 use crate::zombie::core::random::rand_abstract::RandAbstract;
 use crate::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips;
+use crate::zombie::core::skinnedmodel::animation::animation_player::AnimationPlayer;
 use crate::zombie::core::skinnedmodel::animation::animation_track::{
     AnimationTrack, ListenerRef, TrackEvent,
 };
+use crate::zombie::core::skinnedmodel::animation::bone_axis::BoneAxis;
+use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::util::string_utils;
 
 /// DebugOptions.instance.animation.allowEarlyTransitionOut: a debug-only option whose default is read when
@@ -483,6 +486,40 @@ pub struct AdvancedAnimator {
     next_node_id: u32,
     next_track_id: u32,
     next_fresh_state: u32,
+    /// `GameServer.server`: the tracks then skip the deferred rotation (`appendDeferredValues`).
+    pub game_server: bool,
+    /// `AdvancedAnimator.motionScale` and `rotationScale` (`load_defaults`)
+    pub motion_scale: f32,
+    pub rotation_scale: f32,
+}
+
+/// AdvancedAnimator.motionScale and rotationScale: `0.76F` until `LoadDefaults` reads `media/AnimSets/Defaults.xml`.
+pub const DEFAULT_MOTION_SCALE: f32 = 0.76;
+pub const DEFAULT_ROTATION_SCALE: f32 = 0.76;
+
+/// AdvancedAnimator.LoadDefaults: `(MotionScale, RotationScale)` of `media/AnimSets/Defaults.xml` (`getElementsByTagName
+/// (...).item(0).getTextContent()` then `Float.parseFloat`).
+pub fn load_defaults(
+    fs: &crate::zombie::zomboid_file_system::ZomboidFileSystem,
+) -> Result<(f32, f32), String> {
+    let path = fs.get_media_file("AnimSets/Defaults.xml");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let tag = |name: &str| -> Result<f32, String> {
+        let open = format!("<{name}>");
+        let start = text
+            .find(&open)
+            .ok_or_else(|| format!("Defaults.xml: no {name}"))?
+            + open.len();
+        let end = text[start..]
+            .find("</")
+            .ok_or_else(|| format!("Defaults.xml: {name} is not closed"))?
+            + start;
+        text[start..end]
+            .trim()
+            .parse::<f32>()
+            .map_err(|_| format!("Defaults.xml: {name} is not a float"))
+    };
+    Ok((tag("MotionScale")?, tag("RotationScale")?))
 }
 
 fn ref_equals(a: &AnimationVariableReference, b: &AnimationVariableReference) -> bool {
@@ -505,6 +542,7 @@ struct PlayParams<'a> {
     reverse: bool,
     priority: i32,
     deferred_bone_name: &'a str,
+    deferred_bone_axis: Option<BoneAxis>,
     use_deferred_rotation: bool,
     deferred_rotation_scale: f32,
     matching_grappled_anim_node: &'a str,
@@ -529,6 +567,9 @@ impl AdvancedAnimator {
             next_node_id: 1,
             next_track_id: 1,
             next_fresh_state: 1,
+            game_server: false,
+            motion_scale: DEFAULT_MOTION_SCALE,
+            rotation_scale: DEFAULT_ROTATION_SCALE,
         }
     }
 
@@ -945,6 +986,139 @@ impl AdvancedAnimator {
         self.clean_up_empty_layers()
     }
 
+    /// LiveAnimationTrackEntries.setTracks(tracks, minimumValidAnimWeight, normalizeFirstLayerTracks): the tracks that
+    /// blend, ordered by layer, priority and weight (equal ones stay in track order), as (track index, layer,
+    /// priority, blend weight); at most 32.
+    fn live_track_entries(
+        &self,
+        minimum_valid_anim_weight: f32,
+        normalize_first_layer_tracks: bool,
+    ) -> Vec<(usize, i32, i32, f32)> {
+        const CACHE: usize = 32;
+        let mut entries: Vec<(usize, i32, i32, f32)> = Vec::new();
+        for (n, track) in self.tracks.iter().enumerate() {
+            let track_weight = track.get_blend_weight();
+            let track_layer = track.anim_layer.map_or(0, |l| self.get_depth(l));
+            let track_priority = track.priority;
+            // layer index out of 0..16: DebugType.General.error, the track is not blended
+            if !(0..16).contains(&track_layer) {
+                continue;
+            }
+            if track_weight < minimum_valid_anim_weight || (track_layer > 0 && track.is_finished())
+            {
+                continue;
+            }
+            let mut insert_at = None;
+            for (i, e) in entries.iter().enumerate() {
+                if track_layer <= e.1 {
+                    if track_layer < e.1 {
+                        insert_at = Some(i);
+                        break;
+                    }
+                    if track_priority <= e.2 {
+                        if track_priority < e.2 {
+                            insert_at = Some(i);
+                            break;
+                        }
+                        if track_weight < e.3 {
+                            insert_at = Some(i);
+                            break;
+                        }
+                    }
+                }
+            }
+            let insert_at = match insert_at {
+                Some(i) => i,
+                None if entries.len() < CACHE => entries.len(),
+                // "Buffer overflow. Insufficient anim blends in cache": logged, the track is not blended
+                None => continue,
+            };
+            entries.insert(insert_at, (n, track_layer, track_priority, track_weight));
+            // the entries after the last slot fall off the cache
+            entries.truncate(CACHE);
+        }
+        let mut layer_weight_totals = [0.0f32; 16];
+        let mut layer_blend_counts = [0i32; 16];
+        for e in &entries {
+            layer_weight_totals[e.1 as usize] += e.3;
+            layer_blend_counts[e.1 as usize] += 1;
+        }
+        if !entries.is_empty() && normalize_first_layer_tracks {
+            let layer_no = entries[0].1;
+            let layer_track_count = layer_blend_counts[0];
+            let layer_total_weight = layer_weight_totals[0];
+            if layer_total_weight < 1.0 {
+                for e in entries.iter_mut() {
+                    if e.1 != layer_no {
+                        break;
+                    }
+                    if layer_total_weight > 0.0 {
+                        e.3 /= layer_total_weight;
+                    } else {
+                        e.3 = 1.0 / layer_track_count as f32;
+                    }
+                }
+            }
+        }
+        entries
+    }
+
+    /// AnimationPlayer.updateLayerBlendWeightings + calculateDeferredMovement (`updateAnimation_NonVisualOnly`, where
+    /// `boneTransformsNeedFirstFrame` stays true): the tracks' deferred movement and rotation blended by their weights,
+    /// the topmost track first, until the weights add up to 1. Fills the player's `deferredMovement`,
+    /// `deferredAngleDelta` and `deferredRotationWeight`.
+    pub fn calculate_deferred_movement(&self, player: &mut AnimationPlayer) -> Result<(), String> {
+        let entries = self.live_track_entries(0.001, true);
+        player.deferred_angle_delta = 0.0;
+        player.deferred_rotation_weight = 0.0;
+        let mut accum = player.deferred_movement_accum;
+        let mut remaining_weight = 1.0f32;
+        for e in entries.iter().rev() {
+            if remaining_weight <= 0.001 {
+                break;
+            }
+            let track = &self.tracks[e.0];
+            if track.is_finished() {
+                continue;
+            }
+            let bone_weight = track.get_deferred_bone_weight()?;
+            if bone_weight <= 0.001 {
+                continue;
+            }
+            let raw_anim_weight = e.3 * bone_weight;
+            if raw_anim_weight <= 0.001 {
+                continue;
+            }
+            let anim_weight = pz_math::clamp(raw_anim_weight, 0.0, remaining_weight);
+            remaining_weight -= raw_anim_weight;
+            remaining_weight = f32::max(0.0, remaining_weight);
+            if !track.is_ragdoll() {
+                if track.use_deferred_movement {
+                    accum = Vector2::add_scaled(
+                        &accum,
+                        &track.get_deferred_movement_diff(),
+                        anim_weight,
+                    );
+                }
+                if track.use_deferred_rotation {
+                    player.deferred_angle_delta += track.get_deferred_rotation_diff() * anim_weight;
+                    player.deferred_rotation_weight += anim_weight;
+                }
+            }
+        }
+        AnimationPlayer::apply_rotation_to_deferred_movement(
+            &mut accum,
+            player.get_rendered_angle(),
+        );
+        accum.x *= self.motion_scale;
+        accum.y *= self.motion_scale;
+        player.deferred_angle_delta *= self.rotation_scale;
+        player.deferred_movement_accum = accum;
+        // pushDeferredMovementAccumToDeferredMovement
+        player.deferred_movement = accum;
+        Ok(())
+    }
+
     /// AnimationPlayer.Update(deltaT) with `updateBones` false (`IsoGameCharacter.updateAnimPlayer` of a character
     /// that is not drawn): `multiTrack.Update(deltaT)`, each track ticking its time and invoking its listeners. The
     /// ragdoll controller, `updateAnimation_NonVisualOnly` (the deferred movement, `DoAngles`) and the bone transforms
@@ -956,7 +1130,7 @@ impl AdvancedAnimator {
         let mut n = 0;
         while n < self.tracks.len() {
             let id = self.tracks[n].id;
-            let events = self.tracks[n].update_keyframes(delta_t, &*env.owner)?;
+            let events = self.tracks[n].update_keyframes(delta_t, &*env.owner, self.game_server)?;
             for e in events {
                 self.dispatch_track_event(id, e, env)?;
             }
@@ -1324,9 +1498,12 @@ impl AdvancedAnimator {
 
     /// AnimationPlayer.play(StartAnimTrackParameters, AnimLayer): the track of the clip `anim_name`, or `None` when the
     /// clip is not there (the original warns).
-    fn player_play(&mut self, layer: u32, p: PlayParams) -> Option<u32> {
-        // AnimationPlayer.play(String, looped, isRagdoll false, ragdollMaxTime -1): the clip by name
-        let clip = self.clips.get(p.anim_name)?.clone();
+    fn player_play(&mut self, layer: u32, p: PlayParams) -> Result<Option<u32>, String> {
+        // AnimationPlayer.play(String, looped, isRagdoll false, ragdollMaxTime -1): the clip by name (with its
+        // keyframes when the clip table loads them)
+        let Some(clip) = self.clips.get_full(p.anim_name)? else {
+            return Ok(None);
+        };
         let id = self.next_track_id;
         self.next_track_id += 1;
         let mut track = AnimationTrack::alloc(id);
@@ -1334,11 +1511,15 @@ impl AdvancedAnimator {
         track.name = clip.name.clone();
         track.is_playing = true;
         track.is_primary = p.is_primary;
-        // (the bone masks of a sub layer and the deferred bone's lookup: not ported)
+        // (the bone masks of a sub layer: not ported, `bone_mask_unported`)
+        track.bone_mask_unported = self.layers[self.li(layer)?].is_sub_layer();
         track.set_speed_delta(p.speed_scale);
         track.sync_tracking_enabled = p.sync_tracking_enabled;
         track.track_time_to_variable = p.track_time_to_variable;
         track.deferred_bone_name = p.deferred_bone_name.to_string();
+        // skinningData.getBone(deferredBoneName): null (`None`) when the skeleton has no such bone
+        track.deferred_bone = self.clips.bone_index(p.deferred_bone_name);
+        track.deferred_bone_axis = p.deferred_bone_axis;
         track.use_deferred_rotation = p.use_deferred_rotation;
         track.deferred_rotation_scale = p.deferred_rotation_scale;
         track.set_blend_weight(p.initial_weight);
@@ -1348,7 +1529,7 @@ impl AdvancedAnimator {
         track.set_matching_grappled_anim_node(p.matching_grappled_anim_node);
         track.set_anim_layer(Some(layer));
         self.tracks.push(track);
-        Some(id)
+        Ok(Some(id))
     }
 
     /// AnimLayer.startTrackGeneric(liveAnimNode, animName, isPrimaryTrack, speedScale, isRagdoll false, ...): the node
@@ -1375,11 +1556,12 @@ impl AdvancedAnimator {
                 reverse: src.is_anim_reverse,
                 priority: src.priority,
                 deferred_bone_name: src.get_deferred_bone_name(),
+                deferred_bone_axis: src.deferred_bone_axis,
                 use_deferred_rotation: src.use_defered_rotation,
                 deferred_rotation_scale: src.deferred_rotation_scale,
                 matching_grappled_anim_node: &src.matching_grappled_anim_node,
             },
-        );
+        )?;
         if let Some(id) = track {
             if src.blend_curve.is_some() {
                 return Err(
@@ -2241,7 +2423,7 @@ impl AdvancedAnimator {
         // TransitionNodeProxyData.getDeferred*: the transition's own when it names a bone, else the old node's
         let own =
             !string_utils::is_null_or_whitespace(t.transition_out.deferred_bone_name.as_deref());
-        let (use_rotation, rotation_scale, bone) = if own {
+        let (use_rotation, rotation_scale, bone, axis) = if own {
             (
                 t.transition_out.use_defered_rotation,
                 t.transition_out.deferred_rotation_scale,
@@ -2249,16 +2431,18 @@ impl AdvancedAnimator {
                     .deferred_bone_name
                     .clone()
                     .unwrap_or_default(),
+                t.transition_out.deferred_bone_axis,
             )
         } else {
             (
                 old_src.use_defered_rotation,
                 old_src.deferred_rotation_scale,
                 old_src.get_deferred_bone_name().to_string(),
+                old_src.deferred_bone_axis,
             )
         };
         // the StartAnimTrackParameters defaults: not looped, not primary, no sync tracking, initial weight 0
-        Ok(self.player_play(
+        self.player_play(
             t.layer_out,
             PlayParams {
                 anim_name: &anim_name,
@@ -2271,10 +2455,11 @@ impl AdvancedAnimator {
                 reverse: false,
                 priority: old_src.priority,
                 deferred_bone_name: &bone,
+                deferred_bone_axis: axis,
                 use_deferred_rotation: use_rotation,
                 deferred_rotation_scale: rotation_scale,
                 matching_grappled_anim_node: "",
             },
-        ))
+        )
     }
 }

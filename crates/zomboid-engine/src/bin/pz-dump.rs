@@ -8807,7 +8807,7 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
             multiplier: 0.8,
             raining: false,
             anim_assets: if ticks > 0 {
-                Some(zombie_anim_assets(root)?)
+                Some(zombie_anim_assets(root, false)?)
             } else {
                 None
             },
@@ -8908,8 +8908,12 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
 }
 
 /// The game's own zombie action group, "zombie" animation set and the human skeleton's animation clips.
+///
+/// `keyframes`: the clips load their bone keyframes on demand (the deferred movement needs them; the `zombie` case's
+/// server zombie does not move by animation).
 fn zombie_anim_assets(
     root: &Path,
+    keyframes: bool,
 ) -> Result<zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets, String> {
     use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
     use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSets;
@@ -8918,12 +8922,19 @@ fn zombie_anim_assets(
     let fs = ZomboidFileSystem::init(root)?;
     let mut groups = ActionGroups::default();
     let mut sets = AnimationSets::default();
-    let (clips, _dups) = AnimationClips::load(&fs, "Human")?;
+    let (mut clips, _dups) = AnimationClips::load(&fs, "Human")?;
+    if keyframes {
+        clips = clips.with_keyframes(&fs, "Human")?;
+    }
+    let (motion_scale, rotation_scale) =
+        zomboid_engine::zombie::core::skinnedmodel::advancedanimation::advanced_animator::load_defaults(&fs)?;
     Ok(
         zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets {
             action_group: groups.get_action_group_rc(&fs, "zombie"),
             anim_set: sets.get_animation_set_rc(&fs, "zombie", false)?,
             clips: std::rc::Rc::new(clips),
+            motion_scale,
+            rotation_scale,
         },
     )
 }
@@ -10467,7 +10478,7 @@ fn zombie_anim_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), 
     let survivors = zombie_survivors(root)?;
     let sandbox = zombie_sandbox(None)?;
     let lore = Lore::from_sandbox(&sandbox)?;
-    let assets = zombie_anim_assets(root)?;
+    let assets = zombie_anim_assets(root, false)?;
     let mut outfit_rng = OutfitRng::default();
     outfit_rng.set_seed(seed);
     let group_name = assets.action_group.name.clone();
@@ -10770,7 +10781,7 @@ pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
     let mut sb = String::new();
     // the files are read once; every scenario gets its own copies of the mutable parts
     let survivors = zombie_survivors(root)?;
-    let assets = zombie_anim_assets(root)?;
+    let assets = zombie_anim_assets(root, true)?;
     let (chunks, alias) = zombie_chunks_alias(root)?;
     let alias = std::rc::Rc::new(alias);
     for spec in scenarios {
@@ -10897,6 +10908,8 @@ fn zombie_ai_scenario(
     }
     rd.check()?;
     z.place(8280.5, 11670.5, 0.0);
+    // `z.setCurrent(cell.getGridSquare(8280, 11670, 0))`
+    z.sp.current = Some((8280, 11670, 0));
     let mut prev = world.rand.id();
     for n in 1..=ticks {
         if force {
