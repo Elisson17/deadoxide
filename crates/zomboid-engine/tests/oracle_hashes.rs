@@ -681,6 +681,48 @@ fn body_matches_original() {
     check("body", &[cases.to_str().expect("utf-8 path")]);
 }
 
+/// The FMOD bank list of `FMODManager.init()` (per-bank event and VCA counts) and the RIFF container of the bank files.
+#[test]
+fn fmodbanks_matches_original() {
+    check("fmodbanks", &["-", "banks"]);
+}
+
+/// The FMOD string table: the events (path and GUID) and VCAs of every bank, `FMODManager`'s sorted path list, the
+/// parameter names and GetBus/GetVCA over the candidate paths the port writes from its own table.
+#[test]
+fn fmodstrings_matches_original() {
+    let Some(root) = game_root() else {
+        eprintln!("SKIPPED fmodstrings: no game install next to the workspace");
+        return;
+    };
+    let cand = Path::new(env!("CARGO_TARGET_TMPDIR")).join("fmod_candidates.txt");
+    let out = Command::new(env!("CARGO_BIN_EXE_pz-dump"))
+        .arg("fmodcandidates")
+        .arg(&root)
+        .output()
+        .expect("run pz-dump");
+    assert!(out.status.success(), "pz-dump fmodcandidates failed");
+    std::fs::write(&cand, &out.stdout).expect("write candidates");
+    check(
+        "fmodstrings",
+        &["-", "strings", cand.to_str().expect("utf-8 path")],
+    );
+    let _ = std::fs::remove_file(&cand);
+}
+
+/// The FMOD event and parameter records: sustain flag, length and parameters of every event, the global parameter list
+/// and `FMODManager`'s parameter table.
+#[test]
+fn fmodevents_matches_original() {
+    check("fmodevents", &["-", "events"]);
+}
+
+/// The FSB5 sample banks: header numbers, stream count, frequency, channels and lengths of every stream, names.
+#[test]
+fn fmodsamples_matches_original() {
+    check("fmodsamples", &["-", "samples"]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

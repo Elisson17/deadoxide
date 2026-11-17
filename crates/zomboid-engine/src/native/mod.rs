@@ -2,3 +2,4 @@
 pub mod assimp;
 pub mod clipper2;
 pub mod earcut;
+pub mod fmod;

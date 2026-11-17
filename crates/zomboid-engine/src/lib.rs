@@ -3,6 +3,7 @@
 //! Every ported item's doc comment opens with the Java symbol it follows; `tools/class_ledger.mjs` counts them.
 //! Singletons of the original (`IsoSpriteManager.instance`, `TilePropertyAliasMap.instance`) are explicit values here.
 #![forbid(unsafe_code)]
+pub mod fmod;
 pub mod java;
 pub mod java_calendar;
 pub mod java_chars;

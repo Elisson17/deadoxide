@@ -350,6 +350,19 @@ sel fbxanimscene && ai_case fbxanimscene AiSceneProbe anim fbx media/models_X me
 # StaticMesh mode, by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadFBX)
 sel fbxmodels && ai_case fbxmodels ProcessedSceneProbe Normal:fbx,StaticMesh:fbx,Normal:last+fbx,StaticMesh:all+fbx,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx mesh fbx media/models_X media/textures
 sel fbxanims && ai_case fbxanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim fbx media/models_X media/textures
+# FMOD sound banks (E64): the game's own FMODManager.init() headless (natives of this OS, game root as cwd) loads the four
+# banks media/sound/banks/Desktop/{ZomboidSound.strings,ZomboidMusic,ZomboidSound,ZomboidSoundMP}.bank; the probe prints what the
+# Studio API reports (FmodBanksProbe <mode>), pz-dump the same from a parse of the bank files, which are RE'd (no FMOD source)
+sel fmodbanks && game_case fmodbanks FmodBanksProbe banks
+# the string table (STDT of ZomboidSound.strings.bank): every event's path and GUID per bank in API list order, the VCAs, FMODManager's
+# sorted event path list, its parameter names, and GetBus/GetVCA over candidate paths the Rust side writes from its own table
+sel fmodstrings && { ./target/release/pz-dump fmodcandidates "$ROOT" >target/oracle/fmod_candidates.txt && game_case fmodstrings FmodBanksProbe strings "$HERE/target/oracle/fmod_candidates.txt"; }
+# the event and parameter records: per event the sustain flag, length (ms) and parameters (name, id, flags) the API reports, the global
+# parameter list and FMODManager's parameter table (globalIndex); the id of a parameter no event uses is UNKNOWN on both sides
+sel fmodevents && game_case fmodevents FmodBanksProbe events
+# the sample data: the FSB5 inside the SND chunk of each data bank: header numbers and names read by the probe, stream count, frequency, channels,
+# length (PCM and ms) and format of every stream from FMOD core opening the same head (sparse file in the scratch dir); the Vorbis decoder is not ported
+sel fmodsamples && game_case fmodsamples FmodBanksProbe samples
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
