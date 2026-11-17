@@ -4,13 +4,13 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 454 of 3432 classes touched, 1856 of 46318 method names cited (4.0%), 965313 decompiled lines.**
+**Total: 465 of 3432 classes touched, 1885 of 46318 method names cited (4.1%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 79 | 7277 | 427 (5.9%) | 144530 |
-| zombie.core | 450 | 94 | 5920 | 228 (3.9%) | 93574 |
+| zombie.iso | 346 | 79 | 7277 | 431 (5.9%) | 144530 |
+| zombie.core | 450 | 95 | 5920 | 231 (3.9%) | 93574 |
 | zombie.characters | 200 | 51 | 5028 | 192 (3.8%) | 77144 |
 | zombie.network | 436 | 4 | 3229 | 4 (0.1%) | 60679 |
 | zombie.scripting | 205 | 37 | 2713 | 175 (6.5%) | 52509 |
@@ -19,11 +19,11 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.vehicles | 42 | 13 | 1411 | 14 (1.0%) | 28275 |
 | zombie | 60 | 13 | 1192 | 111 (9.3%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
-| zombie.pathfind | 90 | 2 | 823 | 3 (0.4%) | 18680 |
+| zombie.pathfind | 90 | 4 | 823 | 9 (1.1%) | 18680 |
 | zombie.worldMap | 85 | 7 | 1328 | 5 (0.4%) | 18604 |
 | zombie.ui | 52 | 7 | 1026 | 53 (5.2%) | 16932 |
 | zombie.Lua | 8 | 4 | 875 | 19 (2.2%) | 14841 |
-| zombie.ai | 99 | 1 | 875 | 3 (0.3%) | 14312 |
+| zombie.ai | 99 | 9 | 875 | 19 (2.2%) | 14312 |
 | zombie.erosion | 23 | 22 | 216 | 95 (44.0%) | 13296 |
 | se | 70 | 21 | 692 | 207 (29.9%) | 11221 |
 | zombie.gameStates | 19 | 2 | 429 | 12 (2.8%) | 9502 |
@@ -119,6 +119,14 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.SystemDisabler | 1 / 16 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/system_disabler.rs |
 | zombie.ZomboidFileSystem | 35 / 114 | crates/zomboid-engine/src/zombie/file_guid_table.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
 | zombie.ZomboidGlobals | 1 / 2 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/zomboid_globals.rs |
+| zombie.ai.StateMachine | 1 / 26 | crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs |
+| zombie.ai.WalkingOnTheSpot | 2 / 2 | crates/zomboid-engine/src/zombie/ai/walking_on_the_spot.rs |
+| zombie.ai.astar.AStarPathFinder | 0 / 0 | crates/zomboid-engine/src/zombie/pathfind/path_find_behavior2.rs |
+| zombie.ai.states.AttackState | 4 / 9 | crates/zomboid-engine/src/zombie/ai/states/attack_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.LungeState | 2 / 7 | crates/zomboid-engine/src/zombie/ai/states/lunge_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.PathFindState | 3 / 7 | crates/zomboid-engine/src/zombie/ai/states/path_find_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.WalkTowardState | 3 / 9 | crates/zomboid-engine/src/zombie/ai/states/walk_toward_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.ZombieFaceTargetState | 1 / 5 | crates/zomboid-engine/src/zombie/ai/states/zombie_face_target_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
 | zombie.ai.states.ZombieIdleState | 3 / 7 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
 | zombie.asset.AssetManager | 1 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/anim_node_asset_manager.rs |
 | zombie.audio.GameSound | 5 / 10 | crates/zomboid-engine/src/zombie/audio/game_sound.rs |
@@ -150,8 +158,8 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.ClothingWetness | 1 / 3 | crates/zomboid-engine/src/zombie/characters/body_damage/body_update.rs |
 | zombie.characters.Faction | 1 / 26 | crates/zomboid-engine/src/zombie/characters/faction.rs, crates/zomboid-engine/src/zombie/iso/map_meta.rs |
 | zombie.characters.IsoGameCharacter | 11 / 1273 | crates/zomboid-engine/src/zombie/characters/body_damage/body_sim.rs, crates/zomboid-engine/src/zombie/characters/body_damage/body_update.rs, crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
-| zombie.characters.IsoPlayer | 2 / 485 | crates/zomboid-engine/src/zombie/characters/body_damage/body_sim.rs, crates/zomboid-engine/src/zombie/characters/iso_player.rs |
-| zombie.characters.IsoZombie | 17 / 259 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.characters.IsoPlayer | 2 / 485 | crates/zomboid-engine/src/zombie/characters/body_damage/body_sim.rs, crates/zomboid-engine/src/zombie/characters/iso_player.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs |
+| zombie.characters.IsoZombie | 17 / 259 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs |
 | zombie.characters.Moodles.Moodle | 1 / 10 | crates/zomboid-engine/src/zombie/characters/moodles/moodle.rs |
 | zombie.characters.Moodles.MoodleStat | 0 / 12 | crates/zomboid-engine/src/zombie/characters/moodles/moodle_stat.rs |
 | zombie.characters.Moodles.Moodles | 1 / 12 | crates/zomboid-engine/src/zombie/characters/moodles/mod.rs, crates/zomboid-engine/src/zombie/characters/moodles/moodles.rs |
@@ -206,7 +214,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.input.Input | 1 / 25 | crates/zomboid-engine/src/zombie/core/input/input.rs |
 | zombie.core.logger.ExceptionLogger | 1 / 3 | crates/zomboid-engine/src/zombie/lua/exposer.rs |
 | zombie.core.math.IInterpolator | 0 / 0 | crates/zomboid-engine/src/zombie/core/math/i_interpolator.rs |
-| zombie.core.math.PZMath | 20 / 68 | crates/zomboid-engine/src/zombie/core/math/pz_math.rs |
+| zombie.core.math.PZMath | 23 / 68 | crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs, crates/zomboid-engine/src/zombie/core/math/pz_math.rs, crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_player.rs |
 | zombie.core.math.interpolators.LerpEaseInQuad | 0 / 1 | crates/zomboid-engine/src/zombie/core/math/interpolators/mod.rs |
 | zombie.core.math.interpolators.LerpEaseOutInQuad | 0 / 1 | crates/zomboid-engine/src/zombie/core/math/interpolators/mod.rs |
 | zombie.core.math.interpolators.LerpEaseOutQuad | 0 / 1 | crates/zomboid-engine/src/zombie/core/math/interpolators/mod.rs |
@@ -250,6 +258,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.skinnedmodel.advancedanimation.SubLayerSlot | 0 / 13 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/advanced_animator.rs |
 | zombie.core.skinnedmodel.advancedanimation.events.LocalAnimEvent | 0 / 2 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/advanced_animator.rs |
 | zombie.core.skinnedmodel.animation.AnimationClip | 0 / 14 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_clip.rs |
+| zombie.core.skinnedmodel.animation.AnimationPlayer | 0 / 142 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_player.rs |
 | zombie.core.skinnedmodel.animation.AnimationTrack | 0 / 102 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_track.rs |
 | zombie.core.skinnedmodel.animation.BoneAxis | 0 / 0 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/bone_axis.rs |
 | zombie.core.skinnedmodel.animation.Keyframe | 0 / 11 | crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/keyframe.rs |
@@ -354,7 +363,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.IsoChunk | 12 / 185 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_chunk.rs |
 | zombie.iso.IsoDirections | 17 / 19 | crates/zomboid-engine/src/zombie/iso/iso_directions.rs |
 | zombie.iso.IsoFloorBloodSplat | 0 / 3 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs |
-| zombie.iso.IsoGridSquare | 49 / 581 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/server_map.rs, crates/zomboid-scene/src/scene.rs, crates/zomboid-scene/src/sim.rs |
+| zombie.iso.IsoGridSquare | 51 / 581 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/server_map.rs, crates/zomboid-scene/src/scene.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.iso.IsoLot | 4 / 9 | crates/zomboid-engine/src/zombie/iso/iso_lot.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaCell | 7 / 28 | crates/zomboid-engine/src/zombie/iso/iso_meta_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaChunk | 11 / 27 | crates/zomboid-engine/src/zombie/iso/iso_meta_chunk.rs |
@@ -375,7 +384,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.SpriteDetails.IsoFlagType | 3 / 4 | crates/zomboid-engine/src/zombie/iso/sprite_details/iso_flag_type.rs |
 | zombie.iso.SpriteDetails.IsoObjectType | 3 / 4 | crates/zomboid-engine/src/zombie/iso/sprite_details/iso_object_type.rs |
 | zombie.iso.TileOverlays | 2 / 14 | crates/zomboid-engine/src/zombie/iso/tile_overlays.rs |
-| zombie.iso.Vector2 | 4 / 33 | crates/zomboid-engine/src/zombie/iso/vector2.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
+| zombie.iso.Vector2 | 6 / 33 | crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs, crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_player.rs, crates/zomboid-engine/src/zombie/iso/vector2.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
 | zombie.iso.areas.DesignationZone | 1 / 31 | crates/zomboid-engine/src/zombie/iso/areas/designation_zone.rs |
 | zombie.iso.areas.IsoBuilding | 1 / 34 | crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.areas.IsoRoom | 0 / 45 | crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
@@ -426,7 +435,9 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.network.ServerOptions | 0 / 36 | crates/zomboid-engine/src/zombie/lua/exposed_game.rs, crates/zomboid-engine/src/zombie/network/server_options.rs |
 | zombie.network.id.ObjectID | 1 / 17 | crates/zomboid-engine/src/zombie/iso/objects/iso_dead_body.rs |
 | zombie.pathfind.LiangBarsky | 1 / 1 | crates/zomboid-engine/src/zombie/pathfind/liang_barsky.rs |
-| zombie.pathfind.PathFindBehavior2 | 2 / 56 | crates/zomboid-engine/src/zombie/pathfind/path_find_behavior2.rs |
+| zombie.pathfind.LineClearCollideMain | 3 / 11 | crates/zomboid-engine/src/zombie/pathfind/line_clear_collide_main.rs |
+| zombie.pathfind.PathFindBehavior2 | 4 / 56 | crates/zomboid-engine/src/zombie/pathfind/path_find_behavior2.rs |
+| zombie.pathfind.PolygonalMap2 | 1 / 59 | crates/zomboid-engine/src/zombie/pathfind/line_clear_collide_main.rs |
 | zombie.radio.ChannelCategory | 0 / 0 | crates/zomboid-engine/src/zombie/radio/channel_category.rs |
 | zombie.radio.GameMode | 0 / 0 | crates/zomboid-engine/src/zombie/radio/channel_category.rs |
 | zombie.radio.RadioAPI | 4 / 8 | crates/zomboid-engine/src/zombie/radio/radio_api.rs |
