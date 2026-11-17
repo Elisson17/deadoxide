@@ -4,6 +4,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
+use zomboid_engine::fmod::fmod::fmod_manager::FmodManager;
 use zomboid_engine::native::fmod::bank::Bank;
 use zomboid_engine::native::fmod::studio::{StudioSystem, BANK_DIR};
 
@@ -92,10 +93,94 @@ fn container(o: &mut String, b: &Bank) {
     }
 }
 
-/// Dispatch of the `fmod*` cases: `mode` is the probe's second argument.
-pub fn dump(root: &Path, mode: &str) -> Result<String, String> {
-    match mode {
-        "banks" => banks(root),
+/// `FmodBanksProbe strings <candidates>`: the events and VCAs of every bank (paths from the string table), the
+/// event path list of `FMODManager`, the parameter names, and the bus/VCA queries of the candidate file.
+fn strings(root: &Path, candidates: &Path) -> Result<String, String> {
+    let m = FmodManager::init(root)?;
+    let sys = &m.system;
+    let mut o = String::new();
+    for i in 0..sys.bank_count() {
+        for (j, (g, path)) in sys.bank_event_list(i)?.iter().enumerate() {
+            let _ = writeln!(o, "BEV {i} {j} {path} {}", hex(g));
+        }
+        for (j, path) in sys.bank_vca_list(i)?.iter().enumerate() {
+            let _ = writeln!(o, "VCA {i} {j} {path}");
+        }
+    }
+    let _ = writeln!(o, "EVENTS {}", m.event_path_list.len());
+    for (i, p) in m.event_path_list.iter().enumerate() {
+        let _ = writeln!(o, "EVT {i} {p}");
+    }
+    let names = parameter_names(sys.strings().ok_or("no string table")?)?;
+    let _ = writeln!(o, "PARAMS {}", names.len());
+    for n in &names {
+        let _ = writeln!(o, "PARAM {n}");
+    }
+    let text = std::fs::read_to_string(candidates)
+        .map_err(|e| format!("{}: {e}", candidates.display()))?;
+    for c in text.lines() {
+        let _ = writeln!(
+            o,
+            "Q {} {} {c}",
+            u8::from(sys.get_bus(c)),
+            u8::from(sys.get_vca(c))
+        );
+    }
+    Ok(o)
+}
+
+/// The names of the `parameter:/` strings (a parameter path is `parameter:/<folders>/<name>`; the game and the API use
+/// the last component), in Java `String` order.
+fn parameter_names(
+    st: &zomboid_engine::native::fmod::strings::StringTable,
+) -> Result<Vec<String>, String> {
+    let mut names: Vec<String> = st
+        .entries()?
+        .into_iter()
+        .filter_map(|(p, _)| {
+            p.strip_prefix("parameter:/")
+                .map(|r| r.rsplit('/').next().unwrap_or(r).to_string())
+        })
+        .collect();
+    names.sort_by(|a, b| zomboid_engine::java::string_compare_to(a, b));
+    Ok(names)
+}
+
+/// `pz-dump fmodcandidates`: the paths `FmodBanksProbe strings` asks `GetBus`/`GetVCA` about, from the string table:
+/// every string once, and for each `bus:/` and `vca:/` string also its lower case, its upper case, one character more
+/// and one character less (case-insensitivity and no partial matches), then a few paths that name nothing.
+pub fn candidates(root: &Path) -> Result<String, String> {
+    let sys = StudioSystem::init_banks(root)?;
+    let st = sys.strings().ok_or("no string table")?;
+    let mut all: Vec<String> = st.entries()?.into_iter().map(|(p, _)| p).collect();
+    all.sort_by(|a, b| zomboid_engine::java::string_compare_to(a, b));
+    let mut o = String::new();
+    for p in &all {
+        let _ = writeln!(o, "{p}");
+        if p.starts_with("bus:/") || p.starts_with("vca:/") {
+            let _ = writeln!(o, "{}", p.to_ascii_lowercase());
+            let _ = writeln!(o, "{}", p.to_ascii_uppercase());
+            let _ = writeln!(o, "{p}_");
+            let _ = writeln!(o, "{}", &p[..p.len() - 1]);
+        }
+    }
+    for p in [
+        "bus:",
+        "bus:/Nope",
+        "vca:/Nope",
+        "bus:/Mix_Deaf",
+        "vca:/Game",
+    ] {
+        let _ = writeln!(o, "{p}");
+    }
+    Ok(o)
+}
+
+/// Dispatch of the `fmod*` cases: `mode` is the probe's second argument, `rest` the arguments after it.
+pub fn dump(root: &Path, mode: &str, rest: &[String]) -> Result<String, String> {
+    match (mode, rest) {
+        ("banks", []) => banks(root),
+        ("strings", [cand]) => strings(root, Path::new(cand)),
         _ => Err(format!("fmod: unknown mode {mode}")),
     }
 }

@@ -15,6 +15,9 @@ import java.util.Map;
 // of this OS, $PZ_NATIVES) and fills its event and parameter tables. The mode (argument 2) selects the report:
 //   banks     the Studio bank list with the event and VCA count the API gives for each bank, then (an independent
 //             walk of the files in this probe, no FMOD involved) the RIFF container of every bank file
+//   strings   the events of every bank in list order (path and GUID), the VCAs, FMODManager's sorted event path list,
+//             the names of its parameter table, and for every candidate path of the file in argument 3 whether
+//             FMOD_Studio_System_GetBus / GetVCA know it (pz-dump fmodcandidates writes that file from its own tables)
 // Native pointers are never printed: the GUID and parameter id the Java wrappers hold are native addresses, read here
 // through the foreign memory API (16 and 8 bytes).
 public class FmodBanksProbe {
@@ -135,6 +138,40 @@ public class FmodBanksProbe {
         for (File f : files) container(out, f);
     }
 
+    static void strings(PrintStream out, String candidates) throws Exception {
+        FMODManager m = FMODManager.instance;
+        int bc = javafmodJNI.FMOD_Studio_System_GetBankCount();
+        long[] bl = new long[bc];
+        bc = javafmodJNI.FMOD_Studio_System_GetBankList(bl);
+        for (int i = 0; i < bc; i++) {
+            int n = javafmodJNI.FMOD_Studio_Bank_GetEventCount(bl[i]);
+            long[] el = new long[n];
+            n = n > 0 ? javafmodJNI.FMOD_Studio_Bank_GetEventList(bl[i], el) : 0;
+            for (int j = 0; j < n; j++) {
+                out.println("BEV " + i + " " + j + " " + javafmodJNI.FMOD_Studio_EventDescription_GetPath(el[j]) + " " + hex(javafmodJNI.FMOD_Studio_EventDescription_GetID(el[j]), 16));
+            }
+            int vn = javafmodJNI.FMOD_Studio_Bank_GetVCACount(bl[i]);
+            long[] vl = new long[vn];
+            vn = vn > 0 ? javafmodJNI.FMOD_Studio_Bank_GetVCAList(bl[i], vl) : 0;
+            for (int j = 0; j < vn; j++) out.println("VCA " + i + " " + j + " " + javafmodJNI.FMOD_Studio_VCA_GetPath(vl[j]));
+        }
+        List<String> paths = m.getEventPathList();
+        out.println("EVENTS " + paths.size());
+        for (int i = 0; i < paths.size(); i++) out.println("EVT " + i + " " + paths.get(i));
+        java.util.TreeSet<String> names = new java.util.TreeSet<>(((Map<String, ?>) g(m, "parameterDescriptionMap")).keySet());
+        out.println("PARAMS " + names.size());
+        for (String n : names) out.println("PARAM " + n);
+        for (String c : java.nio.file.Files.readAllLines(java.nio.file.Path.of(candidates))) {
+            out.println("Q " + (javafmodJNI.FMOD_Studio_System_GetBus(c) != 0 ? 1 : 0) + " " + (javafmodJNI.FMOD_Studio_System_GetVCA(c) != 0 ? 1 : 0) + " " + c);
+        }
+    }
+
+    static Object g(Object o, String name) throws Exception {
+        java.lang.reflect.Field f = o.getClass().getDeclaredField(name);
+        f.setAccessible(true);
+        return f.get(o);
+    }
+
     public static void main(String[] a) throws Exception {
         PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, "UTF-8");
         System.setOut(System.err);
@@ -142,6 +179,7 @@ public class FmodBanksProbe {
         String mode = a.length > 1 ? a[1] : "banks";
         switch (mode) {
             case "banks" -> banks(out);
+            case "strings" -> strings(out, a[2]);
             default -> throw new IllegalArgumentException("mode " + mode);
         }
         out.flush();

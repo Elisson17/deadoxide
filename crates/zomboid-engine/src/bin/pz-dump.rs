@@ -102,7 +102,10 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
-        Some("fmodbanks") if a.len() == 5 => fmod_dump::dump(Path::new(&a[2]), &a[4]),
+        Some("fmodbanks" | "fmodstrings") if a.len() >= 5 => {
+            fmod_dump::dump(Path::new(&a[2]), &a[4], &a[5..])
+        }
+        Some("fmodcandidates") if a.len() == 3 => fmod_dump::candidates(Path::new(&a[2])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),

@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use super::riff::{parse_chunks, u32le, Chunk};
+use super::strings::StringTable;
 use crate::vfs;
 
 /// What `BNKI` holds: the bank's GUID, then 8 bytes of zeros, then a u32 that equals the number of events the Studio
@@ -44,6 +45,8 @@ pub struct Bank {
     pub tail: Vec<Chunk>,
     /// the top-level `SND ` chunk, the sample data (never read whole)
     pub snd: Option<Chunk>,
+    /// the `STDT` string table, when the bank carries one (only `ZomboidSound.strings.bank`)
+    pub strings: Option<StringTable>,
 }
 
 impl Bank {
@@ -141,6 +144,13 @@ impl Bank {
                 tail.push(c);
             }
         }
+        let mut strings = None;
+        for c in &tail {
+            if &c.tag == b"STDT" && c.size > 0 {
+                let b = &proj_data[(c.body_start() - base) as usize..][..c.body_len() as usize];
+                strings = Some(StringTable::parse(b)?);
+            }
+        }
         Ok(Bank {
             name,
             len,
@@ -153,6 +163,7 @@ impl Bank {
             lists,
             tail,
             snd,
+            strings,
         })
     }
 
@@ -167,5 +178,51 @@ impl Bank {
     pub fn body(&self, c: &Chunk) -> &[u8] {
         let base = self.proj.body_start();
         &self.proj_data[(c.body_start() - base) as usize..][..c.body_len() as usize]
+    }
+
+    /// The entries of a `PROJ` list (its children after the leading `LCNT`), as chunks.
+    pub fn entries(&self, tag: &[u8; 4]) -> Result<Vec<Chunk>, String> {
+        let Some(l) = self.list(tag) else {
+            return Ok(Vec::new());
+        };
+        let base = self.proj.body_start();
+        let s = (l.chunk.body_start() - base) as usize;
+        let kids = parse_chunks(&self.proj_data, base, s, s + l.chunk.body_len() as usize)?;
+        Ok(kids.into_iter().filter(|k| &k.tag != b"LCNT").collect())
+    }
+
+    /// The first 16 bytes of the first chunk named `first` inside the list entry `e`: the GUID the entry starts with
+    /// (`EVNT` starts with an `EVTB`, `VCA ` with a `VCAB`).
+    pub fn entry_guid(&self, e: &Chunk, first: &[u8; 4]) -> Result<[u8; 16], String> {
+        let base = self.proj.body_start();
+        let s = (e.body_start() - base) as usize;
+        let kids = parse_chunks(&self.proj_data, base, s, s + e.body_len() as usize)?;
+        let k = kids.iter().find(|k| &k.tag == first).ok_or_else(|| {
+            format!(
+                "{}: entry without {}",
+                self.name,
+                String::from_utf8_lossy(first)
+            )
+        })?;
+        let b = &self.proj_data[(k.body_start() - base) as usize..][..k.body_len() as usize];
+        let mut g = [0u8; 16];
+        g.copy_from_slice(b.get(..16).ok_or("entry shorter than a GUID")?);
+        Ok(g)
+    }
+
+    /// The GUIDs of the `EVNT` entries of `EVTS`, in file order (sorted by GUID).
+    pub fn event_guids(&self) -> Result<Vec<[u8; 16]>, String> {
+        self.entries(b"EVTS")?
+            .iter()
+            .map(|e| self.entry_guid(e, b"EVTB"))
+            .collect()
+    }
+
+    /// The GUIDs of the `VCA ` entries of `VCAS`, in file order.
+    pub fn vca_guids(&self) -> Result<Vec<[u8; 16]>, String> {
+        self.entries(b"VCAS")?
+            .iter()
+            .map(|e| self.entry_guid(e, b"VCAB"))
+            .collect()
     }
 }

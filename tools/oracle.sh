@@ -333,6 +333,9 @@ sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
 # banks media/sound/banks/Desktop/{ZomboidSound.strings,ZomboidMusic,ZomboidSound,ZomboidSoundMP}.bank; the probe prints what the
 # Studio API reports (FmodBanksProbe <mode>), pz-dump the same from a parse of the bank files, which are RE'd (no FMOD source)
 sel fmodbanks && game_case fmodbanks FmodBanksProbe banks
+# the string table (STDT of ZomboidSound.strings.bank): every event's path and GUID per bank in API list order, the VCAs, FMODManager's
+# sorted event path list, its parameter names, and GetBus/GetVCA over candidate paths the Rust side writes from its own table
+sel fmodstrings && { ./target/release/pz-dump fmodcandidates "$ROOT" >target/oracle/fmod_candidates.txt && game_case fmodstrings FmodBanksProbe strings "$HERE/target/oracle/fmod_candidates.txt"; }
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
