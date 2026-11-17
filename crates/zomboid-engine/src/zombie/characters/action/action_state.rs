@@ -191,6 +191,18 @@ impl ActionState {
         }
     }
 
+    /// zombie.characters.action.ActionState.canHaveSubState(ActionState parent, ActionState child) for two states that
+    /// are not the same one (`parent == child`, by identity, is the caller's check): the parent's child tags overlap the
+    /// child's tags.
+    pub fn can_have_sub_state(parent: &ActionState, child: &ActionState) -> bool {
+        tags_overlap(parent.child_tags.as_deref(), child.tags.as_deref())
+    }
+
+    /// zombie.characters.action.ActionState.hasStateVariables
+    pub fn has_state_variables(&self) -> bool {
+        !self.state_variables.is_empty()
+    }
+
     /// zombie.characters.action.ActionState.sortTransitions: stable, higher condition priority first, then more
     /// conditions first.
     pub fn sort_transitions(&mut self) {
@@ -203,6 +215,19 @@ impl ActionState {
             d.cmp(&0)
         });
     }
+}
+
+/// zombie.characters.action.ActionState.tagsOverlap: both lists non-empty and a tag of one equals one of the other
+/// (`StringUtils.equalsIgnoreCase`).
+pub fn tags_overlap(parent_tags: Option<&[String]>, child_tags: Option<&[String]>) -> bool {
+    let (Some(parent_tags), Some(child_tags)) = (parent_tags, child_tags) else {
+        return false;
+    };
+    parent_tags.iter().any(|p| {
+        child_tags
+            .iter()
+            .any(|c| string_utils::equals_ignore_case(Some(p), Some(c)))
+    })
 }
 
 /// zombie.characters.action.ActionState.parseTags: a `tags` root gives tags, a `childTags` root child tags (the text

@@ -1,4 +1,7 @@
 //! zombie.core.skinnedmodel.advancedanimation.AnimationVariableReference
+use super::animation_variable_source::AnimationVariableSlot;
+use super::i_animation_variable_source::IAnimationVariableSource;
+use crate::java;
 use crate::zombie::util::string_utils;
 
 /// zombie.core.skinnedmodel.advancedanimation.AnimationVariableReference: a variable name, optionally of a sub
@@ -34,5 +37,23 @@ impl AnimationVariableReference {
             }
         }
         r
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimationVariableReference.getVariable: null for a blank name;
+    /// else the slot of the owner, or of its sub variable source when the reference has one (null when the owner has
+    /// no such source).
+    pub fn get_variable(
+        &self,
+        var_source: &dyn IAnimationVariableSource,
+    ) -> Option<AnimationVariableSlot> {
+        if self.name.chars().all(java::is_whitespace) {
+            return None;
+        }
+        match &self.sub_variable_source_name {
+            Some(sub) => var_source
+                .get_sub_variable_source(sub)
+                .and_then(|s| s.get_variable(&self.name)),
+            None => var_source.get_variable(&self.name),
+        }
     }
 }

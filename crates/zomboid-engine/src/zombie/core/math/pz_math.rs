@@ -140,3 +140,28 @@ pub fn wrap(val: f32, min_v: f32, max_v: f32) -> f32 {
     let rel_val = val - real_min;
     real_min + wrap_range(rel_val, range)
 }
+
+/// zombie.core.math.PZMath.lerp (float src, float dest, float alpha)
+pub fn lerp(src: f32, dest: f32, alpha: f32) -> f32 {
+    src + (dest - src) * alpha
+}
+
+/// zombie.core.math.PZMath.lerpFunc_EaseOutQuad
+pub fn lerp_func_ease_out_quad(x: f32) -> f32 {
+    x * x
+}
+
+/// zombie.core.math.PZMath.lerpFunc_EaseInQuad
+pub fn lerp_func_ease_in_quad(x: f32) -> f32 {
+    let rev_x = 1.0 - x;
+    1.0 - rev_x * rev_x
+}
+
+/// zombie.core.math.PZMath.lerpFunc_EaseOutInQuad
+pub fn lerp_func_ease_out_in_quad(x: f32) -> f32 {
+    if x < 0.5 {
+        lerp_func_ease_out_quad(x) * 2.0
+    } else {
+        0.5 + lerp_func_ease_in_quad(2.0 * x - 1.0) / 2.0
+    }
+}

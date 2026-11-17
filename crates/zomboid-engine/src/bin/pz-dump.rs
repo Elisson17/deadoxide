@@ -15,6 +15,7 @@
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
+use std::rc::Rc;
 
 use zomboid_engine::java;
 use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
@@ -84,6 +85,7 @@ fn main() {
         Some("climate") if a.len() >= 4 => climate(Path::new(&a[2]), &a[3..]),
         Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
+        Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -8645,18 +8647,13 @@ fn apply_custom_tile_props(
     Ok(n)
 }
 
-/// ZombieProbe's output for the port: `zombie.characters.IsoZombie` constructed over the same fixed lore options, global
-/// `Rand` (java.util.Random(seed), draw counter at 0) and OutfitRNG seed. The name lists come from running the effect
-/// of `MainCreationMethods.lua` (a stand-in for the `OnGameBoot` Lua, see `SurvivorFactory::from_main_creation_methods`)
-/// with the game's own translations. Scenario "seed:count:ticks[:Key=value,...]" as in ZombieProbe.java.
-pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
-    use zomboid_engine::java::{float_to_string as fl, Random};
-    use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
+/// ZombieProbe's survivor name lists: the game's own translations and the name lists of `MainCreationMethods.lua` (a
+/// stand-in for the `OnGameBoot` Lua, see `SurvivorFactory::from_main_creation_methods`).
+fn zombie_survivors(
+    root: &Path,
+) -> Result<zomboid_engine::zombie::characters::survivor_factory::SurvivorFactory, String> {
     use zomboid_engine::zombie::characters::survivor_factory::SurvivorFactory;
-    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
     use zomboid_engine::zombie::core::translator::Translator;
-    use zomboid_engine::zombie::sandbox_options::SandboxOptions;
-
     let mut tr = Translator::new(root);
     tr.languages.init(root);
     tr.load_files()
@@ -8664,10 +8661,15 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
     let lua_path = root.join("media/lua/shared/NPCs/MainCreationMethods.lua");
     let lua =
         std::fs::read_to_string(&lua_path).map_err(|e| format!("{}: {e}", lua_path.display()))?;
-    let survivors =
-        SurvivorFactory::from_main_creation_methods(&lua, &mut |k| tr.get_text(k, &[]))?;
+    SurvivorFactory::from_main_creation_methods(&lua, &mut |k| tr.get_text(k, &[]))
+}
 
-    // the fixed base of ZombieProbe.BASE, then the scenario's overrides
+/// The lore options of a ZombieProbe scenario: the fixed base of ZombieProbe.BASE, then the scenario's overrides
+/// ("Key=value,..."), set the way the probe sets them.
+fn zombie_sandbox(
+    overrides: Option<&str>,
+) -> Result<zomboid_engine::zombie::sandbox_options::SandboxOptions, String> {
+    use zomboid_engine::zombie::sandbox_options::SandboxOptions;
     const BASE: [(&str, i32); 12] = [
         ("Speed", 2),
         ("SprinterPercentage", 33),
@@ -8682,6 +8684,43 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
         ("ActiveOnly", 1),
         ("DisableFakeDead", 1),
     ];
+    let mut sandbox = SandboxOptions::new();
+    let mut want: Vec<(String, i32)> = BASE.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    if let Some(opts) = overrides.filter(|o| !o.is_empty()) {
+        for kv in opts.split(',') {
+            let (k, v) = kv
+                .split_once('=')
+                .ok_or_else(|| format!("bad option {kv}"))?;
+            let v: i32 = v.parse().map_err(|e| format!("{kv}: {e}"))?;
+            match want.iter_mut().find(|(wk, _)| wk == k) {
+                Some(e) => e.1 = v,
+                None => want.push((k.to_string(), v)),
+            }
+        }
+    }
+    for (k, v) in &want {
+        let name = format!("ZombieLore.{k}");
+        let i = sandbox
+            .defs()
+            .iter()
+            .position(|d| d.name == name)
+            .ok_or_else(|| format!("no sandbox option {name}"))?;
+        sandbox.parse(i, &v.to_string());
+    }
+    Ok(sandbox)
+}
+
+/// ZombieProbe's output for the port: `zombie.characters.IsoZombie` constructed over the same fixed lore options, global
+/// `Rand` (java.util.Random(seed), draw counter at 0) and OutfitRNG seed. The name lists come from running the effect
+/// of `MainCreationMethods.lua` (a stand-in for the `OnGameBoot` Lua, see `SurvivorFactory::from_main_creation_methods`)
+/// with the game's own translations. Scenario "seed:count:ticks[:Key=value,...]" as in ZombieProbe.java.
+pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    use zomboid_engine::java::{float_to_string as fl, Random};
+    use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
+
+    let survivors = zombie_survivors(root)?;
+
     let mut sb = String::new();
     let _ = writeln!(
         sb,
@@ -8717,29 +8756,7 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
         let seed: i64 = p[0].parse().map_err(|e| format!("{spec}: {e}"))?;
         let count: usize = p[1].parse().map_err(|e| format!("{spec}: {e}"))?;
         let ticks: i32 = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
-        let mut sandbox = SandboxOptions::new();
-        let mut want: Vec<(String, i32)> = BASE.iter().map(|(k, v)| (k.to_string(), *v)).collect();
-        if let Some(opts) = p.get(3).filter(|o| !o.is_empty()) {
-            for kv in opts.split(',') {
-                let (k, v) = kv
-                    .split_once('=')
-                    .ok_or_else(|| format!("bad option {kv}"))?;
-                let v: i32 = v.parse().map_err(|e| format!("{kv}: {e}"))?;
-                match want.iter_mut().find(|(wk, _)| wk == k) {
-                    Some(e) => e.1 = v,
-                    None => want.push((k.to_string(), v)),
-                }
-            }
-        }
-        for (k, v) in &want {
-            let name = format!("ZombieLore.{k}");
-            let i = sandbox
-                .defs()
-                .iter()
-                .position(|d| d.name == name)
-                .ok_or_else(|| format!("no sandbox option {name}"))?;
-            sandbox.parse(i, &v.to_string());
-        }
+        let sandbox = zombie_sandbox(p.get(3).copied())?;
         let _ = writeln!(sb, "SCENARIO {spec}");
         let lore = Lore::from_sandbox(&sandbox)?;
         let get = |n: &str| sandbox.get_int(&format!("ZombieLore.{n}")).unwrap_or(-1);
@@ -8775,6 +8792,11 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
             // ZombieProbe's ENV line: the booted server's GameTime multiplier and RainManager.isRaining()
             multiplier: 0.8,
             raining: false,
+            anim_assets: if ticks > 0 {
+                Some(zombie_anim_assets(root)?)
+            } else {
+                None
+            },
         };
         let b = |v: bool| u8::from(v);
         for i in 0..count {
@@ -8868,6 +8890,27 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
         }
     }
     Ok(sb)
+}
+
+/// The game's own zombie action group, "zombie" animation set and the human skeleton's animation clips.
+fn zombie_anim_assets(
+    root: &Path,
+) -> Result<zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets, String> {
+    use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSets;
+    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+    use zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem;
+    let fs = ZomboidFileSystem::init(root)?;
+    let mut groups = ActionGroups::default();
+    let mut sets = AnimationSets::default();
+    let (clips, _dups) = AnimationClips::load(&fs, "Human")?;
+    Ok(
+        zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets {
+            action_group: groups.get_action_group_rc(&fs, "zombie"),
+            anim_set: sets.get_animation_set_rc(&fs, "zombie", false)?,
+            clips: std::rc::Rc::new(clips),
+        },
+    )
 }
 
 /// The chunks 1034..=1035 x 1458..=1459 of the real map as ZombieProbe loads them, with their squares' properties.
@@ -9566,6 +9609,701 @@ pub fn outfitrandom(root: &Path) -> Result<String, String> {
                 }
             }
         }
+    }
+    Ok(sb)
+}
+
+/// The clips of the human skeleton as one shared table.
+fn animation_clips(
+    fs: &zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem,
+) -> Result<
+    std::rc::Rc<
+        zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips,
+    >,
+    String,
+> {
+    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+    let (clips, _dups) = AnimationClips::load(fs, "Human")?;
+    Ok(std::rc::Rc::new(clips))
+}
+
+/// ActionContextProbe.dumpAnimator for the port: per layer (the root, then the sub layers in the animator's order) its
+/// depth, state and live nodes, then the tracks of the animation player's multi track.
+fn anim_dump(
+    sb: &mut String,
+    aa: &zomboid_engine::zombie::core::skinnedmodel::advancedanimation::advanced_animator::AdvancedAnimator,
+) {
+    use zomboid_engine::java::float_to_string as fl;
+    let b = |v: bool| u8::from(v);
+    let mut layers = vec![aa.root_layer().id];
+    layers.extend(aa.sub_layer_ids());
+    for id in layers {
+        let Some(l) = aa.layer(id) else { continue };
+        let _ = writeln!(
+            sb,
+            " L {} state={} nodes={}",
+            aa.get_depth(id),
+            aa.state_name_of_layer(id)
+                .unwrap_or_else(|| "null".to_string()),
+            l.get_live_anim_nodes().len()
+        );
+        for n in l.get_live_anim_nodes() {
+            let _ = writeln!(
+                sb,
+                "  N {} anim={} w={} raw={} act={} in={} out={} tout={} new={} bf={} t={} tin={} tw={} from={} mt={} flags={}",
+                aa.node_name(n),
+                aa.node_anim_name(n),
+                fl(n.get_weight()),
+                fl(n.get_raw_weight()),
+                b(n.is_active()),
+                b(n.is_blending_in()),
+                b(n.is_blending_out()),
+                b(n.transitioning_out),
+                b(n.is_new()),
+                b(n.is_blend_field),
+                fl(n.node_anim_time),
+                b(n.is_transitioning_in()),
+                fl(n.get_transition_in_weight()),
+                n.get_transition_from().unwrap_or("null"),
+                n.main_tracks().len(),
+                n.while_alive_flag_count()
+            );
+        }
+    }
+    for (i, t) in aa.tracks().iter().enumerate() {
+        let name = t
+            .current_clip
+            .as_ref()
+            .map_or("!Empty!", |c| c.name.as_str());
+        let _ = writeln!(
+            sb,
+            " R {i} {name} time={} speed={} bw={} fw={} play={} loop={} prim={} prio={}",
+            fl(t.get_current_time_value()),
+            fl(t.get_speed_delta()),
+            fl(t.get_blend_weight()),
+            fl(t.get_blend_field_weight()),
+            b(t.is_playing),
+            b(t.is_looping()),
+            b(t.is_primary),
+            t.priority
+        );
+    }
+}
+
+/// The OPTS line of ActionContextProbe: the debug options the animator reads, as the port assumes them (a build with
+/// `Core.debug` false: every one at its default).
+fn anim_options_line(sb: &mut String) {
+    let _ = writeln!(
+        sb,
+        "OPTS debug=false earlyOut=1 noBlends=0 physicsHit=1 logStates=0 override=0"
+    );
+}
+
+/// ActionContextProbe.animScenario "anim:<set>:<seed>:<ticks>": the animator of the set on the scripted character.
+fn anim_scenario(
+    sb: &mut String,
+    fs: &zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem,
+    clips: &std::rc::Rc<
+        zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips,
+    >,
+    spec: &str,
+) -> Result<(), String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    use zomboid_engine::java::{self, float_to_string as fl, Random};
+    use zomboid_engine::zombie::core::random::rand_abstract::RandAbstract;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::advanced_animator::{
+        AdvancedAnimator, AnimatorOwner, Env,
+    };
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_condition::Type;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_event::AnimEvent;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_node::float_compare;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSets;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
+        AnimationVariableHandlePool, AnimationVariableSlot, AnimationVariableSource,
+    };
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
+    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_track::AnimationTrack;
+
+    /// The scripted character: its variables, and the log of the events the animator raised.
+    struct AnimScript {
+        vars: AnimationVariableSource,
+        pool: AnimationVariableHandlePool,
+        events: String,
+    }
+    impl IAnimationVariableSource for AnimScript {
+        fn get_variable(&self, key: &str) -> Option<AnimationVariableSlot> {
+            self.vars.get_variable(key).cloned()
+        }
+    }
+    impl AnimatorOwner for AnimScript {
+        fn is_player_ready(&self) -> bool {
+            true
+        }
+        fn on_anim_event(
+            &mut self,
+            layer_depth: i32,
+            layer_state_name: Option<&str>,
+            track: Option<&AnimationTrack>,
+            event: &AnimEvent,
+        ) -> Result<(), String> {
+            let track_name = track.map_or("null", |t| {
+                t.current_clip
+                    .as_ref()
+                    .map_or("!Empty!", |c| c.name.as_str())
+            });
+            let _ = writeln!(
+                self.events,
+                " EV {} {} {} {} {}",
+                layer_depth,
+                layer_state_name.unwrap_or("null"),
+                event.event_name.as_deref().unwrap_or("null"),
+                event.parameter_value.as_deref().unwrap_or("null"),
+                track_name
+            );
+            Ok(())
+        }
+        fn set_variable_bool(
+            &mut self,
+            reference: &AnimationVariableReference,
+            value: bool,
+        ) -> Result<(), String> {
+            // AnimationVariableReference.setVariable(owner, boolean): a blank name or a sub variable source (the
+            // character has none: read-only) does nothing; else the character's `setVariable(name, value)`
+            if reference.name.chars().all(java::is_whitespace)
+                || reference.sub_variable_source_name.is_some()
+            {
+                return Ok(());
+            }
+            self.vars
+                .set_variable_bool(&mut self.pool, &reference.name, value);
+            Ok(())
+        }
+        fn set_variable_float(&mut self, key: &str, value: f32) -> Result<(), String> {
+            if let Some(s) = self.vars.get_variable_mut(key) {
+                s.set_float(value);
+            }
+            Ok(())
+        }
+    }
+    enum Opt {
+        Bool(bool),
+        Float(f32),
+        Str(String),
+    }
+
+    let p: Vec<&str> = spec.split(':').collect();
+    if p.len() != 4 && p.len() != 5 {
+        return Err(format!("bad scenario {spec}"));
+    }
+    let set_name = p[1];
+    let seed: i64 = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let ticks: usize = p[3].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let mut sets = AnimationSets::default();
+    let set = sets.get_animation_set_rc(fs, set_name, false)?;
+    // the domain: the variables the conditions of every node and transition read, the states that need no ragdoll
+    // or node blend curve
+    let mut strs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut nums: BTreeMap<String, Vec<f32>> = BTreeMap::new();
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    let mut state_keys: BTreeSet<String> = BTreeSet::new();
+    let mut keys: Vec<&String> = set.states.keys().collect();
+    keys.sort();
+    for key in &keys {
+        let st = &set.states[*key];
+        let mut ok = true;
+        for n in &st.nodes {
+            if n.is_ragdoll || n.blend_curve.is_some() {
+                ok = false;
+            }
+            let mut conds: Vec<&_> = n.conditions.iter().collect();
+            for t in &n.transitions {
+                conds.extend(t.conditions.iter());
+            }
+            for c in conds {
+                let Some(ty) = c.type_ else { continue };
+                if ty == Type::Or {
+                    continue;
+                }
+                let r = AnimationVariableReference::from_raw_variable_name(&c.name);
+                if r.sub_variable_source_name.is_some() || r.name.chars().all(java::is_whitespace) {
+                    continue;
+                }
+                names.insert(c.name.clone());
+                match ty {
+                    Type::String | Type::Strneq => {
+                        strs.entry(c.name.clone())
+                            .or_default()
+                            .insert(c.string_value.clone());
+                    }
+                    Type::Bool => {}
+                    _ => {
+                        let v = nums.entry(c.name.clone()).or_default();
+                        if !v.iter().any(|x| float_compare(*x, c.float_value).is_eq()) {
+                            v.push(c.float_value);
+                        }
+                    }
+                }
+            }
+        }
+        if ok {
+            state_keys.insert((*key).clone());
+        }
+    }
+    let mut vars: Vec<(String, Vec<Opt>)> = Vec::new();
+    for name in &names {
+        let options = if let Some(o) = strs.get(name) {
+            let mut o = o.clone();
+            o.insert(String::new());
+            o.insert("x".to_string());
+            o.into_iter().map(Opt::Str).collect()
+        } else if let Some(o) = nums.get(name) {
+            let mut o = o.clone();
+            for f in o.clone() {
+                let g = f + 1.0;
+                if !o.iter().any(|x| float_compare(*x, g).is_eq()) {
+                    o.push(g);
+                }
+            }
+            for g in [0.0f32, 1.0] {
+                if !o.iter().any(|x| float_compare(*x, g).is_eq()) {
+                    o.push(g);
+                }
+            }
+            o.sort_by(|a, b| float_compare(*a, *b));
+            o.into_iter().map(Opt::Float).collect()
+        } else {
+            vec![Opt::Bool(true), Opt::Bool(false)]
+        };
+        vars.push((name.clone(), options));
+    }
+    let mut state_list: Vec<String> = state_keys.into_iter().collect();
+    if let Some(only) = p.get(4) {
+        // "...:state,state": only these states (lower case, as the set keys them) are chosen
+        let only: Vec<&str> = only.split(',').collect();
+        state_list.retain(|k| only.contains(&k.as_str()));
+    }
+    let _ = writeln!(sb, "SCENARIO {spec}");
+    let _ = writeln!(
+        sb,
+        "SET {set_name} states={} usable={} vars={}",
+        keys.len(),
+        state_list.len(),
+        vars.len()
+    );
+    anim_options_line(sb);
+    let mut animator = AdvancedAnimator::init(Some(set.clone()), clips.clone());
+    let mut owner = AnimScript {
+        vars: AnimationVariableSource::default(),
+        pool: AnimationVariableHandlePool::default(),
+        events: String::new(),
+    };
+    if seed % 2 == 0 {
+        owner
+            .vars
+            .set_variable_float(&mut owner.pool, "maxTwist", 0.0);
+    }
+    let mut rand = RandAbstract::new(Random::new(seed));
+    let mut r = Random::new(seed);
+    let dts: [f32; 8] = [
+        1.0 / 60.0,
+        1.0 / 30.0,
+        0.083333336,
+        0.05,
+        0.016666668,
+        0.2,
+        0.5,
+        0.033333335,
+    ];
+    let nv = vars.len() as i32;
+    let ns = state_list.len() as i32;
+    let mut prev = 0;
+    for t in 1..=ticks {
+        let changes = 1 + r.next_int_bound(3);
+        for _ in 0..changes {
+            if nv <= 0 {
+                break;
+            }
+            let (name, options) = &vars[r.next_int_bound(nv) as usize];
+            let o = &options[r.next_int_bound(options.len() as i32) as usize];
+            match o {
+                Opt::Bool(b) => owner.vars.set_variable_bool(&mut owner.pool, name, *b),
+                Opt::Float(f) => owner.vars.set_variable_float(&mut owner.pool, name, *f),
+                Opt::Str(s) => owner.vars.set_variable_string(&mut owner.pool, name, s),
+            }
+        }
+        if nv > 0 && r.next_int_bound(16) == 0 {
+            let name = vars[r.next_int_bound(nv) as usize].0.clone();
+            owner.vars.clear_variable(&name);
+        }
+        let mut did = "-".to_string();
+        if ns > 0 && r.next_int_bound(5) == 0 {
+            let root = if r.next_int_bound(25) == 0 {
+                "bogus".to_string()
+            } else {
+                state_list[r.next_int_bound(ns) as usize].clone()
+            };
+            let nsub = r.next_int_bound(3);
+            let mut subs: Vec<String> = Vec::new();
+            for _ in 0..nsub {
+                subs.push(if r.next_int_bound(25) == 0 {
+                    "bogus".to_string()
+                } else {
+                    state_list[r.next_int_bound(ns) as usize].clone()
+                });
+            }
+            animator.set_state_names(&root, &subs)?;
+            did = format!("{root}[{}]", subs.join(", "));
+        }
+        if r.next_int_bound(97) == 0 {
+            let mut env = Env {
+                owner: &mut owner,
+                rand: &mut rand,
+            };
+            animator.reset(&mut env)?;
+            did = "reset".to_string();
+        }
+        let dt = dts[r.next_int_bound(dts.len() as i32) as usize];
+        owner.events.clear();
+        {
+            let mut env = Env {
+                owner: &mut owner,
+                rand: &mut rand,
+            };
+            animator.update(dt, &mut env)?;
+            animator.update_animation_player(dt, &mut env)?;
+        }
+        let draws = rand.id();
+        let _ = write!(
+            sb,
+            "T {t} dt={} draws={} set={did} state={}",
+            fl(dt),
+            draws - prev,
+            animator
+                .get_current_state_name()
+                .unwrap_or_else(|| "null".to_string())
+        );
+        if let Some(s) = owner.vars.get_variable("maxTwist") {
+            let _ = write!(sb, " maxTwist={}", fl(s.get_value_float()));
+        }
+        sb.push('\n');
+        prev = draws;
+        sb.push_str(&owner.events);
+        anim_dump(sb, &animator);
+    }
+    let _ = writeln!(sb, "END {spec} draws={}", rand.id());
+    Ok(())
+}
+
+/// ActionContextProbe.zombieAnimScenario "zanim:<seed>:<ticks>": the ZombieProbe zombie of the seed ticked alone on
+/// the square (8280, 11670, 0); per tick the animation time delta, the draws, the action context and the animator.
+fn zombie_anim_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), String> {
+    use zomboid_engine::java::{float_to_string as fl, Random};
+    use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
+    use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
+
+    let p: Vec<&str> = spec.split(':').collect();
+    if p.len() != 3 {
+        return Err(format!("bad scenario {spec}"));
+    }
+    let seed: i64 = p[1].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let ticks: usize = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
+    let survivors = zombie_survivors(root)?;
+    let sandbox = zombie_sandbox(None)?;
+    let lore = Lore::from_sandbox(&sandbox)?;
+    let assets = zombie_anim_assets(root)?;
+    let mut outfit_rng = OutfitRng::default();
+    outfit_rng.set_seed(seed);
+    let group_name = assets.action_group.name.clone();
+    let set_name = assets.anim_set.name.clone();
+    let mut world = ZombieWorld {
+        rand: RandAbstract::new(Random::new(seed)),
+        outfit_rng,
+        lore,
+        survivors,
+        survivor_id_count: 0,
+        multiplier: 0.8,
+        raining: false,
+        anim_assets: Some(assets),
+    };
+    let _ = writeln!(sb, "SCENARIO {spec}");
+    anim_options_line(sb);
+    let mut z = IsoZombie::new(&mut world)?;
+    let _ = writeln!(
+        sb,
+        "ZOMBIE draws={} group={group_name} animSet={set_name}",
+        world.rand.id()
+    );
+    let chunks = zombie_chunks(root)?;
+    let grid = ZombieGrid::new(&chunks);
+    z.place(8280.5, 11670.5, 0.0);
+    let mut prev = world.rand.id();
+    for n in 1..=ticks {
+        z.tick(&mut world, &grid)?;
+        let draws = world.rand.id();
+        let anim = z.anim.as_ref().ok_or("the zombie has no animator")?;
+        let _ = writeln!(
+            sb,
+            "T {n} dt={} upd={} draws={} ctx={} child=[{}] ai={} vars={}",
+            fl(world.time_delta() * anim.animation_time_scale),
+            u8::from(anim.animation_updating_this_frame),
+            draws - prev,
+            anim.action_context.get_current_state_name(),
+            anim.action_context.get_child_state_names().join(","),
+            z.current_state.map_or("null", |s| s.name()),
+            anim.game_variables.get_game_variables().count()
+        );
+        anim_dump(sb, &anim.animator);
+        prev = draws;
+    }
+    let _ = writeln!(sb, "END {spec} draws={}", world.rand.id());
+    Ok(())
+}
+
+/// The `actioncontext` case: `ActionContextProbe`'s scenarios, run by the port. `ctx:<group>:<seed>:<ticks>` is the
+/// ActionContext of an action group with a scripted owner (see the probe for the script).
+pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    use zomboid_engine::java::Random;
+    use zomboid_engine::zombie::characters::action::action_context::ActionContext;
+    use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
+    use zomboid_engine::zombie::characters::action::conditions::character_variable_condition::Value;
+    use zomboid_engine::zombie::characters::action::i_action_condition::IActionCondition;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::anim_node::float_compare;
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
+        AnimationVariableHandlePool, AnimationVariableSlot, AnimationVariableSource,
+    };
+    use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
+    use zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem;
+
+    struct Scripted {
+        vars: AnimationVariableSource,
+    }
+    impl IAnimationVariableSource for Scripted {
+        fn get_variable(&self, key: &str) -> Option<AnimationVariableSlot> {
+            self.vars.get_variable(key).cloned()
+        }
+    }
+    enum Opt {
+        Bool(bool),
+        Float(f32),
+        Str(String),
+    }
+    struct Var {
+        name: String,
+        options: Vec<Opt>,
+    }
+
+    let fs = ZomboidFileSystem::init(root)?;
+    let mut groups = ActionGroups::default();
+    let mut sb = String::new();
+    for spec in scenarios {
+        if spec == "clips" {
+            use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+            let (clips, _dups) = AnimationClips::load(&fs, "Human")?;
+            let mut names: Vec<&String> = clips.clips.keys().collect();
+            names.sort();
+            let _ = writeln!(sb, "SCENARIO clips");
+            let _ = writeln!(sb, "READY true");
+            let _ = writeln!(sb, "CLIPS {}", names.len());
+            for n in names {
+                let c = &clips.clips[n];
+                let _ = writeln!(
+                    sb,
+                    "CLIP {} {} {}",
+                    n,
+                    c.name,
+                    zomboid_engine::java::float_to_string(c.duration)
+                );
+            }
+            let _ = writeln!(sb, "END clips");
+            continue;
+        }
+        if spec.starts_with("anim:") {
+            let clips = animation_clips(&fs)?;
+            anim_scenario(&mut sb, &fs, &clips, spec)?;
+            continue;
+        }
+        if spec.starts_with("zanim:") {
+            zombie_anim_scenario(&mut sb, root, spec)?;
+            continue;
+        }
+        let p: Vec<&str> = spec.split(':').collect();
+        if p.len() != 4 || p[0] != "ctx" {
+            return Err(format!("unknown scenario {spec}"));
+        }
+        let group_name = p[1];
+        let seed: i64 = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let ticks: usize = p[3].parse().map_err(|e| format!("{spec}: {e}"))?;
+        let group = groups.get_action_group_rc(&fs, group_name);
+        // the domain, from the group's conditions
+        let mut state_names: Vec<String> = Vec::new();
+        let mut events: BTreeSet<String> = BTreeSet::new();
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        let mut strs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut nums: BTreeMap<String, Vec<f32>> = BTreeMap::new();
+        let mut bools: BTreeSet<String> = BTreeSet::new();
+        for st in &group.states {
+            state_names.push(st.name.clone());
+            for t in &st.transitions {
+                for c in &t.conditions {
+                    match c {
+                        IActionCondition::EventOccurred(e)
+                        | IActionCondition::EventNotOccurred(e) => {
+                            events.insert(e.clone());
+                        }
+                        IActionCondition::CharacterVariable(c) => {
+                            let Some(Value::Lookup(r)) = &c.lhs_value else {
+                                continue;
+                            };
+                            if r.sub_variable_source_name.is_some() {
+                                continue;
+                            }
+                            let name = r.name.clone();
+                            names.insert(name.clone());
+                            match &c.rhs_value {
+                                Some(Value::Boolean(_)) => {
+                                    bools.insert(name);
+                                }
+                                Some(Value::Integer(i)) => {
+                                    let v = nums.entry(name).or_default();
+                                    let f = *i as f32;
+                                    if !v.iter().any(|x| float_compare(*x, f).is_eq()) {
+                                        v.push(f);
+                                    }
+                                }
+                                Some(Value::Float(f)) => {
+                                    let v = nums.entry(name).or_default();
+                                    if !v.iter().any(|x| float_compare(*x, *f).is_eq()) {
+                                        v.push(*f);
+                                    }
+                                }
+                                Some(Value::String(s)) => {
+                                    strs.entry(name).or_default().insert(s.clone());
+                                }
+                                _ => {}
+                            }
+                        }
+                        IActionCondition::LuaCall => {}
+                    }
+                }
+            }
+        }
+        let mut vars: Vec<Var> = Vec::new();
+        let mut kinds: Vec<(String, &str)> = Vec::new();
+        for name in &names {
+            let (kind, options) = if let Some(o) = strs.get(name) {
+                let mut o = o.clone();
+                o.insert(String::new());
+                o.insert("x".to_string());
+                ("string", o.into_iter().map(Opt::Str).collect())
+            } else if let Some(o) = nums.get(name) {
+                let mut o = o.clone();
+                for f in o.clone() {
+                    let g = f + 1.0;
+                    if !o.iter().any(|x| float_compare(*x, g).is_eq()) {
+                        o.push(g);
+                    }
+                }
+                for g in [0.0f32, 1.0] {
+                    if !o.iter().any(|x| float_compare(*x, g).is_eq()) {
+                        o.push(g);
+                    }
+                }
+                o.sort_by(|a, b| float_compare(*a, *b));
+                ("float", o.into_iter().map(Opt::Float).collect())
+            } else {
+                let _ = bools.contains(name);
+                ("bool", vec![Opt::Bool(true), Opt::Bool(false)])
+            };
+            kinds.push((name.clone(), kind));
+            vars.push(Var {
+                name: name.clone(),
+                options,
+            });
+        }
+        let _ = writeln!(sb, "SCENARIO {spec}");
+        let _ = writeln!(
+            sb,
+            "GROUP {group_name} states={} vars={} events={}",
+            state_names.len(),
+            vars.len(),
+            events.len()
+        );
+        let _ = write!(sb, "VARS");
+        for (v, (_, kind)) in vars.iter().zip(&kinds) {
+            let _ = write!(sb, " {}:{}/{}", v.name, kind, v.options.len());
+        }
+        sb.push('\n');
+        let _ = writeln!(
+            sb,
+            "EVENTS [{}]",
+            events.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        let mut pool = AnimationVariableHandlePool::default();
+        let mut owner = Scripted {
+            vars: AnimationVariableSource::default(),
+        };
+        let mut ctx = ActionContext::new();
+        ctx.set_group(Rc::clone(&group));
+        let _ = writeln!(
+            sb,
+            "INIT root={} prev={}",
+            ctx.get_current_state_name(),
+            ctx.peek_previous_state_name()
+        );
+        let mut r = Random::new(seed);
+        let nv = vars.len() as i32;
+        let ne = events.len() as i32;
+        let events: Vec<String> = events.into_iter().collect();
+        for t in 1..=ticks {
+            let changes = 1 + r.next_int_bound(2);
+            for _ in 0..changes {
+                if nv <= 0 {
+                    break;
+                }
+                let v = &vars[r.next_int_bound(nv) as usize];
+                let o = &v.options[r.next_int_bound(v.options.len() as i32) as usize];
+                match o {
+                    Opt::Bool(b) => owner.vars.set_variable_bool(&mut pool, &v.name, *b),
+                    Opt::Float(f) => owner.vars.set_variable_float(&mut pool, &v.name, *f),
+                    Opt::Str(s) => owner.vars.set_variable_string(&mut pool, &v.name, s),
+                }
+            }
+            if ne > 0 && r.next_int_bound(4) == 0 {
+                let e = &events[r.next_int_bound(ne) as usize];
+                if r.next_int_bound(3) == 0 {
+                    let cur = ctx.get_current_state_name();
+                    ctx.report_event_for_state(Some(&cur), e);
+                } else {
+                    ctx.report_event(e);
+                }
+            }
+            if r.next_int_bound(64) == 0 {
+                let forced = &state_names[r.next_int_bound(state_names.len() as i32) as usize];
+                let sr = ctx.find_state_ref(forced);
+                ctx.set_current_state(sr);
+            }
+            let can = &state_names[r.next_int_bound(state_names.len() as i32) as usize];
+            let changed = u8::from(ctx.update(&owner));
+            let next = ctx.peek_next_state(&owner).map(|s| s.name.clone());
+            let _ = writeln!(
+                sb,
+                "T {t} root={} child=[{}] prev={} next={} changed={changed} can({can})={}{} ev={}",
+                ctx.get_current_state_name(),
+                ctx.get_child_state_names().join(","),
+                ctx.peek_previous_state_name(),
+                next.as_deref().unwrap_or("-"),
+                u8::from(ctx.can_transition_to_state(&owner, can, true)),
+                u8::from(ctx.can_transition_to_state(&owner, can, false)),
+                if ne > 0 {
+                    u8::from(ctx.has_event_occurred(&events[t % ne as usize]))
+                } else {
+                    0
+                }
+            );
+        }
+        let _ = writeln!(sb, "END {spec}");
     }
     Ok(sb)
 }

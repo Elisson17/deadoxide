@@ -1,8 +1,10 @@
 //! zombie.core.skinnedmodel.advancedanimation.AnimationSet
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::anim_node_asset_manager::AnimNodeAssetManager;
 use super::anim_state::AnimState;
+use crate::java;
 use crate::zombie::zomboid_file_system::ZomboidFileSystem;
 
 /// zombie.core.skinnedmodel.advancedanimation.AnimationSet: the states of `media/AnimSets/<name>`, by lower-case
@@ -16,7 +18,7 @@ pub struct AnimationSet {
 /// The statics of the original: `AnimationSet.setMap` and `AnimNodeAssetManager.instance`, as one value.
 #[derive(Default)]
 pub struct AnimationSets {
-    pub set_map: HashMap<String, AnimationSet>,
+    pub set_map: HashMap<String, Rc<AnimationSet>>,
     pub asset_manager: AnimNodeAssetManager,
 }
 
@@ -31,10 +33,25 @@ impl AnimationSets {
     ) -> Result<&AnimationSet, String> {
         if reload || !self.set_map.contains_key(name) {
             let s = AnimationSet::load(name, fs, &mut self.asset_manager)?;
-            self.set_map.insert(name.to_string(), s);
+            self.set_map.insert(name.to_string(), Rc::new(s));
         }
         self.set_map
             .get(name)
+            .map(|s| &**s)
+            .ok_or_else(|| "AnimationSet.GetAnimationSet: not stored".to_string())
+    }
+
+    /// As `get_animation_set`, the set shared (the animators of the characters hold it).
+    pub fn get_animation_set_rc(
+        &mut self,
+        fs: &ZomboidFileSystem,
+        name: &str,
+        reload: bool,
+    ) -> Result<Rc<AnimationSet>, String> {
+        self.get_animation_set(fs, name, reload)?;
+        self.set_map
+            .get(name)
+            .cloned()
             .ok_or_else(|| "AnimationSet.GetAnimationSet: not stored".to_string())
     }
 }
@@ -59,5 +76,12 @@ impl AnimationSet {
             set.states.insert(state_name.to_lowercase(), state);
         }
         Ok(set)
+    }
+}
+
+impl AnimationSet {
+    /// zombie.core.skinnedmodel.advancedanimation.AnimationSet.containsState: the lower-cased name is a state.
+    pub fn contains_state(&self, name: &str) -> bool {
+        self.states.contains_key(&java::to_lower_case(name))
     }
 }

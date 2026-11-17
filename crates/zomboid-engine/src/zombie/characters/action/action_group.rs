@@ -1,5 +1,6 @@
 //! zombie.characters.action.ActionGroup
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use super::action_state::{ActionState, LoadContext};
 use crate::java;
@@ -25,9 +26,26 @@ pub struct ActionGroups {
     pub action_group_map: HashMap<String, ActionGroup>,
     pub pool: AnimationVariableHandlePool,
     pub log: Vec<String>,
+    /// The groups as shared values for the `ActionContext`s that hold them (the original shares the one object).
+    pub shared: HashMap<String, Rc<ActionGroup>>,
 }
 
 impl ActionGroups {
+    /// `getActionGroup` as the shared object an `ActionContext` keeps: the same `Rc` for the same lower-cased name.
+    pub fn get_action_group_rc(
+        &mut self,
+        fs: &ZomboidFileSystem,
+        group_name: &str,
+    ) -> Rc<ActionGroup> {
+        let key = java::to_lower_case(group_name);
+        if let Some(g) = self.shared.get(&key) {
+            return Rc::clone(g);
+        }
+        let g = Rc::new(self.get_action_group(fs, group_name).clone());
+        self.shared.insert(key, Rc::clone(&g));
+        g
+    }
+
     /// zombie.characters.action.ActionGroup.getActionGroup: the group of the lower-cased name, loaded and stored on
     /// first use (an error while loading is logged; the group keeps what it loaded).
     pub fn get_action_group(&mut self, fs: &ZomboidFileSystem, group_name: &str) -> &ActionGroup {
@@ -134,6 +152,19 @@ impl ActionGroup {
             Some(i) => i,
             None => self.add_state(ActionState::new(&state_name)),
         }
+    }
+
+    /// zombie.characters.action.ActionGroup.getInitialState as an index: the state named by `initial`, else the first
+    /// state.
+    pub fn get_initial_state_index(&self) -> Option<usize> {
+        self.initial_state_name
+            .as_deref()
+            .and_then(|n| self.find_state(n))
+            .or(if self.states.is_empty() {
+                None
+            } else {
+                Some(0)
+            })
     }
 
     /// zombie.characters.action.ActionGroup.getInitialState: the state named by `initial`, else the first state.

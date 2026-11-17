@@ -1,5 +1,7 @@
 //! zombie.core.skinnedmodel.advancedanimation.AnimCondition
 use super::animation_variable_reference::AnimationVariableReference;
+use super::i_animation_variable_source::IAnimationVariableSource;
+use crate::java;
 use crate::zombie::util::pz_xml_util::{jaxb_parse_boolean, jaxb_parse_float, XmlElement};
 use crate::zombie::util::string_utils;
 
@@ -170,5 +172,63 @@ impl AnimCondition {
     /// zombie.core.skinnedmodel.advancedanimation.AnimCondition.isTypeString
     pub fn is_type_string(&self) -> bool {
         matches!(self.type_, Some(Type::String | Type::Strneq))
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimCondition.check: an OR never passes by itself; a variable the
+    /// owner does not have counts as "" (string tests), false (BOOL) or fails (number tests, which warn once); else the
+    /// slot's value is compared (`==` and `!=` on floats literally, string tests ignoring case). `Err` is the
+    /// original's exception (a null type, or a condition whose `parse` never ran).
+    pub fn check(&self, var_source: &dyn IAnimationVariableSource) -> Result<bool, String> {
+        let npe = || "java.lang.NullPointerException: AnimCondition.check".to_string();
+        let var_type = self.type_.ok_or_else(npe)?;
+        if var_type == Type::Or {
+            return Ok(false);
+        }
+        let reference = self.variable_reference.as_ref().ok_or_else(npe)?;
+        let Some(slot) = reference.get_variable(var_source) else {
+            return Ok(match var_type {
+                Type::String => java::equals_ignore_case(&self.string_value, ""),
+                Type::Strneq => !java::equals_ignore_case(&self.string_value, ""),
+                Type::Bool => !self.bool_value,
+                _ => false,
+            });
+        };
+        Ok(match var_type {
+            Type::String => slot
+                .get_value_string()
+                .is_some_and(|v| java::equals_ignore_case(&self.string_value, &v)),
+            Type::Strneq => !slot
+                .get_value_string()
+                .is_some_and(|v| java::equals_ignore_case(&self.string_value, &v)),
+            Type::Bool => slot.get_value_bool() == self.bool_value,
+            Type::Equ => self.float_value == slot.get_value_float(),
+            Type::Neq => self.float_value != slot.get_value_float(),
+            Type::Less => slot.get_value_float() < self.float_value,
+            Type::Gtr => slot.get_value_float() > self.float_value,
+            Type::Absless => slot.get_value_float().abs() < self.float_value,
+            Type::Absgtr => slot.get_value_float().abs() > self.float_value,
+            Type::Or => false,
+        })
+    }
+
+    /// zombie.core.skinnedmodel.advancedanimation.AnimCondition.pass: the conditions are AND-ed, an OR condition
+    /// ends the run when everything before it passed and otherwise starts a new run (every condition is checked until
+    /// then, as `valid && check` short-circuits).
+    pub fn pass(
+        var_source: &dyn IAnimationVariableSource,
+        conditions: &[AnimCondition],
+    ) -> Result<bool, String> {
+        let mut valid = true;
+        for condition in conditions {
+            if condition.type_ == Some(Type::Or) {
+                if valid {
+                    break;
+                }
+                valid = true;
+            } else {
+                valid = valid && condition.check(var_source)?;
+            }
+        }
+        Ok(valid)
     }
 }

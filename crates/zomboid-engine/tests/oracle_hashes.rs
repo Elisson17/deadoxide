@@ -297,6 +297,33 @@ fn zombie_matches_original() {
 }
 
 #[test]
+fn actioncontext_matches_original() {
+    // ActionContextProbe's scenarios; keep in step with the `actioncontext` line of tools/oracle.sh
+    check(
+        "actioncontext",
+        &[
+            "ctx:zombie:11:4000",
+            "ctx:zombie:12:4000",
+            "ctx:zombie-crawler:13:3000",
+            "ctx:player:14:6000",
+            "ctx:player:15:6000",
+            "ctx:player-vehicle:16:3000",
+            "ctx:rabbit:17:2000",
+            "clips",
+            "zanim:12345:1200",
+            "zanim:7:600",
+            "anim:zombie:51:1500",
+            "anim:zombie:52:1500:idle,lunge,staggerback,staggerback-knockeddown,getup,getup-fromonback,getup-fromonfront,getup-fromsitting,walktoward,attack,hitreaction",
+            "anim:zombie-crawler:61:1200",
+            "anim:player:41:1500:idle,aim,aim-strafe,run,sprint,strafe,movement,melee,ext",
+            "anim:player:43:1500",
+            "anim:player:45:1500:idle,movement,run,sprint,strafe,melee,actions,aim,aim-strafe,ext,sneak",
+            "anim:player-vehicle:62:1200",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");

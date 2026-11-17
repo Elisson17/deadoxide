@@ -3,17 +3,35 @@
 //!
 //! What is here is measured against the original run headless (`pz-dump zombie` vs `ZombieProbe`); the rest of the
 //! 5,976-line class (states, targeting, hearing, attacks, outfits ...) is not ported yet.
+use std::rc::Rc;
+
+use super::action::action_context::ActionContext;
+use super::action::action_group::ActionGroup;
 use super::iso_game_character::IsoGameCharacterBase;
 use super::survivor_factory::SurvivorFactory;
-use crate::java::Random;
+use crate::java::{self, Random};
 use crate::zombie::core::math::pz_math;
 use crate::zombie::core::random::rand_abstract::RandAbstract;
+use crate::zombie::core::skinnedmodel::advancedanimation::advanced_animator::{
+    AdvancedAnimator, AnimatorOwner, Env,
+};
+use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{AnimEvent, AnimEventKind};
+use crate::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSet;
+use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
+use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
+    AnimationVariableSlot, AnimationVariableSource,
+};
+use crate::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
+use crate::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+use crate::zombie::core::skinnedmodel::animation::animation_track::AnimationTrack;
 use crate::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 use crate::zombie::iso::iso_directions::IsoDirections;
 use crate::zombie::iso::iso_grid_square::GetSquare;
 use crate::zombie::iso::sprite_details::iso_flag_type::IsoFlagType;
 use crate::zombie::pathfind::path_find_behavior2::PathFindBehavior2;
 use crate::zombie::sandbox_options::SandboxOptions;
+use crate::zombie::util::frame_delay::FrameDelay;
+use crate::zombie::util::string_utils;
 
 /// The `SandboxOptions.instance.lore` values the zombie code reads, as the integers `getValue()` returns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,12 +83,153 @@ pub struct ZombieWorld {
     pub multiplier: f32,
     /// `RainManager.isRaining()`
     pub raining: bool,
+    /// The game's own animation data a zombie that ticks is built over; a zombie made without it cannot tick.
+    pub anim_assets: Option<ZombieAnimAssets>,
+}
+
+/// What `ActionGroup.getActionGroup("zombie")`, `AnimationSet.GetAnimationSet("zombie")` and the skeleton's animation
+/// clips are, loaded once from the player's own files.
+#[derive(Clone)]
+pub struct ZombieAnimAssets {
+    pub action_group: Rc<ActionGroup>,
+    pub anim_set: Rc<AnimationSet>,
+    pub clips: Rc<AnimationClips>,
+}
+
+/// The zombie's `StateMachineComponent` pieces (its `ActionContext` and `AdvancedAnimator`) with the animation fields
+/// `IsoGameCharacter` keeps for them.
+pub struct ZombieAnim {
+    pub action_context: ActionContext,
+    pub animator: AdvancedAnimator,
+    /// `getGameVariablesInternal()`: stays empty, `setVariable` does nothing for a zombie on a dedicated server
+    pub game_variables: AnimationVariableSource,
+    animation_invisible_frame_delay: FrameDelay,
+    /// `animationTimeScale`
+    pub animation_time_scale: f32,
+    /// `animationUpdatingThisFrame`
+    pub animation_updating_this_frame: bool,
+}
+
+/// The names `IsoGameCharacter` registers anim event handlers for (`registerAnimEventListeners`).
+const ANIM_EVENT_HANDLERS: [&str; 15] = [
+    "SetVariable",
+    "ClearVariable",
+    "PlaySound",
+    "PlaySoundNoBlend",
+    "Footstep",
+    "DamageWhileInTrees",
+    "TurnAround",
+    "TurnAround_FlipSkeleton",
+    "SetSharedGrappleType",
+    "GrapplerLetGo",
+    "FallOnFront",
+    "SetOnFloor",
+    "SetKnockedDown",
+    "IsAlmostUp",
+    "KilledByAttacker",
+];
+
+/// The zombie as the animator's character: variables (the action context's state variables, then the game variables)
+/// and the anim event callback.
+struct ZombieOwner<'a> {
+    ctx: &'a mut ActionContext,
+    vars: &'a AnimationVariableSource,
+}
+
+impl IAnimationVariableSource for ZombieOwner<'_> {
+    /// IsoGameCharacter.getVariable: the action context's state variable first.
+    fn get_variable(&self, key: &str) -> Option<AnimationVariableSlot> {
+        self.ctx
+            .get_variable(key)
+            .or_else(|| self.vars.get_variable(key).cloned())
+    }
+}
+
+impl AnimatorOwner for ZombieOwner<'_> {
+    fn is_player_ready(&self) -> bool {
+        true
+    }
+
+    /// IsoGameCharacter.OnAnimEvent: the handler registered for the event's name, then `ActionContext.reportEvent`,
+    /// then the AI state's `animEvent` (`ZombieIdleState` has none to run).
+    fn on_anim_event(
+        &mut self,
+        _layer_depth: i32,
+        layer_state_name: Option<&str>,
+        _track: Option<&AnimationTrack>,
+        event: &AnimEvent,
+    ) -> Result<(), String> {
+        let Some(name) = event.event_name.as_deref() else {
+            return Ok(());
+        };
+        if string_utils::is_null_or_whitespace(Some(name)) {
+            return Ok(());
+        }
+        if ANIM_EVENT_HANDLERS
+            .iter()
+            .any(|h| java::equals_ignore_case(h, name))
+        {
+            // SetVariable / ClearVariable on a zombie of a dedicated server change nothing unless the variable is
+            // an action state's (a shared slot: not reproduced)
+            let reference = match (&event.kind, name.to_ascii_lowercase().as_str()) {
+                (
+                    AnimEventKind::SetVariable {
+                        variable_reference, ..
+                    },
+                    "setvariable",
+                ) => Some(variable_reference.clone()),
+                (_, "clearvariable") => event
+                    .parameter_value
+                    .as_deref()
+                    .map(AnimationVariableReference::from_raw_variable_name),
+                _ => None,
+            };
+            match reference {
+                Some(r) if r.get_variable(&*self).is_none() => {}
+                _ => {
+                    return Err(format!(
+                        "IsoGameCharacter.OnAnimEvent: the handler of '{name}' is not ported"
+                    ))
+                }
+            }
+        }
+        self.ctx.report_event_for_state(layer_state_name, name);
+        Ok(())
+    }
+
+    /// AnimationVariableReference.setVariable(character, bool): a slot of the action state would be set; otherwise the
+    /// character's `setVariable(name, value)`, which a zombie of a dedicated server ignores.
+    fn set_variable_bool(
+        &mut self,
+        reference: &AnimationVariableReference,
+        _value: bool,
+    ) -> Result<(), String> {
+        if reference.get_variable(&*self).is_some() {
+            return Err(
+                "AnimationVariableReference.setVariable: an action state's variable slot is not ported"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
+    fn set_variable_float(&mut self, key: &str, _value: f32) -> Result<(), String> {
+        Err(format!(
+            "IAnimationVariableSlot.setValue(float) of '{key}': not ported"
+        ))
+    }
 }
 
 impl ZombieWorld {
     /// zombie.GameTime.getThirtyFPSMultiplier: `getMultiplier() / 1.6F`
     pub fn thirty_fps_multiplier(&self) -> f32 {
         self.multiplier / 1.6
+    }
+
+    /// zombie.GameTime.getTimeDelta: `getTimeDeltaFromMultiplier(getMultiplier())`, `multiplier / 0.8F /
+    /// multiplierBias / 60.0F` (`multiplierBias` 1.0).
+    pub fn time_delta(&self) -> f32 {
+        self.multiplier / 0.8 / 1.0 / 60.0
     }
 }
 
@@ -91,7 +250,6 @@ impl ZombieState {
 }
 
 /// zombie.characters.IsoZombie, the fields construction sets or reads.
-#[derive(Clone, Debug, PartialEq)]
 pub struct IsoZombie {
     pub character: IsoGameCharacterBase,
     /// `palette` (final)
@@ -129,6 +287,8 @@ pub struct IsoZombie {
     pub movey: f32,
     pub on_floor: bool,
     pub path: PathFindBehavior2,
+    /// The action system and animator; `None` for a zombie made without the animation assets (it cannot tick).
+    pub anim: Option<ZombieAnim>,
 }
 
 impl IsoZombie {
@@ -200,6 +360,7 @@ impl IsoZombie {
             movey: 0.0,
             on_floor: false,
             path: PathFindBehavior2::default(),
+            anim: None,
         };
         z.init_sprite_parts_zombie(world);
         for t in &mut z.tint {
@@ -215,6 +376,20 @@ impl IsoZombie {
             .as_ref()
             .map_or("", |d| d.voice_prefix.as_str());
         z.hurt_sound = format!("{voice}Hurt");
+        // initializeStates(), `getActionContext().setGroup(ActionGroup.getActionGroup("zombie"))`; the animator's
+        // `init(owner, GetAnimSetName())` ran in the constructor of IsoGameCharacter (not crawling yet: "zombie")
+        if let Some(assets) = world.anim_assets.clone() {
+            let mut action_context = ActionContext::new();
+            action_context.set_group(assets.action_group);
+            z.anim = Some(ZombieAnim {
+                action_context,
+                animator: AdvancedAnimator::init(Some(assets.anim_set), assets.clips),
+                game_variables: AnimationVariableSource::default(),
+                animation_invisible_frame_delay: FrameDelay::new(4),
+                animation_time_scale: 1.0,
+                animation_updating_this_frame: false,
+            });
+        }
         Ok(z)
     }
 
@@ -421,8 +596,35 @@ impl IsoZombie {
     ///
     /// `squares` answers `IsoCell.getGridSquare`.
     pub fn tick(&mut self, world: &mut ZombieWorld, squares: &dyn GetSquare) -> Result<(), String> {
+        self.preupdate(world)?;
         self.update(world, squares)?;
         self.postupdate(world)
+    }
+
+    /// zombie.characters.IsoZombie.preupdate -> IsoGameCharacter.preupdate: `updateAnimationTimeDelta()`. (Network
+    /// bookkeeping and the debug variables are not modelled.)
+    pub fn preupdate(&mut self, world: &ZombieWorld) -> Result<(), String> {
+        let anim = self
+            .anim
+            .as_mut()
+            .ok_or("IsoZombie.preupdate: the zombie was made without the animation assets")?;
+        // updateAnimationTimeDelta: no player exists, so `maxAlpha` stays 0 and the zombie's animation is updated every
+        // (delay + 1)-th frame, at that many frames' time. (IsoZombie.allowsInvisibleAnimationSkips: not a remote
+        // zombie, `perObjectMultiplier` 1, `zombieAnimationDelay` debug option default true.)
+        anim.animation_time_scale = 1.0;
+        anim.animation_updating_this_frame = true;
+        let max_alpha = 0.0f32;
+        if max_alpha < 0.03 {
+            anim.animation_updating_this_frame = anim.animation_invisible_frame_delay.update(
+                world.time_delta(),
+                world.multiplier,
+                1.0,
+            );
+            if anim.animation_updating_this_frame {
+                anim.animation_time_scale = (anim.animation_invisible_frame_delay.delay + 1) as f32;
+            }
+        }
+        Ok(())
     }
 
     /// zombie.characters.IsoZombie.update -> updateInternal, the path of an idle zombie without a target. `Err` where
@@ -511,19 +713,94 @@ impl IsoZombie {
         Ok(())
     }
 
-    /// zombie.characters.IsoGameCharacter.postupdate -> the action system: the zombie's action group starts in "idle",
-    /// which `registerAIState` maps to ZombieIdleState, so the first postupdate enters it. Later postupdates changed
-    /// nothing the oracle prints (the state stays idle: AnimSets transitions out of "idle" are not ported, and the
-    /// original, run headless, never left it).
+    /// zombie.characters.IsoZombie.postupdate -> IsoGameCharacter.postupdate -> `postUpdateAnimating()` on a dedicated
+    /// server (`GameServer.server ||`): the action context updates, its state-changed callbacks run (the animator's
+    /// `setState`, the AI state machine's `changeState`), then the animator and the animation player's tracks
+    /// advance by `getAnimationTimeDelta()`.
+    ///
+    /// NOT PORTED (UNKNOWN): `animPlayer.updateForwardDirection/updateVerticalAimAngle`, the turning variables,
+    /// `applyDeltas`, the bone and deferred-movement part of `AnimationPlayer.Update`, and what follows in
+    /// `IsoZombie.postUpdateInternal` (unbalanced level, dragged corpse bleeding, the removal of a zombie off the map).
     pub fn postupdate(&mut self, world: &mut ZombieWorld) -> Result<(), String> {
-        if self.current_state.is_none() {
+        let anim = self
+            .anim
+            .as_mut()
+            .ok_or("IsoZombie.postupdate: the zombie was made without the animation assets")?;
+        let changed = anim.action_context.update(&anim.game_variables);
+        if changed {
+            self.action_state_changed(world)?;
+        }
+        let dt = world.time_delta() * self.anim_ref()?.animation_time_scale;
+        // `if (this.getCurrentSquare() != null)`: the zombie stands on a square
+        let anim = self.anim_mut()?;
+        {
+            let mut owner = ZombieOwner {
+                ctx: &mut anim.action_context,
+                vars: &anim.game_variables,
+            };
+            let mut env = Env {
+                owner: &mut owner,
+                rand: &mut world.rand,
+            };
+            anim.animator.update(dt, &mut env)?;
+        }
+        for e in [
+            "ActiveAnimFinished",
+            "ActiveAnimFinishing",
+            "ActiveAnimLooped",
+        ] {
+            anim.action_context.clear_event(e);
+        }
+        // applyDeltas: not ported; then updateAnimPlayer -> AnimationPlayer.Update(getAnimationTimeDelta())
+        {
+            let mut owner = ZombieOwner {
+                ctx: &mut anim.action_context,
+                vars: &anim.game_variables,
+            };
+            let mut env = Env {
+                owner: &mut owner,
+                rand: &mut world.rand,
+            };
+            anim.animator.update_animation_player(dt, &mut env)?;
+        }
+        Ok(())
+    }
+
+    fn anim_ref(&self) -> Result<&ZombieAnim, String> {
+        self.anim
+            .as_ref()
+            .ok_or_else(|| "the zombie was made without the animation assets".to_string())
+    }
+
+    fn anim_mut(&mut self) -> Result<&mut ZombieAnim, String> {
+        self.anim
+            .as_mut()
+            .ok_or_else(|| "the zombie was made without the animation assets".to_string())
+    }
+
+    /// zombie.characters.component.StateMachineComponent.actionStateChanged (the callback the zombie's
+    /// `ActionContext` runs when its states changed): `AdvancedAnimator.setState(root, children)`, then
+    /// `StateMachine.changeState(tryGetAIState(root), children's AI states, false)`. `IsoZombie.actionStateChanged`
+    /// and `ActionContext.invokeAnyStateChangedEvents` also call `NetworkZombieAI.extraUpdate()` on a server: network
+    /// state, not ported (UNKNOWN).
+    fn action_state_changed(&mut self, world: &mut ZombieWorld) -> Result<(), String> {
+        let anim = self.anim_mut()?;
+        let root = anim.action_context.get_current_state_name();
+        let children = anim.action_context.get_child_state_names();
+        anim.animator.set_state_names(&root, &children)?;
+        // registerAIState: only "idle" (ZombieIdleState) is ported
+        if !java::equals_ignore_case(&root, "idle") || !children.is_empty() {
+            return Err(format!(
+                "IsoZombie.actionStateChanged: the AI state of action state '{root}' (sub states {children:?}) is not ported"
+            ));
+        }
+        // StateMachine.changeRootState: a new state is entered (`OnAIStateChange` Lua event: no handler modelled)
+        if self.current_state != Some(ZombieState::Idle) {
+            if self.current_state.is_some() {
+                return Err("StateMachine.changeState: leaving a state is not ported".into());
+            }
             self.current_state = Some(ZombieState::Idle);
             self.idle_enter(world);
-            // The advanced animator creates the live node of the idle animation, and AnimLayer.startLiveNodeTracks draws
-            // `randomAlpha = Rand.Next(0.0F, 1.0F)`. MEASURED ONLY: which node an AnimSet picks (conditions on the
-            // zombie's animation variables) is not ported; for the zombie's idle state the node has no ragdoll start
-            // range (`Rand.Next(min, max)` with min == max draws nothing).
-            world.rand.next_float(0.0, 1.0);
         }
         Ok(())
     }
