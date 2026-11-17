@@ -4,7 +4,7 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 424 of 3432 classes touched, 1752 of 46318 method names cited (3.8%), 965313 decompiled lines.**
+**Total: 424 of 3432 classes touched, 1753 of 46318 method names cited (3.8%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
@@ -17,7 +17,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.entity | 156 | 10 | 2517 | 14 (0.6%) | 36294 |
 | zombie.inventory | 40 | 15 | 2100 | 19 (0.9%) | 28391 |
 | zombie.vehicles | 42 | 13 | 1411 | 14 (1.0%) | 28275 |
-| zombie | 60 | 13 | 1192 | 103 (8.6%) | 22185 |
+| zombie | 60 | 13 | 1192 | 104 (8.7%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 2 | 823 | 3 (0.4%) | 18680 |
 | zombie.worldMap | 85 | 7 | 1328 | 5 (0.4%) | 18604 |
@@ -114,7 +114,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.Lua.MapObjects | 3 / 12 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/lua/exposed_world.rs, crates/zomboid-engine/src/zombie/lua/map_objects.rs |
 | zombie.MapGroups | 13 / 23 | crates/zomboid-engine/src/zombie/lua/exposed_game.rs, crates/zomboid-engine/src/zombie/map_groups.rs |
 | zombie.PersistentOutfits | 10 / 20 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
-| zombie.SandboxOptions | 7 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
+| zombie.SandboxOptions | 8 / 101 | crates/zomboid-content/src/sandbox.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/sandbox_options.rs, crates/zomboid-scene/src/scene.rs |
 | zombie.SharedDescriptors | 1 / 16 | crates/zomboid-engine/src/zombie/persistent_outfits.rs |
 | zombie.SystemDisabler | 1 / 16 | crates/zomboid-engine/src/zombie/lua/exposed_methods.rs, crates/zomboid-engine/src/zombie/system_disabler.rs |
 | zombie.ZomboidFileSystem | 35 / 114 | crates/zomboid-engine/src/zombie/file_guid_table.rs, crates/zomboid-engine/src/zombie/lua/exposer.rs, crates/zomboid-engine/src/zombie/lua/lua_manager.rs, crates/zomboid-engine/src/zombie/zomboid_file_system.rs |
