@@ -199,6 +199,26 @@ fn mat4_of(m: &Mat3) -> Mat4 {
     }
 }
 
+/// `pre * key` with the sums in the order the library evaluates them (single precision, no fused multiply-add)
+fn quat_pre_multiply(p: Quat, k: Quat) -> Quat {
+    Quat {
+        w: ((-p.z * k.z + k.w * p.w) + (-p.x * k.x)) + k.y * -p.y,
+        x: ((-p.z * k.y + k.x * p.w) + k.w * p.x) + k.z * p.y,
+        y: ((-p.x * k.z + k.y * p.w) + k.w * p.y) + k.x * p.z,
+        z: ((-p.y * k.x + k.z * p.w) + k.w * p.z) + k.y * p.x,
+    }
+}
+
+/// `key * post`, same convention
+fn quat_post_multiply(k: Quat, p: Quat) -> Quat {
+    Quat {
+        w: ((-k.y * p.y + k.w * p.w) + (-k.x * p.x)) - k.z * p.z,
+        x: ((k.y * p.z + k.w * p.x) + p.w * k.x) - k.z * p.y,
+        y: ((k.z * p.x + k.w * p.y) + k.y * p.w) - k.x * p.z,
+        z: ((k.x * p.y + k.w * p.z) + k.z * p.w) - k.y * p.x,
+    }
+}
+
 fn euler_to_quaternion(rot: Vec3, order: i32) -> Quat {
     Quat::from_matrix(&mat3_of(&rotation_matrix(order, rot)))
 }
@@ -1559,65 +1579,117 @@ impl<'a> Conv<'a> {
             return Ok(());
         }
 
-        if !has_complex {
+        if !has_complex && !self.needs_complex_transformation_chain(target)? {
             let na = self.generate_simple_node_anim(
                 fixed_name, target, &chain, start, stop, max_time, min_time,
             )?;
-            node_anims.push(na);
+            if na.has_keys() {
+                node_anims.push(na);
+            }
             return Ok(());
         }
 
+        // the chain bits are collected while the node animations are generated (the node chain consults them)
         let mut flags = 0u32;
-        for (i, c) in chain.iter().enumerate() {
-            if c.is_some() {
-                flags |= 1 << i;
+        for i in 0..TC_MAXIMUM {
+            let Some(nodes) = chain[i] else { continue };
+            let chain_name = chain_node_name(fixed_name, i);
+            flags |= 1 << i;
+            let na = match i {
+                TC_PRE_ROTATION | TC_ROTATION | TC_POST_ROTATION | TC_GEOMETRIC_ROTATION => self
+                    .generate_rotation_node_anim(
+                        &chain_name,
+                        target,
+                        nodes,
+                        start,
+                        stop,
+                        max_time,
+                        min_time,
+                    )?,
+                TC_TRANSLATION
+                | TC_ROTATION_OFFSET
+                | TC_ROTATION_PIVOT
+                | TC_SCALING_OFFSET
+                | TC_SCALING_PIVOT
+                | TC_GEOMETRIC_TRANSLATION => {
+                    let na = self.generate_translation_node_anim(
+                        &chain_name,
+                        nodes,
+                        start,
+                        stop,
+                        max_time,
+                        min_time,
+                        false,
+                    )?;
+                    // pivots need their inverse (negated) channel as well; it goes first and is dropped when empty
+                    if i == TC_ROTATION_PIVOT || i == TC_SCALING_PIVOT {
+                        let inv = if i == TC_ROTATION_PIVOT {
+                            TC_ROTATION_PIVOT_INVERSE
+                        } else {
+                            TC_SCALING_PIVOT_INVERSE
+                        };
+                        let inv_na = self.generate_translation_node_anim(
+                            &chain_node_name(fixed_name, inv),
+                            nodes,
+                            start,
+                            stop,
+                            max_time,
+                            min_time,
+                            true,
+                        )?;
+                        if inv_na.has_keys() {
+                            node_anims.push(inv_na);
+                        }
+                        // the library records the inverse bit for the rotation pivot only
+                        if i == TC_ROTATION_PIVOT {
+                            flags |= 1 << inv;
+                        }
+                    }
+                    na
+                }
+                TC_SCALING | TC_GEOMETRIC_SCALING => self.generate_scaling_node_anim(
+                    &chain_name,
+                    nodes,
+                    start,
+                    stop,
+                    max_time,
+                    min_time,
+                )?,
+                // the inverse components are never animated: the library dereferences a null channel here
+                _ => continue,
+            };
+            if na.has_keys() {
+                node_anims.push(na);
             }
         }
         self.node_anim_chain_bits
             .insert(fixed_name.to_string(), flags);
-        for i in 0..TC_MAXIMUM {
-            let Some(nodes) = chain[i] else { continue };
-            let chain_name = chain_node_name(fixed_name, i);
-            let na = match i {
-                TC_ROTATION
-                | TC_PRE_ROTATION
-                | TC_POST_ROTATION
-                | TC_GEOMETRIC_ROTATION
-                | TC_GEOMETRIC_ROTATION_INVERSE => self.generate_rotation_node_anim(
-                    &chain_name,
-                    target,
-                    nodes,
-                    start,
-                    stop,
-                    max_time,
-                    min_time,
-                )?,
-                TC_ROTATION_OFFSET
-                | TC_ROTATION_PIVOT
-                | TC_SCALING_OFFSET
-                | TC_SCALING_PIVOT
-                | TC_TRANSLATION
-                | TC_GEOMETRIC_TRANSLATION
-                | TC_GEOMETRIC_TRANSLATION_INVERSE => self.generate_translation_node_anim(
-                    &chain_name,
-                    nodes,
-                    start,
-                    stop,
-                    max_time,
-                    min_time,
-                )?,
-                _ => self.generate_scaling_node_anim(
-                    &chain_name,
-                    nodes,
-                    start,
-                    stop,
-                    max_time,
-                    min_time,
-                )?,
-            };
-            node_anims.push(na);
-        }
         Ok(())
+    }
+
+    /// NeedsComplexTransformationChain: any of the pivot, offset and geometric components (not Translation,
+    /// PreRotation, Rotation, PostRotation, Scaling) differs from its default.
+    fn needs_complex_transformation_chain(&self, model: &Model) -> R<bool> {
+        for i in 0..TC_MAXIMUM {
+            if matches!(
+                i,
+                TC_TRANSLATION | TC_PRE_ROTATION | TC_ROTATION | TC_POST_ROTATION | TC_SCALING
+            ) {
+                continue;
+            }
+            let Some(v) = model.props.opt_vec3(comp_property(i), false)? else {
+                continue;
+            };
+            let d = if i == TC_GEOMETRIC_SCALING {
+                sq_len_minus_one(v)
+            } else {
+                sq_len(v)
+            };
+            if d > EPSILON {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn get_keyframe_list(&self, nodes: &[Rc<Object>], start: i64, stop: i64) -> Vec<KeyFrameList> {
@@ -1650,6 +1722,85 @@ impl<'a> Conv<'a> {
             }
         }
         inputs
+    }
+
+    /// GetRotationKeyframeList: like `get_keyframe_list`, but a jump of 180 degrees or more between two keys gets
+    /// intermediate keys (at 179 degrees per step) so the quaternion interpolation takes the long way round.
+    fn get_rotation_keyframe_list(
+        &self,
+        nodes: &[Rc<Object>],
+        start: i64,
+        stop: i64,
+    ) -> R<Vec<KeyFrameList>> {
+        let mut inputs = Vec::new();
+        let adj_start = start.wrapping_sub(10000);
+        let adj_stop = stop.wrapping_add(10000);
+        for node in nodes {
+            let Kind::AnimCurveNode(n) = &node.kind else {
+                continue;
+            };
+            for (name, curve) in self.doc.curve_node_curves(n) {
+                let mapto = match name.as_str() {
+                    "d|X" => 0,
+                    "d|Y" => 1,
+                    "d|Z" => 2,
+                    _ => continue,
+                };
+                let Kind::AnimCurve(c) = &curve.kind else {
+                    continue;
+                };
+                let count = c.keys.len();
+                if count == 0 || c.values.is_empty() {
+                    return Err("vector::at".to_string());
+                }
+                let in_range = |t: i64| adj_start <= t && t <= adj_stop;
+                let mut keys = vec![c.keys[0]];
+                let mut values = vec![c.values[0]];
+                if count > 1 {
+                    if c.values.len() < 2 {
+                        return Err("vector::at".to_string());
+                    }
+                    let mut tp = c.keys[0];
+                    let mut vp = c.values[0];
+                    let mut tc = c.keys[1];
+                    let mut vc = c.values[1];
+                    for n in 1..count {
+                        loop {
+                            let d = vc - vp;
+                            if !(180.0 <= d.abs()) {
+                                break;
+                            }
+                            let dt = tc.wrapping_sub(tp);
+                            let step = ((dt as f64) / f64::from(d.abs()) * 179.0).floor();
+                            let tnew = tp.wrapping_add(step as i64);
+                            if !in_range(tnew) {
+                                break;
+                            }
+                            let vnew = d * ((step / (dt as f64)) as f32) + vp;
+                            keys.push(tnew);
+                            values.push(vnew);
+                            tp = tnew;
+                            vp = vnew;
+                        }
+                        if in_range(tc) {
+                            keys.push(tc);
+                            values.push(vc);
+                        }
+                        if n + 1 < count {
+                            tp = tc;
+                            vp = vc;
+                            let (Some(&nk), Some(&nv)) = (c.keys.get(n + 1), c.values.get(n + 1)) else {
+                                return Err("vector::at".to_string());
+                            };
+                            tc = nk;
+                            vc = nv;
+                        }
+                    }
+                }
+                inputs.push((Rc::new(keys), Rc::new(values), mapto));
+            }
+        }
+        Ok(inputs)
     }
 
     fn get_key_time_list(inputs: &[KeyFrameList]) -> Vec<i64> {
@@ -1769,32 +1920,36 @@ impl<'a> Conv<'a> {
         let def_translate = props.vec3("Lcl Translation", Vec3::default())?;
         let def_rot = props.vec3("Lcl Rotation", Vec3::default())?;
         let order = props.int("RotationOrder", 0)?;
-        let mut scaling = Vec::new();
-        let mut translation = Vec::new();
-        let mut rotation = Vec::new();
-        if let Some(n) = chain[TC_SCALING] {
-            scaling = self.get_keyframe_list(n, start, stop);
+
+        // every component of the chain that has curves contributes its key times (also the redundant ones)
+        let mut lists: Vec<Vec<KeyFrameList>> = vec![Vec::new(); TC_MAXIMUM];
+        let mut times: Vec<i64> = Vec::new();
+        for i in 0..TC_MAXIMUM {
+            let Some(nodes) = chain[i] else { continue };
+            lists[i] = if matches!(
+                i,
+                TC_PRE_ROTATION | TC_ROTATION | TC_POST_ROTATION | TC_GEOMETRIC_ROTATION
+            ) {
+                self.get_rotation_keyframe_list(nodes, start, stop)?
+            } else {
+                self.get_keyframe_list(nodes, start, stop)
+            };
+            for kfl in &lists[i] {
+                times.extend(kfl.0.iter().copied());
+            }
+            times.sort_unstable();
+            times.dedup();
         }
-        if let Some(n) = chain[TC_TRANSLATION] {
-            translation = self.get_keyframe_list(n, start, stop);
-        }
-        if let Some(n) = chain[TC_ROTATION] {
-            rotation = self.get_keyframe_list(n, start, stop);
-        }
-        let mut joined = Vec::new();
-        joined.extend(scaling.iter().cloned());
-        joined.extend(translation.iter().cloned());
-        joined.extend(rotation.iter().cloned());
-        let times = Self::get_key_time_list(&joined);
+        let scaling = std::mem::take(&mut lists[TC_SCALING]);
+        let translation = std::mem::take(&mut lists[TC_TRANSLATION]);
+        let rotation = std::mem::take(&mut lists[TC_ROTATION]);
 
         let mut out_quat: Vec<QuatKey> = Vec::new();
         let mut out_scale: Vec<VectorKey> = Vec::new();
         let mut out_translation: Vec<VectorKey> = Vec::new();
         if !times.is_empty() {
             if !rotation.is_empty() {
-                out_quat = self.interpolate_rotation_keys(
-                    &times, &rotation, def_rot, max_time, min_time, order,
-                );
+                out_quat = self.interpolate_rotation_keys(&times, &rotation, def_rot, max_time, min_time, order);
             } else {
                 for &t in &times {
                     out_quat.push(QuatKey {
@@ -1824,6 +1979,25 @@ impl<'a> Conv<'a> {
                     });
                 }
             }
+
+            // PreRotation is applied in front of every rotation key, PostRotation behind it (EulerXYZ, 1e-6 threshold)
+            if let Some(v) = props.opt_vec3("PreRotation", false)? {
+                if sq_len(v) > 1e-6_f32 {
+                    let p = euler_to_quaternion(v, 0);
+                    for k in &mut out_quat {
+                        k.value = quat_pre_multiply(p, k.value);
+                    }
+                }
+            }
+            if let Some(v) = props.opt_vec3("PostRotation", false)? {
+                if sq_len(v) > 1e-6_f32 {
+                    let p = euler_to_quaternion(v, 0);
+                    for k in &mut out_quat {
+                        k.value = quat_post_multiply(k.value, p);
+                    }
+                }
+            }
+
             // TRS -> SRT
             for i in 0..times.len() {
                 let r = out_quat[i].value;
@@ -1843,8 +2017,8 @@ impl<'a> Conv<'a> {
             position_keys: out_translation,
             rotation_keys: out_quat,
             scaling_keys: out_scale,
-            pre_state: 1,
-            post_state: 1,
+            pre_state: 0,
+            post_state: 0,
         })
     }
 
@@ -1859,7 +2033,7 @@ impl<'a> Conv<'a> {
         min_time: &mut f64,
     ) -> R<NodeAnim> {
         let order = target.props.int("RotationOrder", 0)?;
-        let inputs = self.get_keyframe_list(curves, start, stop);
+        let inputs = self.get_rotation_keyframe_list(curves, start, stop)?;
         let keys = Self::get_key_time_list(&inputs);
         let rot = if keys.is_empty() {
             Vec::new()
@@ -1884,8 +2058,8 @@ impl<'a> Conv<'a> {
                 time: 0.0,
                 value: Vec3::new(1.0, 1.0, 1.0),
             }],
-            pre_state: 1,
-            post_state: 1,
+            pre_state: 0,
+            post_state: 0,
         })
     }
 
@@ -1916,11 +2090,12 @@ impl<'a> Conv<'a> {
                 value: Quat::default(),
             }],
             scaling_keys: sc,
-            pre_state: 1,
-            post_state: 1,
+            pre_state: 0,
+            post_state: 0,
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn generate_translation_node_anim(
         &self,
         name: &str,
@@ -1929,14 +2104,20 @@ impl<'a> Conv<'a> {
         stop: i64,
         max_time: &mut f64,
         min_time: &mut f64,
+        inverse: bool,
     ) -> R<NodeAnim> {
         let inputs = self.get_keyframe_list(curves, start, stop);
         let keys = Self::get_key_time_list(&inputs);
-        let tr = if keys.is_empty() {
+        let mut tr = if keys.is_empty() {
             Vec::new()
         } else {
             self.interpolate_keys(&keys, &inputs, Vec3::default(), max_time, min_time)
         };
+        if inverse {
+            for k in &mut tr {
+                k.value = Vec3::new(-k.value.x, -k.value.y, -k.value.z);
+            }
+        }
         Ok(NodeAnim {
             node_name: name.to_string(),
             position_keys: tr,
@@ -1948,8 +2129,8 @@ impl<'a> Conv<'a> {
                 time: 0.0,
                 value: Vec3::new(1.0, 1.0, 1.0),
             }],
-            pre_state: 1,
-            post_state: 1,
+            pre_state: 0,
+            post_state: 0,
         })
     }
 }

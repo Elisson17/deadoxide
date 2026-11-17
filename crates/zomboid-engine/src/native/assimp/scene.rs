@@ -519,6 +519,15 @@ pub struct NodeAnim {
     pub post_state: i32,
 }
 
+impl NodeAnim {
+    /// whether any of the three key arrays is non-empty (the library drops a channel with none)
+    pub fn has_keys(&self) -> bool {
+        !self.position_keys.is_empty()
+            || !self.rotation_keys.is_empty()
+            || !self.scaling_keys.is_empty()
+    }
+}
+
 /// aiAnimation
 #[derive(Clone, Debug, PartialEq)]
 pub struct Animation {
