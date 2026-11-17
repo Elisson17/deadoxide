@@ -496,18 +496,17 @@ fn dump_scene(out: &mut String, full: bool, mats: bool, sc: &Scene) -> Result<()
         section(out, full, "faces", &l);
         let mut l = Vec::new();
         for b in &m.bones {
-            if b.weights.is_empty() {
-                // jassimp sets no offset matrix on a bone without weights; the probe's `mat(null)` throws
-                return Err(
-                    "java.lang.NullPointerException: Cannot invoke \"jassimp.AiMatrix4f.get(int, int)\" because \"<parameter1>\" is null"
-                        .to_string(),
-                );
-            }
+            // jassimp sets no offset matrix on a bone without weights (`getOffsetMatrix` is null)
+            let offset = if b.weights.is_empty() {
+                "null".to_string()
+            } else {
+                mat4(&b.offset_matrix)
+            };
             l.push(format!(
                 "bone {} weights={} offset={}",
                 b.name,
                 b.weights.len(),
-                mat4(&b.offset_matrix)
+                offset
             ));
             for w in &b.weights {
                 l.push(format!("{} {}", w.vertex_id, f(w.weight)));

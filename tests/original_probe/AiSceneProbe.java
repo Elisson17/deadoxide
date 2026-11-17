@@ -130,7 +130,9 @@ public class AiSceneProbe {
             section("faces", l);
             l = new ArrayList<>();
             for (AiBone b : m.getBones()) {
-                l.add("bone " + b.getName() + " weights=" + b.getNumWeights() + " offset=" + mat((AiMatrix4f) b.getOffsetMatrix(wp0)));
+                // jassimp sets no offset matrix on a bone without weights: getOffsetMatrix is null
+                AiMatrix4f offset = (AiMatrix4f) b.getOffsetMatrix(wp0);
+                l.add("bone " + b.getName() + " weights=" + b.getNumWeights() + " offset=" + (offset == null ? "null" : mat(offset)));
                 for (AiBoneWeight w : b.getBoneWeights()) l.add(w.getVertexId() + " " + w.getWeight());
             }
             section("bones", l);
