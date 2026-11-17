@@ -664,6 +664,55 @@ fn fbxanims_matches_original() {
     );
 }
 
+/// assimp's glTF2 importer (E66) over every `.glb` of `media/models_X` (59 files), no post-processing step; `+mat` also dumps
+/// every material property.
+#[test]
+fn glbscene_matches_original() {
+    check("glbscene", &["none+mat", "glb", "media/models_X"]);
+}
+
+/// The same files with the mesh flags of `FileTask_LoadMesh.loadGLTF` (E66).
+#[test]
+fn glbmodelscene_matches_original() {
+    check("glbmodelscene", &["mesh", "glb", "media/models_X"]);
+}
+
+/// The same files with the animation flags of `FileTask_LoadAnimation.loadGLTF` (E66).
+#[test]
+fn glbanimscene_matches_original() {
+    check("glbanimscene", &["anim", "glb", "media/models_X"]);
+}
+
+/// `ProcessedAiScene.process` (E66) on every `.glb` model (`FileTask_LoadMesh.loadGLTF`: scale 1.0, no rotation): Normal and
+/// StaticMesh mode, by mesh name, all meshes, and skinned to another skeleton.
+#[test]
+fn glbmodels_matches_original() {
+    check(
+        "glbmodels",
+        &[
+            "Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x",
+            "mesh",
+            "glb",
+            "media/models_X",
+        ],
+    );
+}
+
+/// `ProcessedAiScene.process` (E66) on every `.glb` as an animation (`FileTask_LoadAnimation.loadGLTF`, scale 0.01 and the -90
+/// degree rotation about x): the clips with their keyframes, and skinned to another skeleton.
+#[test]
+fn glbanims_matches_original() {
+    check(
+        "glbanims",
+        &[
+            "AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx",
+            "anim",
+            "glb",
+            "media/models_X",
+        ],
+    );
+}
+
 /// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
 /// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
 #[test]

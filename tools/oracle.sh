@@ -350,6 +350,17 @@ sel fbxanimscene && ai_case fbxanimscene AiSceneProbe anim fbx media/models_X me
 # StaticMesh mode, by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadFBX)
 sel fbxmodels && ai_case fbxmodels ProcessedSceneProbe Normal:fbx,StaticMesh:fbx,Normal:last+fbx,StaticMesh:all+fbx,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx mesh fbx media/models_X media/textures
 sel fbxanims && ai_case fbxanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim fbx media/models_X media/textures
+# the same for every .glb of media/models_X (59 files, glTF 2.0 binary): the port of assimp's glTF2 importer (the accessors with the
+# vertex remapping table, skins, materials, animations in libc++ unordered_map order). glbscene: the importer alone (+mat also prints
+# every material property); glbmodelscene/glbanimscene: after the flags of FileTask_LoadMesh.loadGLTF / FileTask_LoadAnimation.loadGLTF
+sel glbscene && ai_case glbscene AiSceneProbe none+mat glb media/models_X
+sel glbmodelscene && ai_case glbmodelscene AiSceneProbe mesh glb media/models_X
+sel glbanimscene && ai_case glbanimscene AiSceneProbe anim glb media/models_X
+# ProcessedAiScene.process over those: the models (scale 1.0, no rotation: FileTask_LoadMesh.loadGLTF) in Normal and StaticMesh mode,
+# by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadGLTF: the same scale 0.01 and
+# -90 degree rotation as an .fbx) alone and skinned to a skeleton
+sel glbmodels && ai_case glbmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x mesh glb media/models_X
+sel glbanims && ai_case glbanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim glb media/models_X
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
