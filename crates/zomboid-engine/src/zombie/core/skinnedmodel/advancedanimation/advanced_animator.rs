@@ -10,6 +10,10 @@
 //! Not ported (UNKNOWN, each returns `Err` where the original would run it on state this port can reach): bone poses
 //! and bone masks, the deferred (root) movement a track produces and `AnimationPlayer.DoAngles`, ragdoll simulation
 //! and ragdoll nodes, grappling, node blend curves, the animation recorder and the debug monitor.
+//!
+//! The original's comparisons and branches are kept as written: `!(x <= 0.0)` differs from `x > 0.0` for NaN, and the
+//! two branches of the percentage-event test are identical in the Java.
+#![allow(clippy::neg_cmp_op_on_partial_ord, clippy::if_same_then_else)]
 use std::collections::HashMap;
 use std::rc::Rc;
 
