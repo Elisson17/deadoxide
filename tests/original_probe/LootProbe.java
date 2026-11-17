@@ -276,7 +276,17 @@ public class LootProbe {
                     LuaLoadEnvProbe.setField(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "rand", keep);
                     LuaLoadEnvProbe.setField(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "id", keepId);
                 }
-                c = new zombie.inventory.ItemContainer(type, sq, null);
+                zombie.iso.objects.IsoDeadBody body = null;
+                if (room.startsWith("corpse/")) {
+                    // a corpse of the named outfit (an IsoDeadBody made on the cell, its HumanVisual outfit set) whose container this is
+                    body = new zombie.iso.objects.IsoDeadBody(zombie.iso.IsoWorld.instance.currentCell);
+                    LuaLoadEnvProbe.setField(body, zombie.iso.objects.IsoDeadBody.class, "baseVisual", new zombie.core.skinnedmodel.visual.HumanVisual(body));
+                    zombie.core.skinnedmodel.population.Outfit outfit = new zombie.core.skinnedmodel.population.Outfit();
+                    outfit.name = room.substring(7);
+                    body.getHumanVisual().setOutfit(outfit);
+                }
+                c = new zombie.inventory.ItemContainer(type, sq, body);
+                if (body != null) { body.square = sq; LuaLoadEnvProbe.setField(body, zombie.iso.objects.IsoDeadBody.class, "female", type.equals("inventoryfemale")); body.setContainer(c); if (Boolean.getBoolean("loot.trace")) System.err.println("CORPSE parent=" + c.getParent() + " sg=" + c.getSourceGrid() + " skeleton=" + body.isSkeleton() + " outfit=" + body.getOutfitName() + " type=" + c.getType()); }
             }
             c.setCapacity(capacity);
             int before = draws();

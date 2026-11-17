@@ -126,6 +126,8 @@ pub struct LootContainer {
     pub only_accept_category: Option<String>,
     /// `explored` (set by `itemSpawnSanityCheck`).
     pub explored: bool,
+    /// The container's parent is an `IsoDeadBody` (not a skeleton) with this outfit name.
+    pub dead_body: Option<String>,
 }
 
 impl LootContainer {
@@ -136,6 +138,7 @@ impl LootContainer {
             items: Vec::new(),
             square,
             in_bag: false,
+            dead_body: None,
             max_item_size: 0.0,
             accept_item_function: None,
             only_accept_category: None,
@@ -410,9 +413,7 @@ impl<'a> LootRoller<'a> {
             return Ok(());
         };
         if container.type_name == "inventorymale" || container.type_name == "inventoryfemale" {
-            return Err(unported(
-                "fillContainer of a zombie inventory (outfit tables, bags)",
-            ));
+            return self.fill_zombie_container(container);
         }
         let picker = self.picker;
         let room_name = self.room_name(sq).to_string();
@@ -442,6 +443,49 @@ impl<'a> LootRoller<'a> {
             }
         } else {
             self.fill_container_type_internal(room_dist, container, &room_name_or_all(&room_name))?;
+        }
+        Ok(())
+    }
+
+    /// The zombie branch of ItemPickerJava.fillContainerInternal for a container with no parent (an `IsoDeadBody`
+    /// parent gives the `Outfit_<name>` table its outfit; none is built headless, so the table is
+    /// `Outfit_inventorymale` / `Outfit_inventoryfemale`): the bags the container holds are filled, then the outfit
+    /// table and, unless it turns `defaultInventoryLoot` off, the `inventorymale` / `inventoryfemale` table of the
+    /// `all` room are rolled.
+    fn fill_zombie_container(&mut self, container: &mut LootContainer) -> Result<(), String> {
+        let picker = self.picker;
+        let Some(all) = picker.rooms.get("all") else {
+            return Err("EXC java.lang.NullPointerException".into());
+        };
+        // `containerType`: the corpse's outfit name (a skeleton is not filled at all)
+        let container_type = container
+            .dead_body
+            .clone()
+            .unwrap_or_else(|| container.type_name.clone());
+        let outfit = all.containers.get(&format!("Outfit_{container_type}"));
+        for i in 0..container.items.len() {
+            if container.items[i].class != ItemType::Container {
+                continue;
+            }
+            let script = self.script(container.items[i].script)?;
+            let item_type = container.items[i].type_name.clone();
+            let own = picker.containers.get(&item_type);
+            let bags = outfit.and_then(|o| o.bags.as_deref());
+            if let (Some(bags), false) = (bags, has_tag(script, "BagsFillException")) {
+                self.roll_container_item_internal(container, &[i], Some(bags), false)?;
+            } else if let Some(own) = own {
+                if self.rand.next(own.fill_rand) == 0 {
+                    self.roll_container_item_internal(container, &[i], Some(own), false)?;
+                }
+            }
+        }
+        let default_inventory_loot = outfit.is_none_or(|o| o.default_inventory_loot);
+        if outfit.is_some() {
+            self.roll_item_internal(outfit, container, true, None)?;
+        }
+        if default_inventory_loot {
+            let dist = all.containers.get(&container.type_name);
+            self.roll_item_internal(dist, container, true, None)?;
         }
         Ok(())
     }
@@ -1028,6 +1072,9 @@ impl<'a> LootRoller<'a> {
     /// scripts name are evaluated natively (stand-ins for the Lua; the oracle runs the real ones); any other name
     /// is not ported.
     fn is_item_allowed(&self, container: &LootContainer, item: &LootItem) -> Result<bool, String> {
+        if container.dead_body.is_some() && item.type_name.contains("Corpse") {
+            return Ok(false);
+        }
         if let Some(cat) = &container.only_accept_category {
             if !cat.eq_ignore_ascii_case(Self::item_category(item.class)) {
                 return Ok(false);
@@ -1092,7 +1139,9 @@ impl<'a> LootRoller<'a> {
         if !self.has_room_for(container_at(root, path), total_weight)? {
             return Ok(None);
         }
-        if let Some((_, outer)) = path.split_last() {
+        // `corpse`: the bag lies directly in the container of an IsoDeadBody, which is not asked for room
+        let in_corpse = path.len() == 1 && root.dead_body.is_some();
+        if let (Some((_, outer)), false) = (path.split_last(), in_corpse) {
             if !self.has_room_for(container_at(root, outer), total_weight)? {
                 return Ok(None);
             }

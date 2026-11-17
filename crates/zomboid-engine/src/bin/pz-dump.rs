@@ -8539,6 +8539,8 @@ fn loot_scenario(
                 });
             }
             c = LootContainer::new(type_name, capacity, square);
+            // `corpse/<outfit>`: the container of an IsoDeadBody with that outfit
+            c.dead_body = room.strip_prefix("corpse/").map(str::to_string);
         }
         let before = roller.rand.id();
         let res = if let Some(key) = room.strip_prefix("veh/") {
