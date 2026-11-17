@@ -179,6 +179,18 @@ impl SandboxOptions {
         }
     }
 
+    /// zombie.SandboxOptions.set(name, o): `setValueFromObject` of the named option; false when there is none (the
+    /// original throws IllegalArgumentException).
+    pub fn set_by_name(&mut self, name: &str, o: &Object) -> bool {
+        match self.by_name.get(name).copied() {
+            Some(i) => {
+                self.set_value_from_object(i, o);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// SandboxOptions.getNumOptions
     pub fn get_num_options(&self) -> usize {
         OPTIONS.len()

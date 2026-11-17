@@ -10846,14 +10846,41 @@ pub fn loot(root: &Path, cache_dir: &str, scenarios: &[String]) -> Result<String
     }
     let sandbox = so.0.borrow();
     eprintln!("LOOT sandbox MaximumDiminishedLoot={:?} DaysUntil={:?} Zombies={:?} AnnotatedMapChance={:?}", sandbox.get("MaximumDiminishedLoot"), sandbox.get("DaysUntilMaximumDiminishedLoot"), sandbox.get("Zombies"), sandbox.get("AnnotatedMapChance"));
+    // MapDefinitions.definitions: the `LootMaps.Init` keys of the Lua environment (the client Lua defines them)
+    let mut map_definitions: Vec<String> = Vec::new();
+    if let Object::Table(lm_table) = KahluaTableImpl::rawget(&lm.env, &Object::str("LootMaps"))
+        .map_err(|e| format!("LootMaps: {e:?}"))?
+    {
+        if let Object::Table(init) = KahluaTableImpl::rawget(&lm_table, &Object::str("Init"))
+            .map_err(|e| format!("LootMaps.Init: {e:?}"))?
+        {
+            for (k, _) in KahluaTableImpl::iterate_snapshot(&init) {
+                if let Object::String(_) = k {
+                    map_definitions.push(k.java_to_string());
+                }
+            }
+        }
+    }
+    stash.map_definitions = map_definitions;
+    // the Moveable scripts instanced so far persist over the scenarios of one run (the original's scripts do)
+    let mut moveables = std::collections::HashSet::new();
     for spec in scenarios {
-        loot_scenario(&mut out, spec, &startup, &picker, &sandbox, &stash)?;
+        loot_scenario(
+            &mut out,
+            spec,
+            &startup,
+            &picker,
+            &sandbox,
+            &stash,
+            &mut moveables,
+        )?;
     }
     Ok(out)
 }
 
-/// One scenario `seed:room:container:times[:capacity[:same|fresh[:building rooms joined by +]]]` (see LootProbe.java):
-/// `times` containers filled one after another from one seeded generator.
+/// One scenario `seed:room:container:times[:capacity[:same|fresh[:building rooms joined by +[:world]]]]` (see
+/// LootProbe.java): `times` containers filled one after another from one seeded generator. `world` is a comma
+/// separated list of `name=value`: `nights` (GameTime.nightsSurvived), `tod` (GameTime.timeOfDay) or a sandbox option.
 fn loot_scenario(
     out: &mut String,
     spec: &str,
@@ -10861,6 +10888,7 @@ fn loot_scenario(
     picker: &zomboid_engine::zombie::inventory::item_picker_java::ItemPickerJava,
     sandbox: &zomboid_engine::zombie::sandbox_options::SandboxOptions,
     stash: &zomboid_engine::zombie::inventory::item_picker_roll::StashInfo,
+    moveables: &mut std::collections::HashSet<usize>,
 ) -> Result<(), String> {
     use zomboid_engine::zombie::inventory::item_picker_roll::{
         LootBuilding, LootContainer, LootRoller, LootRoom, LootSquare,
@@ -10879,6 +10907,29 @@ fn loot_scenario(
     let same = p.get(5) == Some(&"same");
     let bld: Vec<&str> = p.get(6).map_or(vec![room], |b| b.split('+').collect());
     let _ = writeln!(out, "SCENARIO {spec}");
+    let mut world_sandbox = sandbox.clone();
+    let mut game_time = zomboid_engine::zombie::game_time::GameTime::default();
+    for kv in p.get(7).map_or(Vec::new(), |w| w.split(',').collect()) {
+        let (k, v) = kv
+            .split_once('=')
+            .ok_or_else(|| format!("world setting {kv} of {spec}"))?;
+        let num: f64 = v
+            .parse()
+            .map_err(|_| format!("world value {kv} of {spec}"))?;
+        match k {
+            "nights" => game_time.nights_survived = num as i32,
+            "tod" => game_time.time_of_day = num as f32,
+            _ => {
+                if !world_sandbox.set_by_name(
+                    k,
+                    &zomboid_engine::se::krka::kahlua::vm::object::Object::Number(num),
+                ) {
+                    return Err(format!("unknown sandbox option {k} in {spec}"));
+                }
+            }
+        }
+    }
+    let sandbox = &world_sandbox;
     let mut roller = LootRoller::new(
         startup,
         picker,
@@ -10886,6 +10937,8 @@ fn loot_scenario(
         stash,
         RandAbstract::new(java::Random::new(seed)),
     );
+    roller.moveables_instanced = std::mem::take(moveables);
+    roller.game_time = game_time;
     let mut square: Option<LootSquare> = None;
     for t in 0..times {
         let mut c;
@@ -10911,6 +10964,8 @@ fn loot_scenario(
                 });
             }
             c = LootContainer::new(type_name, capacity, square);
+            // `corpse/<outfit>`: the container of an IsoDeadBody with that outfit
+            c.dead_body = room.strip_prefix("corpse/").map(str::to_string);
         }
         let before = roller.rand.id();
         let res = if let Some(key) = room.strip_prefix("veh/") {
@@ -10923,7 +10978,28 @@ fn loot_scenario(
             roller.fill_container(&mut c)
         };
         let draws = (roller.rand.id() - before + 10000) % 10000;
+        // a state the lines cannot print exactly (a bag whose weight rests on a fluid amount) is as unported as a
+        // fill that stopped
+        let mut lines = String::new();
+        // an `EXC <class>` result is a Java exception the original throws too (the fill ends there, its items stay)
+        let exc = res
+            .as_ref()
+            .err()
+            .and_then(|e| e.strip_prefix("EXC "))
+            .map(str::to_string);
+        let res = match &exc {
+            Some(_) => roller.item_lines("", &c, &mut lines),
+            None => res.and_then(|()| roller.item_lines("", &c, &mut lines)),
+        };
         match res {
+            Ok(()) if exc.is_some() => {
+                let _ = write!(
+                    out,
+                    "FILL {t} draws={draws} n={} EXC {}",
+                    c.items.len(),
+                    exc.as_deref().unwrap_or("")
+                );
+            }
             Ok(()) => {
                 let _ = write!(out, "FILL {t} draws={draws} n={}", c.items.len());
             }
@@ -10939,23 +11015,10 @@ fn loot_scenario(
             let _ = write!(out, " {}", i.full_type);
         }
         out.push('\n');
-        for (n, i) in c.items.iter().enumerate() {
-            let weight = roller.item_actual_weight(i)?;
-            let sharp = roller.item_sharpness(i)?;
-            let uses = roller.item_current_uses(i)?;
-            let _ = writeln!(
-                out,
-                "ITEM {n} {} id={} uses={} cond={} weight={:x} sharp={:x}",
-                i.full_type,
-                i.id,
-                uses,
-                i.condition,
-                weight.to_bits(),
-                sharp.to_bits()
-            );
-        }
+        out.push_str(&lines);
     }
     let _ = writeln!(out, "END {spec} rand={}", roller.rand.id());
+    *moveables = std::mem::take(&mut roller.moveables_instanced);
     Ok(())
 }
 

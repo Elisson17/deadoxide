@@ -177,6 +177,41 @@ public class LootProbe {
         return ItemPickerJava.rooms.get(room);
     }
 
+    /** The ITEM lines of a container's items (a bag's contents follow it, path `n.m`). */
+    static void itemLines(String prefix, zombie.inventory.ItemContainer c) {
+        int n = 0;
+        for (zombie.inventory.InventoryItem i : c.getItems()) {
+            String path = prefix.isEmpty() ? String.valueOf(n) : prefix + "." + n;
+            n++;
+            StringBuilder b = new StringBuilder("ITEM " + path + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
+                    + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
+            if (i.hasHeadCondition()) b.append(" head=" + i.getHeadCondition() + " hmax=" + i.getHeadConditionMax());
+            if (i.getMaxAmmo() > 0 || i instanceof zombie.inventory.types.HandWeapon) {
+                b.append(" ammo=" + i.getCurrentAmmoCount() + "/" + i.getMaxAmmo() + " uw=" + fbits(i.getUnequippedWeight()));
+                if (i instanceof zombie.inventory.types.HandWeapon hw) b.append(" clip=" + (hw.isContainsClip() ? 1 : 0) + " ch=" + (hw.isRoundChambered() ? 1 : 0));
+            }
+            if (i instanceof zombie.inventory.types.Key k) b.append(" key=" + k.getKeyId());
+            if (i instanceof zombie.inventory.types.Radio r) b.append(" rch=" + r.getDeviceData().getChannel());
+            if (i instanceof zombie.inventory.types.IAlarmClock a) b.append(" al=" + a.getHour() + ":" + a.getMinute() + ":" + (a.isAlarmSet() ? 1 : 0));
+            if (i.hasComponent(zombie.entity.ComponentType.FluidContainer)) b.append(" fa=" + fbits(i.getFluidContainer().getAmount()));
+            if (i instanceof zombie.inventory.types.Food f) {
+                b.append(" fd age=" + fbits(f.getAge()) + " off=" + f.getOffAge() + "/" + f.getOffAgeMax() + " ck=" + (f.isCooked() ? 1 : 0) + (f.isBurnt() ? 1 : 0)
+                        + " ct=" + fbits(f.getCookingTime()) + " hung=" + fbits(f.getHungChange()) + " thirst=" + fbits(f.getThirstChangeUnmodified()) + " end=" + fbits(f.getEndChange())
+                        + " bore=" + fbits(f.getBoredomChangeUnmodified()) + " unh=" + fbits(f.getUnhappyChangeUnmodified()) + " str=" + fbits(f.getStressChangeUnmodified())
+                        + " fat=" + fbits(f.getFatigueChange()) + " flu=" + f.getFluReduction() + " sick=" + f.getFoodSicknessChange() + " pain=" + fbits(f.getPainReduction())
+                        + " kcal=" + fbits(f.getCalories()) + " carb=" + fbits(f.getCarbohydrates()) + " prot=" + fbits(f.getProteins()) + " lip=" + fbits(f.getLipids())
+                        + " pois=" + f.getPoisonPower() + " frz=" + fbits(f.getFreezingTime()) + " fr=" + (f.isFrozen() ? 1 : 0));
+            }
+            if (i instanceof zombie.inventory.types.InventoryContainer ic) {
+                b.append(" cap=" + ic.getCapacity() + " icap=" + ic.getItemContainer().getCapacity() + " red=" + ic.getWeightReduction()
+                        + " nin=" + ic.getItemContainer().getItems().size() + " cw=" + fbits(ic.getContentsWeight()) + " uw=" + fbits(ic.getUnequippedWeight())
+                        + " exp=" + (ic.getItemContainer().isExplored() ? 1 : 0));
+            }
+            out.println(b);
+            if (i instanceof zombie.inventory.types.InventoryContainer ic) itemLines(path, ic.getItemContainer());
+        }
+    }
+
     /** One scenario `seed:room:container:times[:capacity[:mode[:building]]]`: `times` containers of that type, each
      * filled by ItemPickerJava.fillContainer from one seeded generator. The container sits on a square (an IsoGridSquare
      * made without a cell) in an IsoRoom named `room` of an IsoBuilding with the rooms `building` (`+` separated, default
@@ -193,6 +228,23 @@ public class LootProbe {
         boolean same = p.length > 5 && p[5].equals("same");
         String[] bld = p.length > 6 ? p[6].split("\\+") : new String[]{room};
         out.println("SCENARIO " + spec);
+        // the optional 8th field: `name=value,...` of `nights`, `tod` or a sandbox option, put back after the scenario
+        java.util.List<Runnable> restore = new java.util.ArrayList<>();
+        if (p.length > 7) {
+            for (String kv : p[7].split(",")) {
+                String k = kv.substring(0, kv.indexOf('='));
+                double v = Double.parseDouble(kv.substring(kv.indexOf('=') + 1));
+                zombie.GameTime gt = zombie.GameTime.getInstance();
+                if (k.equals("nights")) { int old = gt.getNightsSurvived(); gt.setNightsSurvived((int) v); restore.add(() -> gt.setNightsSurvived(old)); }
+                else if (k.equals("tod")) { float old = gt.getTimeOfDay(); gt.setTimeOfDay((float) v); restore.add(() -> gt.setTimeOfDay(old)); }
+                else {
+                    zombie.SandboxOptions so = zombie.SandboxOptions.instance;
+                    Object old = so.getOptionByName(k).asConfigOption().getValueAsObject();
+                    so.set(k, Double.valueOf(v));
+                    restore.add(() -> so.set(k, old));
+                }
+            }
+        }
         swapRand(seed);
         zombie.iso.RoomDef def = null;
         zombie.iso.areas.IsoRoom isoRoom = null;
@@ -224,7 +276,17 @@ public class LootProbe {
                     LuaLoadEnvProbe.setField(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "rand", keep);
                     LuaLoadEnvProbe.setField(zombie.core.random.RandStandard.INSTANCE, zombie.core.random.RandAbstract.class, "id", keepId);
                 }
-                c = new zombie.inventory.ItemContainer(type, sq, null);
+                zombie.iso.objects.IsoDeadBody body = null;
+                if (room.startsWith("corpse/")) {
+                    // a corpse of the named outfit (an IsoDeadBody made on the cell, its HumanVisual outfit set) whose container this is
+                    body = new zombie.iso.objects.IsoDeadBody(zombie.iso.IsoWorld.instance.currentCell);
+                    LuaLoadEnvProbe.setField(body, zombie.iso.objects.IsoDeadBody.class, "baseVisual", new zombie.core.skinnedmodel.visual.HumanVisual(body));
+                    zombie.core.skinnedmodel.population.Outfit outfit = new zombie.core.skinnedmodel.population.Outfit();
+                    outfit.name = room.substring(7);
+                    body.getHumanVisual().setOutfit(outfit);
+                }
+                c = new zombie.inventory.ItemContainer(type, sq, body);
+                if (body != null) { body.square = sq; LuaLoadEnvProbe.setField(body, zombie.iso.objects.IsoDeadBody.class, "female", type.equals("inventoryfemale")); body.setContainer(c); if (Boolean.getBoolean("loot.trace")) System.err.println("CORPSE parent=" + c.getParent() + " sg=" + c.getSourceGrid() + " skeleton=" + body.isSkeleton() + " outfit=" + body.getOutfitName() + " type=" + c.getType()); }
             }
             c.setCapacity(capacity);
             int before = draws();
@@ -243,12 +305,10 @@ public class LootProbe {
             StringBuilder b = new StringBuilder("FILL " + t + " draws=" + ((draws() - before + 10000) % 10000) + " n=" + c.getItems().size() + err);
             for (zombie.inventory.InventoryItem i : c.getItems()) b.append(' ').append(i.getFullType());
             out.println(b);
-            int n = 0;
-            for (zombie.inventory.InventoryItem i : c.getItems())
-                out.println("ITEM " + (n++) + " " + i.getFullType() + " id=" + i.id + " uses=" + i.getCurrentUses() + " cond=" + i.getCondition()
-                        + " weight=" + fbits(i.getActualWeight()) + " sharp=" + fbits(i.getSharpness()));
+            itemLines("", c);
         }
         out.println("END " + spec + " rand=" + draws());
+        for (Runnable r : restore) r.run();
     }
 
     public static void main(String[] a) throws Exception {

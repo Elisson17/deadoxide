@@ -21,6 +21,14 @@ use crate::zombie::sandbox_options::{SandboxOptions, Value as SoValue};
 use crate::zombie::scripting::item::{parse_float, Item, Value};
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
+mod classes;
+mod clothing;
+mod firearm;
+mod food;
+pub use classes::AlarmState;
+pub use firearm::WeaponState;
+pub use food::FoodState;
+
 /// The generator the rolls draw from (`Rand.rand`, a `RandStandard` in the game; a seeded `java.util.Random` here).
 pub type LootRand = RandAbstract<Random>;
 
@@ -34,6 +42,9 @@ fn unported(msg: impl std::fmt::Display) -> String {
 pub struct StashInfo {
     pub possible: usize,
     pub items: HashSet<String>,
+    /// `MapDefinitions.definitions`, which is not the stash system's but a `MapItem` reads with it: the
+    /// `LootMaps.Init` keys of the Lua environment (the client Lua defines them; none headless).
+    pub map_definitions: Vec<String>,
 }
 
 /// A room of an IsoBuilding with the `proceduralSpawnedContainer` map of its RoomDef.
@@ -71,6 +82,9 @@ pub struct LootItem {
     pub condition: i32,
     /// The `Sharpness` attribute (`None` without one).
     pub sharpness: Option<f32>,
+    /// The `HeadCondition` attribute (`None` without one) and the `HeadConditionMax` attribute if the script has it.
+    pub head_condition: Option<i32>,
+    pub head_condition_max: Option<i32>,
     /// `actualWeight` of the instance (a drainable's `updateWeight` changes it).
     pub actual_weight: f32,
     /// `getDisplayName().equals(getFullType())`: the translation is missing, the weight reads as 0.
@@ -78,6 +92,22 @@ pub struct LootItem {
     /// What `getFluidContainer().getAmount()` can be: a lower and an upper bound (equal when known); `None` without
     /// a FluidContainer component.
     pub fluid_amount: Option<(f32, f32)>,
+    /// `InventoryContainer.container`: the bag's own ItemContainer (`None` for every other class).
+    pub inner: Option<Box<LootContainer>>,
+    /// `InventoryContainer.weightReduction` (0..=100).
+    pub weight_reduction: i32,
+    /// The `Food` state (`None` for every other class).
+    pub food: Option<FoodState>,
+    /// `InventoryItem.maxAmmo` / `currentAmmoCount` and the item key of its `AmmoType` (a clip, a firearm).
+    pub max_ammo: i32,
+    pub current_ammo: i32,
+    pub ammo_item: Option<String>,
+    /// A `HandWeapon`'s ammunition state (`None` for every other class).
+    pub weapon: Option<WeaponState>,
+    /// `Key.keyId` (-1 until set), a `Radio`'s `DeviceData.channel`, an `IAlarmClock`'s alarm.
+    pub key_id: i32,
+    pub radio_channel: Option<i32>,
+    pub alarm: Option<AlarmState>,
 }
 
 /// An ItemContainer: the type, the capacity set on it, its items and the square it was made for (`sourceGrid`).
@@ -87,6 +117,17 @@ pub struct LootContainer {
     pub capacity: i32,
     pub items: Vec<LootItem>,
     pub square: Option<LootSquare>,
+    /// `containingItem != null`: the container of a bag (`getCapacity` caps it at 50, not 100).
+    pub in_bag: bool,
+    /// `inventoryContainer.getMaxItemSize()` of a bag's container (0 for the others).
+    pub max_item_size: f32,
+    /// `getAcceptItemFunction()` / `getOnlyAcceptCategory()` of a bag's container.
+    pub accept_item_function: Option<String>,
+    pub only_accept_category: Option<String>,
+    /// `explored` (set by `itemSpawnSanityCheck`).
+    pub explored: bool,
+    /// The container's parent is an `IsoDeadBody` (not a skeleton) with this outfit name.
+    pub dead_body: Option<String>,
 }
 
 impl LootContainer {
@@ -96,8 +137,37 @@ impl LootContainer {
             capacity,
             items: Vec::new(),
             square,
+            in_bag: false,
+            dead_body: None,
+            max_item_size: 0.0,
+            accept_item_function: None,
+            only_accept_category: None,
+            explored: false,
         }
     }
+}
+
+/// The container `path` (item indexes from `root`, each a bag) leads to; empty means `root` itself.
+fn container_at<'c>(root: &'c LootContainer, path: &[usize]) -> &'c LootContainer {
+    let mut c = root;
+    for &i in path {
+        c = c.items[i]
+            .inner
+            .as_deref()
+            .expect("a path step names a bag");
+    }
+    c
+}
+
+fn container_at_mut<'c>(root: &'c mut LootContainer, path: &[usize]) -> &'c mut LootContainer {
+    let mut c = root;
+    for &i in path {
+        c = c.items[i]
+            .inner
+            .as_deref_mut()
+            .expect("a path step names a bag");
+    }
+    c
 }
 
 /// A `HashMap<String, Integer>` filled with `put`/`clear`, iterated in the original's order.
@@ -171,6 +241,17 @@ fn script_complex<'i>(item: &'i Item, key: &str) -> Option<&'i str> {
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.as_str())
 }
+/// An `Int` attribute from a script value (`AttributeInstance.Int.setValueFromScriptString`: `Integer.parseInt`, a
+/// failure leaves the initial value 10), kept inside the bounds of `HeadCondition`/`HeadConditionMax` (0..=1000).
+fn script_int_attribute(v: &str) -> i32 {
+    java::parse_int(java::trim(v)).unwrap_or(10).clamp(0, 1000)
+}
+
+/// `instanceof Clothing`: a clothing item or a wristwatch (`AlarmClockClothing extends Clothing`).
+fn is_clothing(class: ItemType) -> bool {
+    matches!(class, ItemType::Clothing | ItemType::AlarmClockClothing)
+}
+
 fn has_tag(item: &Item, tag: &str) -> bool {
     match ResourceLocation::of(tag) {
         Ok(t) => item.tags.contains(&t),
@@ -236,6 +317,12 @@ pub struct LootRoller<'a> {
     pub buildings: Vec<LootBuilding>,
     /// `Core.getOptionReloadDifficulty()` (option `reloadDifficulty`, default 2).
     pub reload_difficulty: i32,
+    /// The Moveable scripts instanced so far: `Item.InstanceItem` writes the instance's weight back into the script
+    /// (`this.actualWeight = moveable.getActualWeight()`), which the next `tryAddItemToContainer` reads. The
+    /// original's scripts keep that for the whole process, so a caller running several scenarios hands the set on.
+    pub moveables_instanced: HashSet<usize>,
+    /// The `GameTime` the rolls read the world age from (the standalone one: 9:00, no night survived).
+    pub game_time: crate::zombie::game_time::GameTime,
 }
 
 impl<'a> LootRoller<'a> {
@@ -254,6 +341,8 @@ impl<'a> LootRoller<'a> {
             rand,
             buildings: Vec::new(),
             reload_difficulty: 2,
+            moveables_instanced: HashSet::new(),
+            game_time: crate::zombie::game_time::GameTime::default(),
         }
     }
 
@@ -324,9 +413,7 @@ impl<'a> LootRoller<'a> {
             return Ok(());
         };
         if container.type_name == "inventorymale" || container.type_name == "inventoryfemale" {
-            return Err(unported(
-                "fillContainer of a zombie inventory (outfit tables, bags)",
-            ));
+            return self.fill_zombie_container(container);
         }
         let picker = self.picker;
         let room_name = self.room_name(sq).to_string();
@@ -356,6 +443,49 @@ impl<'a> LootRoller<'a> {
             }
         } else {
             self.fill_container_type_internal(room_dist, container, &room_name_or_all(&room_name))?;
+        }
+        Ok(())
+    }
+
+    /// The zombie branch of ItemPickerJava.fillContainerInternal for a container with no parent (an `IsoDeadBody`
+    /// parent gives the `Outfit_<name>` table its outfit; none is built headless, so the table is
+    /// `Outfit_inventorymale` / `Outfit_inventoryfemale`): the bags the container holds are filled, then the outfit
+    /// table and, unless it turns `defaultInventoryLoot` off, the `inventorymale` / `inventoryfemale` table of the
+    /// `all` room are rolled.
+    fn fill_zombie_container(&mut self, container: &mut LootContainer) -> Result<(), String> {
+        let picker = self.picker;
+        let Some(all) = picker.rooms.get("all") else {
+            return Err("EXC java.lang.NullPointerException".into());
+        };
+        // `containerType`: the corpse's outfit name (a skeleton is not filled at all)
+        let container_type = container
+            .dead_body
+            .clone()
+            .unwrap_or_else(|| container.type_name.clone());
+        let outfit = all.containers.get(&format!("Outfit_{container_type}"));
+        for i in 0..container.items.len() {
+            if container.items[i].class != ItemType::Container {
+                continue;
+            }
+            let script = self.script(container.items[i].script)?;
+            let item_type = container.items[i].type_name.clone();
+            let own = picker.containers.get(&item_type);
+            let bags = outfit.and_then(|o| o.bags.as_deref());
+            if let (Some(bags), false) = (bags, has_tag(script, "BagsFillException")) {
+                self.roll_container_item_internal(container, &[i], Some(bags), false)?;
+            } else if let Some(own) = own {
+                if self.rand.next(own.fill_rand) == 0 {
+                    self.roll_container_item_internal(container, &[i], Some(own), false)?;
+                }
+            }
+        }
+        let default_inventory_loot = outfit.is_none_or(|o| o.default_inventory_loot);
+        if outfit.is_some() {
+            self.roll_item_internal(outfit, container, true, None)?;
+        }
+        if default_inventory_loot {
+            let dist = all.containers.get(&container.type_name);
+            self.roll_item_internal(dist, container, true, None)?;
         }
         Ok(())
     }
@@ -792,8 +922,8 @@ impl<'a> LootRoller<'a> {
         Ok((base_chance * 100.0f32 * loot_modifier + zombie_density) * over_time)
     }
 
-    /// SandboxOptions.getCurrentDiminishedLootPercentage(square). The world age is the standalone `GameTime`'s (9:00,
-    /// no night survived); a square's region is "General" (no zones headless), which is not null, so `RuralLooted`
+    /// SandboxOptions.getCurrentDiminishedLootPercentage(square). The world age is the roller's `GameTime`'s (the
+    /// standalone one: 9:00, no night survived); a square's region is "General" (no zones headless), which is not null, so `RuralLooted`
     /// does not apply.
     fn diminished_loot_percentage(&self) -> Result<i32, String> {
         let get = |n: &str| {
@@ -809,8 +939,8 @@ impl<'a> LootRoller<'a> {
         if days_until_max <= 0 {
             return Ok(max_looted);
         }
-        let age_days = crate::zombie::game_time::GameTime::default().get_world_age_hours() / 24.0
-            + ((get("TimeSinceApo")? - 1) * 30) as f64;
+        let age_days =
+            self.game_time.get_world_age_hours() / 24.0 + ((get("TimeSinceApo")? - 1) * 30) as f64;
         let mut days = age_days as i32;
         if days <= 0 {
             days = 1;
@@ -822,20 +952,35 @@ impl<'a> LootRoller<'a> {
         Ok(looted.clamp(0, 100))
     }
 
-    /// The item's contribution to `ItemContainer.getContentsWeight` (`getUnequippedWeight`): a lower and an upper
-    /// bound.
+    /// `ItemContainer.getContentsWeight` (`getCapacityWeight` of a container with no parent): the sum of the items'
+    /// unequipped weights, as a lower and an upper bound.
+    fn contents_weight(&self, c: &LootContainer) -> Result<(f32, f32), String> {
+        let (mut lo, mut hi) = (0.0f32, 0.0f32);
+        for it in &c.items {
+            let (a, b) = self.unequipped_weight(it)?;
+            lo += a;
+            hi += b;
+        }
+        Ok((lo, hi))
+    }
+
+    /// `InventoryItem.getUnequippedWeight` = `getActualWeight() + getContentsWeight()`, a lower and an upper bound.
+    /// A bag's contents weight is its container's contents plus its fluid (`InventoryContainer.getContentsWeight`).
     fn unequipped_weight(&self, it: &LootItem) -> Result<(f32, f32), String> {
         let actual = self.actual_weight(it)?;
-        let (lo, hi) = it.fluid_amount.unwrap_or((0.0, 0.0));
-        Ok((actual + lo, actual + hi))
+        if it.inner.is_some() {
+            let (clo, chi) = self.bag_contents_weight(it)?;
+            return Ok((actual + clo, actual + chi));
+        }
+        let (clo, chi) = self.item_contents_weight(it)?;
+        Ok((actual + clo, actual + chi))
     }
 
     /// InventoryItem.getActualWeight and its Food override.
     fn actual_weight(&self, it: &LootItem) -> Result<f32, String> {
         let script = self.script(it.script)?;
         if it.class == ItemType::Weapon {
-            // HandWeapon.getActualWeight: the script's weight plus attached parts (none)
-            return Ok(script_actual_weight(script));
+            return Ok(self.weapon_actual_weight(it, script));
         }
         let base = if it.zero_weight {
             0.0
@@ -845,9 +990,13 @@ impl<'a> LootRoller<'a> {
         if it.class != ItemType::Food {
             return Ok(base);
         }
-        // Food.getActualWeight for a fresh item (no extra items, not custom weight, not cooked or burnt)
-        let hung_change = script_float(script, "hungerChange") / 100.0f32;
-        let thirst_change = script_float(script, "thirstChange") / 100.0f32;
+        // Food.getActualWeight (no extra items, not custom weight): `getHungChange()` and `getThirstChange()` of the state
+        let food = it
+            .food
+            .as_ref()
+            .ok_or_else(|| unported("a food without state"))?;
+        let hung_change = food.hung_change;
+        let thirst_change = food.thirst_change_modified();
         if let Some(replace) = script_str(script, "replaceOnUse") {
             let module = &script.module;
             let full = if replace.contains('.') {
@@ -878,17 +1027,19 @@ impl<'a> LootRoller<'a> {
         Ok(base)
     }
 
-    /// ItemContainer.hasRoomFor(null, weightVal): `floatingPointCorrection(contents) + weightVal <= capacity`. A
-    /// FluidContainer item's contents weight is only bounded here; the answer must not depend on where in the
-    /// bounds it lies.
+    /// ItemContainer.hasRoomFor(null, weightVal) = `hasRoomFor(null, weightVal, weightVal)`: a bag's container refuses
+    /// an item heavier than the bag's `MaxItemSize`; then `floatingPointCorrection(contents) + weightVal <=
+    /// getEffectiveCapacity(null)` (`getCapacity`: 50 inside a bag, 100 otherwise). A FluidContainer item's contents
+    /// weight is only bounded here; the answer must not depend on where in the bounds it lies.
     fn has_room_for(&self, container: &LootContainer, weight_val: f32) -> Result<bool, String> {
-        let (mut lo, mut hi) = (0.0f32, 0.0f32);
-        for it in &container.items {
-            let (a, b) = self.unequipped_weight(it)?;
-            lo += a;
-            hi += b;
+        if container.in_bag && container.max_item_size > 0.0 && weight_val > container.max_item_size
+        {
+            return Ok(false);
         }
-        let cap = container.capacity.min(100) as f32;
+        let (lo, hi) = self.contents_weight(container)?;
+        let cap = container
+            .capacity
+            .min(if container.in_bag { 50 } else { 100 }) as f32;
         let a = floating_point_correction(lo) + weight_val <= cap;
         let b = floating_point_correction(hi) + weight_val <= cap;
         if a != b {
@@ -899,10 +1050,77 @@ impl<'a> LootRoller<'a> {
         Ok(a)
     }
 
-    /// ItemPickerJava.tryAddItemToContainer: `Ok(Some(index))` of the new item in the container.
+    /// InventoryItem.getCategory (`mainCategory` is never set).
+    fn item_category(class: ItemType) -> &'static str {
+        match class {
+            ItemType::Food => "Food",
+            ItemType::Clothing => "Clothing",
+            ItemType::Weapon => "Weapon",
+            ItemType::Literature => "Literature",
+            ItemType::Container => "Container",
+            ItemType::Key => "Key",
+            ItemType::KeyRing => "Key Ring",
+            ItemType::AlarmClock | ItemType::AlarmClockClothing => "AlarmClock",
+            ItemType::WeaponPart => "WeaponPart",
+            ItemType::Animal => "Animal",
+            _ => "Item",
+        }
+    }
+
+    /// ItemContainer.isItemAllowed for a container with no parent object: the bag's `OnlyAcceptCategory` and its
+    /// `AcceptItemFunction`. The five accept functions of `media/lua/server/Items/AcceptItemFunction.lua` that the
+    /// scripts name are evaluated natively (stand-ins for the Lua; the oracle runs the real ones); any other name
+    /// is not ported.
+    fn is_item_allowed(&self, container: &LootContainer, item: &LootItem) -> Result<bool, String> {
+        if container.dead_body.is_some() && item.type_name.contains("Corpse") {
+            return Ok(false);
+        }
+        if let Some(cat) = &container.only_accept_category {
+            if !cat.eq_ignore_ascii_case(Self::item_category(item.class)) {
+                return Ok(false);
+            }
+        }
+        if let Some(f) = &container.accept_item_function {
+            let script = self.script(item.script)?;
+            let accepted = match f.as_str() {
+                "AcceptItemFunction.AmmoStrap_Bullets" => {
+                    has_tag(script, "Ammo") && !has_tag(script, "ShotgunShell")
+                }
+                "AcceptItemFunction.AmmoStrap_Shells" => has_tag(script, "ShotgunShell"),
+                "AcceptItemFunction.KeyRing" => {
+                    Self::item_category(item.class) == "Key" || has_tag(script, "FitsKeyRing")
+                }
+                "AcceptItemFunction.HolsterShoulder" => {
+                    has_tag(script, "PistolMagazine") && container.items.len() < 2
+                }
+                "AcceptItemFunction.Wallet" => {
+                    item.class == ItemType::Map
+                        || item.class == ItemType::Literature
+                        || has_tag(script, "FitsWallet")
+                }
+                other => return Err(unported(format!("accept function {other}"))),
+            };
+            if !accepted {
+                return Ok(false);
+            }
+        }
+        // isInvalidClothingRackItem
+        if container.type_name == "clothingrack"
+            && !is_clothing(item.class)
+            && !has_tag(self.script(item.script)?, "FitsClothingRack")
+        {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// ItemPickerJava.tryAddItemToContainer for the container `path` leads to in `root`: `Ok(Some(index))` of the new
+    /// item in that container. A bag's container is also asked to fit the weight in the container that holds the
+    /// bag (`getContainingItem().getContainer().hasRoomFor`); no container here is a corpse's.
     fn try_add_item_to_container(
         &mut self,
-        container: &mut LootContainer,
+        root: &mut LootContainer,
+        path: &[usize],
         item_type: &str,
     ) -> Result<Option<usize>, String> {
         let Some(si) = self.startup.find_item(item_type) else {
@@ -912,30 +1130,111 @@ impl<'a> LootRoller<'a> {
             return Ok(None);
         }
         let script = self.script(si)?;
-        let total_weight = script_actual_weight(script) * script_int(script, "count") as f32;
-        if !self.has_room_for(container, total_weight)? {
+        let script_weight = if self.moveables_instanced.contains(&si) {
+            1.0
+        } else {
+            script_actual_weight(script)
+        };
+        let total_weight = script_weight * script_int(script, "count") as f32;
+        if !self.has_room_for(container_at(root, path), total_weight)? {
             return Ok(None);
         }
-        // `container.getContainingItem()` is null: no bag checks
-        self.spawn_item(item_type, container)
+        // `corpse`: the bag lies directly in the container of an IsoDeadBody, which is not asked for room
+        let in_corpse = path.len() == 1 && root.dead_body.is_some();
+        if let (Some((_, outer)), false) = (path.split_last(), in_corpse) {
+            if !self.has_room_for(container_at(root, outer), total_weight)? {
+                return Ok(None);
+            }
+        }
+        self.spawn_item(root, path, item_type)
     }
 
-    /// ItemSpawner.spawnItem(String, ItemContainer): `InventoryItemFactory.CreateItem`, `isItemAllowed`, `AddItem`.
+    /// ItemSpawner.spawnItem(String, ItemContainer) (`fill` true): `InventoryItemFactory.CreateItem`, `isItemAllowed`,
+    /// `AddItem`, then a bag with a `containers` distribution is filled by `rollContainerItem` (and its junk).
     fn spawn_item(
         &mut self,
+        root: &mut LootContainer,
+        path: &[usize],
         item_type: &str,
-        container: &mut LootContainer,
     ) -> Result<Option<usize>, String> {
         let Some(item) = self.create_item(item_type)? else {
             return Ok(None);
         };
-        // isItemAllowed: no accepted category or function, no parent object
+        self.spawn_created_item(root, path, item)
+    }
+
+    /// ItemSpawner.spawnItem(InventoryItem, ItemContainer) (`fill` true) for an item that was created already.
+    fn spawn_created_item(
+        &mut self,
+        root: &mut LootContainer,
+        path: &[usize],
+        item: LootItem,
+    ) -> Result<Option<usize>, String> {
+        if !self.is_item_allowed(container_at(root, path), &item)? {
+            return Ok(None);
+        }
         // ItemContainer.AddItem refuses an item whose id the container holds (and returns the held one)
-        if container.items.iter().any(|i| i.id == item.id) {
+        if container_at(root, path)
+            .items
+            .iter()
+            .any(|i| i.id == item.id)
+        {
             return Err(unported("a spawned item id equal to one in the container"));
         }
-        container.items.push(item);
-        Ok(Some(container.items.len() - 1))
+        let (class, type_name) = (item.class, item.type_name.clone());
+        let target = container_at_mut(root, path);
+        target.items.push(item);
+        let idx = target.items.len() - 1;
+        if class == ItemType::Container {
+            if let Some(dist) = self.picker.containers.get(&type_name) {
+                let mut bag = path.to_vec();
+                bag.push(idx);
+                // ItemPickerJava.rollContainerItem
+                self.roll_container_item_internal(root, &bag, Some(dist), false)?;
+                if let Some(junk) = dist.junk.as_deref() {
+                    self.roll_container_item_internal(root, &bag, Some(junk), true)?;
+                }
+            }
+        }
+        // `item.setAutoAge()` (twice in the original: the second changes nothing)
+        let outermost = root.type_name.clone();
+        let target = container_at_mut(root, path);
+        self.item_set_auto_age(&mut target.items[idx], &outermost)?;
+        Ok(Some(idx))
+    }
+
+    /// ItemPickerJava.onCreateRegion(item, getSquareRegion(square)) and RecipeCodeHelper.nameNewspaper: a paper of
+    /// the region's list (`Rand.Next(list)`), then an issue (`Rand.Next(issues)`; a `NewspaperNew` item takes the
+    /// last issue after drawing). A square's region is "General" without zones (headless); the item's new name and
+    /// `printMedia` mod data are not compared.
+    fn on_create_region(&mut self) {
+        // ItemGenerationConstants.REGIONAL_PAPERS["General"]: KNOX_KNEWS (6 issues), KENTUCKY_HERALD (5 issues)
+        const GENERAL: [i32; 2] = [6, 5];
+        let paper = self.rand.next(GENERAL.len() as i32);
+        self.rand.next(GENERAL[paper as usize]);
+    }
+
+    /// `ZomboidRadio.getInstance().getRecordedMedia().getRandomFromCategory(cat)` in the standalone state: nothing
+    /// registered the media (`RecordedMedia.init` and the Lua `OnInitRecordedMedia` run in a game's world load), so
+    /// `categorizedMap.containsKey(cat)` is false for every category and the call returns null without a draw.
+    /// UNKNOWN: the tables a running game has (CDs, Retail-VHS and Home-VHS draw from them).
+    fn recorded_media_random(_cat: &str) -> Option<i32> {
+        None
+    }
+
+    /// The `getSpawnWith()` step of `doRollItemInternal` / `rollContainerItemInternal`:
+    /// `ItemSpawner.spawnItem(spawnWith, container)` and then `spawnWithItem.copyClothing(spawnItem)`. Headless,
+    /// `copyClothing` calls the Lua `copyClothingItem`, which fails on the first `getVisual()` (a `ClothingItem` asset
+    /// that is not ready gives no visual) before it changes anything, so it draws nothing and sets nothing the
+    /// oracle compares. UNKNOWN: the copied tint/texture/decal/dirt/blood/holes in the running game.
+    fn spawn_with(
+        &mut self,
+        root: &mut LootContainer,
+        path: &[usize],
+        spawn_with: &str,
+    ) -> Result<(), String> {
+        self.spawn_item(root, path, spawn_with)?;
+        Ok(())
     }
 
     /// InventoryItemFactory.createItemInternal for the supported classes.
@@ -970,6 +1269,14 @@ impl<'a> LootRoller<'a> {
                 | ItemType::Drainable
                 | ItemType::Weapon
                 | ItemType::Clothing
+                | ItemType::Container
+                | ItemType::WeaponPart
+                | ItemType::Key
+                | ItemType::Radio
+                | ItemType::Moveable
+                | ItemType::AlarmClock
+                | ItemType::AlarmClockClothing
+                | ItemType::Map
         ) {
             return Err(unported(format!(
                 "item class {class:?} ({})",
@@ -977,30 +1284,24 @@ impl<'a> LootRoller<'a> {
             )));
         }
         for c in &script.components {
-            if c != "FluidContainer" && c != "Durability" {
+            if c != "FluidContainer" && c != "Durability" && c != "ContextMenuConfig" {
                 return Err(unported(format!("component {c} ({})", script.full_name())));
             }
         }
         if script.fluid_blocks > 1 {
             return Err(unported("two FluidContainer blocks"));
         }
-        if class == ItemType::Weapon
-            && (script_bool(script, "ranged")
-                || script_str(script, "magazineType").is_some_and(|m| !m.is_empty())
-                || script_str(script, "ammoBox").is_some_and(|m| !m.is_empty()))
-        {
-            return Err(unported(format!("firearm {}", script.full_name())));
-        }
-        for key in ["ammotype", "headcondition", "headconditionmax"] {
-            if script_complex(script, key).is_some() {
-                return Err(unported(format!(
-                    "script parameter {key} ({})",
-                    script.full_name()
-                )));
-            }
-        }
+        // Item.InstanceItem `item.setAmmoType(this.ammoType)`: the `AmmoType` the script names
+        let ammo_item = match script_complex(script, "ammotype") {
+            None => None,
+            Some(v) => Some(
+                firearm::ammo_item_key(java::trim(v))
+                    .ok_or_else(|| unported(format!("AmmoType {v} ({})", script.full_name())))?
+                    .to_string(),
+            ),
+        };
         // Item.InstanceItem: a clothing item picks its palette, then the Clothing constructor draws the colour
-        if class == ItemType::Clothing {
+        if is_clothing(class) {
             if let Some(p) = script_complex(script, "palettes") {
                 let n = java::split_char(p, '/').len() as i32;
                 self.rand.next(n);
@@ -1008,6 +1309,25 @@ impl<'a> LootRoller<'a> {
             for _ in 0..3 {
                 self.rand.next(255);
             }
+        }
+        // the constructors and setters of the other classes that draw
+        let mut key_id = -1;
+        let mut radio_channel = None;
+        let mut alarm = None;
+        match class {
+            ItemType::Key => {
+                // `if (isPadlock()) { setNumberOfKey(2); setKeyId(Rand.Next(10000000)); }`
+                if script_bool(script, "padlock") {
+                    key_id = self.rand.next(10_000_000);
+                }
+            }
+            ItemType::AlarmClock => alarm = Some(self.randomize_alarm_clock()),
+            ItemType::AlarmClockClothing => {
+                alarm = Some(self.randomize_alarm_clock_clothing(&script.full_name()));
+            }
+            ItemType::Radio => radio_channel = Some(self.radio_random_channel(script)),
+            ItemType::Map => self.map_pick_random(script),
+            _ => {}
         }
         // Item.InstanceItem: the instance's fields from the script
         let (script_weight, _) = script_weight_capacity(script);
@@ -1022,6 +1342,9 @@ impl<'a> LootRoller<'a> {
             sharpness: script_complex(script, "sharpness")
                 .and_then(parse_float)
                 .map(|v| v.clamp(0.0, 1.0)),
+            head_condition: script_complex(script, "headcondition").map(script_int_attribute),
+            head_condition_max: script_complex(script, "headconditionmax")
+                .map(script_int_attribute),
             actual_weight: if script_weight < 0.0 {
                 0.0
             } else {
@@ -1029,7 +1352,38 @@ impl<'a> LootRoller<'a> {
             },
             zero_weight: false,
             fluid_amount: None,
+            inner: None,
+            weight_reduction: 0,
+            food: (class == ItemType::Food).then(|| FoodState::from_script(script)),
+            max_ammo: script_int(script, "maxAmmo"),
+            current_ammo: 0,
+            ammo_item,
+            weapon: (class == ItemType::Weapon).then(WeaponState::default),
+            key_id,
+            radio_channel,
+            alarm,
         };
+        if class == ItemType::Moveable {
+            // `ReadFromWorldSprite` finds no sprite headless (`IsoSpriteManager.namedMap` is empty): the instance keeps
+            // `actualWeight` 1.0 and the script takes it over. UNKNOWN: the weight a running game reads from the
+            // sprite's `PickUpWeight`.
+            item.actual_weight = 1.0;
+            self.moveables_instanced.insert(si);
+        }
+        if class == ItemType::Container {
+            // Item.InstanceItem: `new InventoryContainer` (its ItemContainer's type is the script name), then
+            // setCapacity, setWeightReduction (clamped to 0..=100) and the container's accept settings
+            let (_, capacity) = script_weight_capacity(script);
+            let mut inner = LootContainer::new(&script.name, capacity, None);
+            inner.in_bag = true;
+            inner.max_item_size = script_float(script, "maxItemSize");
+            inner.only_accept_category =
+                script_str(script, "onlyAcceptCategory").map(str::to_string);
+            inner.accept_item_function =
+                script_str(script, "acceptItemFunction").map(str::to_string);
+            item.inner = Some(Box::new(inner));
+            item.weight_reduction = script_int(script, "weightReduction").clamp(0, 100);
+        }
         // the display name: Translator.getItemNameFromFullType(fullName), and InventoryItem.getActualWeightUnmodded
         // reads 0 when it equals the full type
         let display = self
@@ -1047,27 +1401,40 @@ impl<'a> LootRoller<'a> {
                 .fluid
                 .as_ref()
                 .ok_or_else(|| unported("FluidContainer component without script data"))?;
-            if f.has_filter {
-                return Err(unported(format!(
-                    "FluidContainer whitelist/blacklist ({})",
-                    script.full_name()
-                )));
-            }
-            let mut amount_hi = 0.0f32;
-            let mut exact = true;
+            // `script.getInitialFluids() != null && !isEmpty() && script.getInitialAmount() > 0` (each call of
+            // `getInitialAmount` with a range draws)
+            let mut amount = 0.0f32;
             if f.initial_fluids > 0 && self.fluid_initial_amount(f) > 0.0 {
                 let initial = self.fluid_initial_amount(f);
-                if f.initial_fluids == 1 {
-                    amount_hi = initial.min(f.capacity);
+                let percentage = if f.initial_fluids == 1 {
+                    f.initial_percentages[0]
                 } else if f.initial_fluids_is_random {
-                    self.rand.next(f.initial_fluids as i32);
-                    amount_hi = initial.min(f.capacity);
+                    let pick = self.rand.next(f.initial_fluids as i32);
+                    f.initial_percentages[pick as usize]
                 } else {
-                    amount_hi = (initial * f.initial_fluids as f32).min(f.capacity);
+                    return Err(unported(format!(
+                        "several initial fluids that mix ({})",
+                        script.full_name()
+                    )));
+                };
+                if f.has_filter {
+                    return Err(unported(format!(
+                        "FluidContainer whitelist/blacklist ({})",
+                        script.full_name()
+                    )));
                 }
-                exact = false;
+                // FluidContainer.addInitialFluid / addFluid into an empty container: `max(0, amount)` capped by the
+                // free capacity (the fluid blends with nothing and no filter refuses it)
+                let add = (initial * percentage).max(0.0);
+                if add > 0.0 {
+                    amount = add.min(f.capacity);
+                }
             }
-            item.fluid_amount = Some((if exact { amount_hi } else { 0.0 }, amount_hi));
+            // FluidContainer.getAmount (`recalculateCaches`): within 0.001 of the capacity reads as full
+            if f.capacity - amount < 0.001f32 {
+                amount = f.capacity;
+            }
+            item.fluid_amount = Some((amount, amount));
         }
         // OutfitRNG.setSeed(Rand.Next(Integer.MAX_VALUE)) around synchWithVisual
         self.rand.next(i32::MAX);
@@ -1100,6 +1467,9 @@ impl<'a> LootRoller<'a> {
             let max_uses = Self::drainable_max_uses(script);
             item.uses = (max_uses as f32 * 1.0f32) as i32;
             self.drainable_update_weight(&mut item)?;
+        } else if class == ItemType::WeaponPart {
+            // `item instanceof Drainable`: WeaponPart.getMaxUses() = floor(1 / useDelta), no weight update
+            item.uses = (Self::drainable_max_uses(script) as f32 * 1.0f32) as i32;
         }
         Ok(Some(item))
     }
@@ -1149,12 +1519,16 @@ impl<'a> LootRoller<'a> {
         Ok(())
     }
 
+    /// ItemPickerJava.checkStashItem(item, containerDist) (a map takes the distribution's `stashChance`) and
     /// StashSystem.checkStashItem for an item no stash names.
-    fn check_stash_item(&mut self, it: &LootItem) -> Result<(), String> {
+    fn check_stash_item(&mut self, it: &LootItem, dist_stash_chance: i32) -> Result<(), String> {
         if self.stash.possible == 0 {
             return Ok(());
         }
         let mut chance = 60i32;
+        if dist_stash_chance > 0 && it.class == ItemType::Map {
+            chance = dist_stash_chance;
+        }
         match self.sandbox.get_int("AnnotatedMapChance").unwrap_or(4) {
             1 => return Ok(()),
             2 => chance += 15,
@@ -1163,24 +1537,12 @@ impl<'a> LootRoller<'a> {
             6 => chance -= 20,
             _ => {}
         }
-        if self.rand.next(100) <= 100 - chance && self.stash.items.contains(&it.full_type) {
-            return Err(unported(format!(
-                "StashSystem.checkStashItem for {}",
-                it.full_type
-            )));
-        }
-        Ok(())
-    }
-
-    /// HandWeapon.randomizeFirearmAsLoot for a weapon with no magazine type, no ammo box and no chamber.
-    fn randomize_firearm_as_loot(&mut self, script: &Item) -> Result<(), String> {
-        // `reloadDifficulty > 1 && !isNullOrEmpty(magazineType) && ...`: no magazine type
-        if self.reload_difficulty == 1 || self.rand.next(100) < 30 {
-            let max_ammo = script_int(script, "maxAmmo");
-            self.rand.next_range(1, max_ammo);
-            // `if (haveChamber()) setRoundChambered(true)`: the round weighs only with an ammo type (gated out)
-        }
-        // `getContainer() != null && !isNullOrEmpty(getAmmoBox())`: no ammo box (the class gate)
+        // `Rand.Next(100) <= 100 - chance`, then the stashes naming this item are looked at: one is possible only if
+        // `IsoWorld.instance.getMetaGrid().getRoomAt(buildingX, buildingY, 0)` finds its building, and no map is
+        // loaded headless (`getChunkDataFromTile` is null), so none is possible and nothing is drawn or annotated.
+        // UNKNOWN: with a loaded map the stash is picked (`Rand.Next(0, count)`) and `doStashItem` annotates the map
+        // (`StashInfo::items` holds the item types the stashes name).
+        let _passed = self.rand.next(100) <= 100 - chance;
         Ok(())
     }
 
@@ -1227,7 +1589,6 @@ impl<'a> LootRoller<'a> {
                 dirty_clothes = true;
             }
         }
-        let _ = (wet_clothes, dirty_clothes);
         let is_trash = dist.is_trash;
         let mut is_shop = false;
         let corpse =
@@ -1282,124 +1643,169 @@ impl<'a> LootRoller<'a> {
                     is_junk,
                 )?;
                 if (draw as f32) < chance {
-                    let Some(idx) = self.try_add_item_to_container(container, &item_name)? else {
+                    let Some(idx) = self.try_add_item_to_container(container, &[], &item_name)?
+                    else {
                         return Ok(());
                     };
-                    let mut spawn = container.items[idx].clone();
-                    let script = self.script(spawn.script)?;
+                    let (class, type_name, full_type) = {
+                        let it = &container.items[idx];
+                        (it.class, it.type_name.clone(), it.full_type.clone())
+                    };
+                    let script = self.script(container.items[idx].script)?;
                     // ItemConfigurator.ConfigureItem: the scripts have no item config
                     if !is_shop {
                         // checkStashItem(spawnItem, containerDist): a MapItem never gets here
-                        self.check_stash_item(&spawn)?;
+                        self.check_stash_item(&container.items[idx], dist.stash_chance)?;
                     }
                     // the freezer: Food.isFreezing needs `isPowered()`, false without a parent object
-                    if script_str(script, "recordedMediaCat").is_some() {
-                        return Err(unported("recorded media"));
+                    // `container.Remove(spawnItem)` of a key that stays unclaimed or of a NeverEmpty bag that stayed
+                    // empty: the original goes on with the item, so it leaves the container after its remaining steps
+                    let mut remove_bag = false;
+                    if class == ItemType::Key {
+                        remove_bag = self.spawned_key_removed(
+                            script,
+                            &full_type,
+                            corpse,
+                            &mut container.items[idx],
+                        );
                     }
-                    // setAutoAge: state only
-                    if !is_trash
-                        && self
-                            .picker
-                            .weapon_upgrade_map
-                            .contains_key(&spawn.type_name)
-                    {
-                        return Err(unported("DoWeaponUpgrade"));
+                    if let Some(cat) = script_str(script, "recordedMediaCat") {
+                        if Self::recorded_media_random(cat).is_some() {
+                            return Err(unported("recorded media data"));
+                        }
+                        // no media: `container.Remove(spawnItem)`; for "Home-VHS" the "Retail-VHS" fallback finds
+                        // none either; both end the roll
+                        container.items.remove(idx);
+                        return Ok(());
                     }
-                    let drainable = spawn.class == ItemType::Drainable;
+                    if !dist.no_auto_age {
+                        let outermost = container.type_name.clone();
+                        self.item_set_auto_age(&mut container.items[idx], &outermost)?;
+                    }
+                    if !is_trash && self.picker.weapon_upgrade_map.contains_key(&type_name) {
+                        self.do_weapon_upgrade(container, idx, &type_name)?;
+                    }
+                    let drainable = class == ItemType::Drainable;
                     if drainable
                         && has_tag(script, "LessFull")
                         && !is_shop
                         && !is_trash
                         && self.rand.next(100) < 80
                     {
-                        self.randomize_uses(&mut spawn)?;
+                        self.randomize_uses(&mut container.items[idx])?;
                     } else if drainable && !is_shop && !is_trash && self.rand.next(100) < 40 {
-                        self.randomize_uses(&mut spawn)?;
+                        self.randomize_uses(&mut container.items[idx])?;
                     }
                     if is_empty_fluid_container && script.contains_component("FluidContainer") {
-                        spawn.fluid_amount = Some((0.0, 0.0));
+                        container.items[idx].fluid_amount = Some((0.0, 0.0));
                     }
-                    let weapon = spawn.class == ItemType::Weapon;
+                    let weapon = class == ItemType::Weapon;
                     let has_sharpness = script_complex(script, "sharpness").is_some();
                     if !is_shop
                         && !is_trash
                         && (has_tag(script, "ShowCondition") || weapon || has_sharpness)
                         && self.rand.next(100) < 40
                     {
-                        // InventoryItem.randomizeGeneralCondition: randomizeCondition (a HandWeapon without a
-                        // `physicsObject` skips it), no head condition, randomizeSharpness
-                        let condition_max = script_int(script, "conditionMax");
-                        if condition_max <= 0 {
-                            return Err(unported("randomizeGeneralCondition with ConditionMax 0"));
-                        }
-                        if !weapon || script_str(script, "physicsObject").is_some() {
-                            // setCondition(con, false) keeps 0..=conditionMax
-                            spawn.condition = 1
-                                .max(self.rand.next(condition_max + 1))
-                                .clamp(0, condition_max);
-                        }
-                        if has_sharpness {
-                            // getMaxSharpness: condition / conditionMax; setSharpness clamps to 0..=max (and 1)
-                            let max_sharpness = spawn.condition as f32 / condition_max as f32;
-                            let v = self.rand.next_float(0.0, max_sharpness);
-                            let v = v.min(max_sharpness).clamp(0.0, 1.0);
-                            spawn.sharpness = Some(v);
-                        }
+                        self.randomize_general_condition(&mut container.items[idx])?;
                     }
                     if !is_trash && weapon {
                         if dist.gun_storage {
-                            return Err(unported("doGunStorageContainer"));
+                            self.do_gun_storage_container(
+                                dist.dont_spawn_ammo,
+                                container,
+                                &[],
+                                idx,
+                            )?;
                         } else if !dist.dont_spawn_ammo && self.rand.next(100) < 90 {
-                            self.randomize_firearm_as_loot(script)?;
+                            self.randomize_firearm_as_loot(container, &[], idx)?;
                         }
                     }
-                    if spawn.class == ItemType::Food
+                    if !is_shop && class == ItemType::Container {
+                        if let Some(bags) = dist.bags.as_deref() {
+                            if !has_tag(script, "BagsFillException") {
+                                self.roll_container_item_internal(
+                                    container,
+                                    &[idx],
+                                    Some(bags),
+                                    false,
+                                )?;
+                            } else {
+                                remove_bag = self.fill_bag_from_containers(
+                                    container,
+                                    idx,
+                                    &type_name,
+                                    do_item_container,
+                                )?;
+                            }
+                        } else {
+                            remove_bag = self.fill_bag_from_containers(
+                                container,
+                                idx,
+                                &type_name,
+                                do_item_container,
+                            )?;
+                        }
+                    }
+                    if class == ItemType::Food
                         && script_bool(script, "isCookable")
                         && (dist.cook_food || dist.can_burn)
                         && script_complex(script, "replaceoncooked").is_none()
                     {
-                        return Err(unported("cooking spawned food"));
+                        let outermost = container.type_name.clone();
+                        self.cook_spawned_food(
+                            &mut container.items[idx],
+                            dist.can_burn,
+                            &outermost,
+                        )?;
                     }
-                    if dist.is_trash || dist.is_worn || dist.is_rotten {
-                        return Err(unported("trashItem / wearDownItem / rotItem"));
+                    if dist.is_trash {
+                        self.trash_item(&mut container.items[idx])?;
                     }
-                    for tag in [
-                        "Regional",
-                        "KeyRing",
-                        "CarKey",
-                        "BuildingKey",
-                        "SpawnCooked",
-                        "ApplyOwnerName",
-                        "MonogramOwnerName",
-                        "AlwaysHasStuff",
-                        "NeverEmpty",
-                        "BagsFillException",
-                    ] {
-                        if has_tag(script, tag) {
-                            return Err(unported(format!("item tag {tag} ({})", spawn.full_type)));
+                    if dist.is_worn {
+                        self.wear_down_item(&mut container.items[idx])?;
+                    }
+                    if dist.is_rotten {
+                        self.rot_item(&mut container.items[idx])?;
+                    }
+                    if has_tag(script, "Regional") && container.square.is_some() {
+                        self.on_create_region();
+                    }
+                    if is_clothing(class) && (dirty_clothes || wet_clothes) {
+                        if dirty_clothes {
+                            self.clothing_randomize_condition(
+                                &mut container.items[idx],
+                                0,
+                                75,
+                                1,
+                                0,
+                            )?;
+                        }
+                        if wet_clothes {
+                            self.clothing_randomize_condition(
+                                &mut container.items[idx],
+                                100,
+                                0,
+                                0,
+                                0,
+                            )?;
                         }
                     }
-                    if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty())
-                        && !is_trash
-                        && !dist.is_worn
-                    {
-                        return Err(unported("spawnWith"));
+                    if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
+                        if !is_trash && !dist.is_worn {
+                            self.spawn_with(container, &[], sw)?;
+                        }
                     }
                     if has_tag(script, "SpawnFullUnlessLaundry") && !laundry {
-                        if spawn.class == ItemType::Food {
-                            return Err(unported("Food.setCurrentUses (consumeHunger)"));
-                        }
-                        if drainable {
-                            spawn.uses = Self::drainable_max_uses(script);
-                            self.drainable_update_weight(&mut spawn)?;
-                        } else {
-                            spawn.uses = 1;
-                        }
+                        self.set_current_uses_to_max(&mut container.items[idx])?;
                     }
-                    if drainable && spawn.uses <= 0 {
-                        return Err(unported("itemSpawnSanityCheck of a depleted drainable"));
+                    let corpse_container = false;
+                    self.item_spawn_sanity_check(container, idx, !is_trash && !corpse_container)?;
+                    if remove_bag {
+                        if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty()) {
+                            return Err(unported("NeverEmpty bag with spawnWith"));
+                        }
+                        container.items.remove(idx);
                     }
-                    container.items[idx] = spawn;
                     if dist.only_one {
                         return Ok(());
                     }
@@ -1407,6 +1813,482 @@ impl<'a> LootRoller<'a> {
             }
         }
         Ok(())
+    }
+
+    /// The `else if (containers.containsKey(spawnItem.getType()))` branch of `doRollItemInternal` for a bag in the
+    /// root container: a fill of its own `containers` distribution one time in `fillRand` (`doItemContainer`
+    /// permitting), then its junk; true when `NeverEmpty` has the empty bag removed.
+    fn fill_bag_from_containers(
+        &mut self,
+        container: &mut LootContainer,
+        idx: usize,
+        type_name: &str,
+        do_item_container: bool,
+    ) -> Result<bool, String> {
+        let Some(dist) = self.picker.containers.get(type_name) else {
+            return Ok(false);
+        };
+        if do_item_container && self.rand.next(dist.fill_rand) == 0 {
+            self.roll_container_item_internal(container, &[idx], Some(dist), false)?;
+            if let Some(junk) = dist.junk.as_deref() {
+                self.roll_container_item_internal(container, &[idx], Some(junk), true)?;
+            }
+            let script = self.script(container.items[idx].script)?;
+            let empty = container.items[idx]
+                .inner
+                .as_ref()
+                .is_some_and(|c| c.items.is_empty());
+            if has_tag(script, "NeverEmpty") && empty {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// `spawnItem.setCurrentUses(spawnItem.getMaxUses())` (SpawnFullUnlessLaundry).
+    fn set_current_uses_to_max(&self, it: &mut LootItem) -> Result<(), String> {
+        let script = self.script(it.script)?;
+        if it.class == ItemType::Food {
+            return Err(unported("Food.setCurrentUses (consumeHunger)"));
+        }
+        if it.class == ItemType::Drainable {
+            it.uses = Self::drainable_max_uses(script);
+            self.drainable_update_weight(it)?;
+        } else {
+            it.uses = 1;
+        }
+        Ok(())
+    }
+
+    /// InventoryItem.randomizeGeneralCondition: `randomizeCondition` (a HandWeapon only with a `PhysicsObject`),
+    /// `randomizeHeadCondition` (not ported: items with a head condition never get here), `randomizeSharpness`.
+    fn randomize_general_condition(&mut self, it: &mut LootItem) -> Result<(), String> {
+        let script = self.script(it.script)?;
+        let weapon = it.class == ItemType::Weapon;
+        let condition_max = script_int(script, "conditionMax");
+        if condition_max <= 0 {
+            return Err(unported("randomizeGeneralCondition with ConditionMax 0"));
+        }
+        if !weapon || script_str(script, "physicsObject").is_some() {
+            // setCondition(con, false) keeps 0..=conditionMax
+            it.condition = 1
+                .max(self.rand.next(condition_max + 1))
+                .clamp(0, condition_max);
+        }
+        if it.head_condition.is_some() {
+            // randomizeHeadCondition: the original sets the item's *condition* again (not the head condition)
+            it.condition = 1
+                .max(self.rand.next(condition_max + 1))
+                .clamp(0, condition_max);
+        }
+        if script_complex(script, "sharpness").is_some() {
+            // randomizeSharpness: setSharpness(Rand.Next(0, getMaxSharpness())) clamps to 0..=max (and 1)
+            let max_sharpness = self.max_sharpness(it)?;
+            let v = self.rand.next_float(0.0, max_sharpness);
+            it.sharpness = Some(v.min(max_sharpness).clamp(0.0, 1.0));
+        }
+        Ok(())
+    }
+
+    /// InventoryItem.getHeadConditionMax: 0 without a head condition; the `HeadConditionMax` attribute, else
+    /// `getConditionMax()`.
+    fn head_condition_max(&self, it: &LootItem) -> Result<i32, String> {
+        if it.head_condition.is_none() {
+            return Ok(0);
+        }
+        Ok(match it.head_condition_max {
+            Some(m) => m,
+            None => script_int(self.script(it.script)?, "conditionMax"),
+        })
+    }
+
+    /// InventoryItem.getMaxSharpness: 1 without a sharpness attribute; `headCondition / headConditionMax` for an
+    /// item with a head condition, else `condition / conditionMax`.
+    fn max_sharpness(&self, it: &LootItem) -> Result<f32, String> {
+        if it.sharpness.is_none() {
+            return Ok(1.0);
+        }
+        if let Some(h) = it.head_condition {
+            return Ok(h as f32 / self.head_condition_max(it)? as f32);
+        }
+        Ok(it.condition as f32 / script_int(self.script(it.script)?, "conditionMax") as f32)
+    }
+
+    /// ItemPickerJava.itemSpawnSanityCheck(spawnItem[, container]): in a shop a bag is emptied unless it
+    /// `AlwaysHasStuff`; a bag is marked explored; a depleted drainable that disappears on use gets one use.
+    fn item_spawn_sanity_check(
+        &mut self,
+        container: &mut LootContainer,
+        idx: usize,
+        with_container: bool,
+    ) -> Result<(), String> {
+        let script = self.script(container.items[idx].script)?;
+        let shop = with_container && self.container_is_shop(container);
+        let it = &mut container.items[idx];
+        self.sanity_check_item(it, script, shop)
+    }
+
+    fn sanity_check_item(
+        &self,
+        it: &mut LootItem,
+        script: &Item,
+        shop: bool,
+    ) -> Result<(), String> {
+        if let Some(inner) = it.inner.as_deref_mut() {
+            if shop && !has_tag(script, "AlwaysHasStuff") {
+                inner.items.clear();
+            }
+            inner.explored = true;
+        }
+        if has_tag(script, "SpawnCooked") {
+            if let Some(food) = it.food.as_mut() {
+                food.spawn_cooked(script_str(script, "onCooked"))?;
+            }
+        }
+        // unsealIfNotFull: a fluid container's seal state only
+        if it.class == ItemType::Drainable
+            && script_bool(script, "disappearOnUse")
+            && self.item_current_uses(it)? <= 0
+        {
+            it.uses = 1;
+            self.drainable_update_weight(it)?;
+        }
+        Ok(())
+    }
+
+    /// ItemPickerJava.rollContainerItemInternal(pickInfo, bag, character = null, containerDist, isJunk): the loot of
+    /// a bag (the item at `bag` in `root`), rolled into its own container. The two `randomizeUses` branches are the
+    /// original's, so identical bodies stay.
+    #[allow(clippy::if_same_then_else)]
+    fn roll_container_item_internal(
+        &mut self,
+        root: &mut LootContainer,
+        bag: &[usize],
+        dist: Option<&ItemPickerContainer>,
+        is_junk: bool,
+    ) -> Result<(), String> {
+        let Some(dist) = dist else {
+            return Ok(());
+        };
+        // ItemPickerJava.getZombieDensityFactor(containerDist, container): no meta chunk, so 0
+        let zombie_density = self.zombie_density_factor();
+        let rolls_multiplier = match self.sandbox.get("RollsMultiplier") {
+            Some(SoValue::Double(d)) => *d,
+            _ => 1.0,
+        };
+        let rolls = ((dist.rolls as f64 * rolls_multiplier) as i32).max(1);
+        for _ in 0..rolls {
+            for item in &dist.items {
+                let mut item_name = item.item_name.clone();
+                let mut script_item = self.startup.find_item(&item_name);
+                let mut is_empty_fluid_container = false;
+                if script_item.is_none() && item_name.ends_with("Empty") {
+                    item_name = item_name[..item_name.len() - 5].to_string();
+                    script_item = self.startup.find_item(&item_name);
+                    if let Some(i) = script_item {
+                        if !self.script(i)?.contains_component("FluidContainer") {
+                            continue;
+                        }
+                        is_empty_fluid_container = true;
+                    }
+                }
+                let draw = self.rand.next(10000);
+                let chance = {
+                    let inner = container_at(root, bag);
+                    self.actual_spawn_chance(
+                        &item.item_name,
+                        item.chance,
+                        inner,
+                        zombie_density,
+                        is_junk,
+                    )?
+                };
+                if (draw as f32) >= chance {
+                    continue;
+                }
+                let Some(idx) = self.try_add_item_to_container(root, bag, &item_name)? else {
+                    return Ok(());
+                };
+                let mut path = bag.to_vec();
+                path.push(idx);
+                let mut remove_bag = false;
+                let (class, type_name, full_type, script_idx) = {
+                    let it = &container_at(root, bag).items[idx];
+                    (
+                        it.class,
+                        it.type_name.clone(),
+                        it.full_type.clone(),
+                        it.script,
+                    )
+                };
+                let script = self.script(script_idx)?;
+                // ItemConfigurator.ConfigureItem: no item config; a MapItem is not ported
+                // a MapItem over `maxMap` in the container is removed (the original goes on with it)
+                if class == ItemType::Map && dist.max_map > 0 {
+                    let maps = container_at(root, bag)
+                        .items
+                        .iter()
+                        .filter(|i| i.class == ItemType::Map)
+                        .count() as i32;
+                    if maps > dist.max_map {
+                        remove_bag = true;
+                    }
+                }
+                self.check_stash_item(&container_at(root, bag).items[idx], dist.stash_chance)?;
+                if !dist.is_trash && self.picker.weapon_upgrade_map.contains_key(&type_name) {
+                    self.do_weapon_upgrade(container_at_mut(root, bag), idx, &type_name)?;
+                }
+                let weapon = class == ItemType::Weapon;
+                if !dist.is_trash && weapon && !dist.dont_spawn_ammo && self.rand.next(100) < 90 {
+                    self.randomize_firearm_as_loot(root, bag, idx)?;
+                }
+                let has_sharpness = script_complex(script, "sharpness").is_some();
+                if !dist.is_trash && (has_tag(script, "ShowCondition") || weapon || has_sharpness) {
+                    let target = container_at_mut(root, bag);
+                    self.randomize_general_condition(&mut target.items[idx])?;
+                }
+                // the freezer: a bag's container is never "freezer"
+                let drainable = class == ItemType::Drainable;
+                if drainable && has_tag(script, "LessFull") && self.rand.next(100) < 80 {
+                    let target = container_at_mut(root, bag);
+                    self.randomize_uses(&mut target.items[idx])?;
+                } else if drainable && self.rand.next(100) < 40 {
+                    let target = container_at_mut(root, bag);
+                    self.randomize_uses(&mut target.items[idx])?;
+                }
+                if is_empty_fluid_container && script.contains_component("FluidContainer") {
+                    container_at_mut(root, bag).items[idx].fluid_amount = Some((0.0, 0.0));
+                }
+                if class == ItemType::Key {
+                    remove_bag = self.spawned_key_removed(
+                        script,
+                        &full_type,
+                        false,
+                        &mut container_at_mut(root, bag).items[idx],
+                    );
+                }
+                if let Some(cat) = script_str(script, "recordedMediaCat") {
+                    if Self::recorded_media_random(cat).is_some() {
+                        return Err(unported("recorded media data"));
+                    }
+                    // no media: `container.Remove(spawnItem)`; for "Home-VHS" the "Retail-VHS" fallback finds
+                    // none either; both end the roll
+                    container_at_mut(root, bag).items.remove(idx);
+                    return Ok(());
+                }
+                if class == ItemType::Container {
+                    if let Some(bags) = dist.bags.as_deref() {
+                        if !has_tag(script, "BagsFillException") {
+                            self.roll_container_item_internal(root, &path, Some(bags), false)?;
+                        } else {
+                            remove_bag = self.fill_nested_bag(root, &path, &type_name)?;
+                        }
+                    } else {
+                        remove_bag = self.fill_nested_bag(root, &path, &type_name)?;
+                    }
+                }
+                // `if (!container.getType().equals("freezer")) setAutoAge()`: a bag's container is never a freezer;
+                // the food's outermost container is the one the bag lies in
+                let outermost = root.type_name.clone();
+                self.item_set_auto_age(&mut container_at_mut(root, bag).items[idx], &outermost)?;
+                if dist.is_trash {
+                    self.trash_item(&mut container_at_mut(root, bag).items[idx])?;
+                }
+                if dist.is_worn {
+                    self.wear_down_item(&mut container_at_mut(root, bag).items[idx])?;
+                }
+                if has_tag(script, "Regional") && root.square.is_some() {
+                    self.on_create_region();
+                }
+                if let Some(sw) = script_str(script, "spawnWith").filter(|s| !s.is_empty()) {
+                    if !dist.is_worn && !dist.is_trash {
+                        self.spawn_with(root, bag, sw)?;
+                    }
+                }
+                if has_tag(script, "SpawnFullUnlessLaundry") {
+                    let target = container_at_mut(root, bag);
+                    self.set_current_uses_to_max(&mut target.items[idx])?;
+                }
+                {
+                    let target = container_at_mut(root, bag);
+                    self.sanity_check_item(&mut target.items[idx], script, false)?;
+                }
+                if remove_bag {
+                    if script_str(script, "spawnWith").is_some_and(|s| !s.is_empty()) {
+                        return Err(unported("NeverEmpty bag with spawnWith"));
+                    }
+                    container_at_mut(root, bag).items.remove(idx);
+                }
+                if dist.only_one {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The `else if (containers.containsKey(spawnItem.getType()))` branch of `rollContainerItemInternal` (no
+    /// `fillRand` chance here): the nested bag's own `containers` fill and junk; true when `NeverEmpty` has the
+    /// empty bag removed.
+    fn fill_nested_bag(
+        &mut self,
+        root: &mut LootContainer,
+        path: &[usize],
+        type_name: &str,
+    ) -> Result<bool, String> {
+        let Some(dist) = self.picker.containers.get(type_name) else {
+            return Ok(false);
+        };
+        self.roll_container_item_internal(root, path, Some(dist), false)?;
+        if let Some(junk) = dist.junk.as_deref() {
+            self.roll_container_item_internal(root, path, Some(junk), true)?;
+        }
+        let (parent, last) = path.split_at(path.len() - 1);
+        let item = &container_at(root, parent).items[last[0]];
+        let script = self.script(item.script)?;
+        Ok(
+            has_tag(script, "NeverEmpty")
+                && item.inner.as_ref().is_some_and(|c| c.items.is_empty()),
+        )
+    }
+
+    /// The `ITEM` lines of the oracle for the items of `c`: `ITEM <path> <type> id= uses= cond= weight= sharp=` (the
+    /// weights and the sharpness as float bits), and for a bag its capacities, weight reduction, item count,
+    /// contents and unequipped weight and explored flag, followed by the lines of its own items (path `n.m`).
+    pub fn item_lines(
+        &self,
+        prefix: &str,
+        c: &LootContainer,
+        out: &mut String,
+    ) -> Result<(), String> {
+        use std::fmt::Write;
+        for (n, i) in c.items.iter().enumerate() {
+            let path = if prefix.is_empty() {
+                n.to_string()
+            } else {
+                format!("{prefix}.{n}")
+            };
+            let weight = self.item_actual_weight(i)?;
+            let sharp = self.item_sharpness(i)?;
+            let uses = self.item_current_uses(i)?;
+            let _ = write!(
+                out,
+                "ITEM {path} {} id={} uses={uses} cond={} weight={:x} sharp={:x}",
+                i.full_type,
+                i.id,
+                i.condition,
+                weight.to_bits(),
+                sharp.to_bits()
+            );
+            if let Some(h) = i.head_condition {
+                let _ = write!(out, " head={h} hmax={}", self.head_condition_max(i)?);
+            }
+            if i.max_ammo > 0 || i.weapon.is_some() {
+                let (ulo, uhi) = self.unequipped_weight(i)?;
+                if ulo != uhi {
+                    return Err(unported("a weapon's weight depends on a fluid amount"));
+                }
+                let _ = write!(
+                    out,
+                    " ammo={}/{} uw={:x}",
+                    i.current_ammo,
+                    i.max_ammo,
+                    ulo.to_bits()
+                );
+                if let Some(w) = &i.weapon {
+                    let _ = write!(
+                        out,
+                        " clip={} ch={}",
+                        u8::from(w.contains_clip),
+                        u8::from(w.round_chambered)
+                    );
+                }
+            }
+            if i.class == ItemType::Key {
+                let _ = write!(out, " key={}", i.key_id);
+            }
+            if let Some(c) = i.radio_channel {
+                let _ = write!(out, " rch={c}");
+            }
+            if let Some(a) = i.alarm {
+                let _ = write!(out, " al={}:{}:{}", a.hour, a.minute, u8::from(a.set));
+            }
+            if let Some((flo, fhi)) = i.fluid_amount {
+                if flo != fhi {
+                    return Err(unported("a fluid amount that is only bounded"));
+                }
+                let _ = write!(out, " fa={:x}", flo.to_bits());
+            }
+            if let Some(f) = &i.food {
+                let _ = write!(
+                    out,
+                    " fd age={:x} off={}/{} ck={}{} ct={:x} hung={:x} thirst={:x} end={:x} bore={:x} unh={:x} str={:x} fat={:x} flu={} sick={} pain={:x} kcal={:x} carb={:x} prot={:x} lip={:x} pois={} frz={:x} fr={}",
+                    f.age.to_bits(),
+                    f.off_age,
+                    f.off_age_max,
+                    u8::from(f.cooked),
+                    u8::from(f.burnt),
+                    f.cooking_time.to_bits(),
+                    f.hung_change.to_bits(),
+                    f.thirst_change.to_bits(),
+                    f.end_change.to_bits(),
+                    f.boredom_change.to_bits(),
+                    f.unhappy_change.to_bits(),
+                    f.stress_change.to_bits(),
+                    f.fatigue_change.to_bits(),
+                    f.flu_reduction,
+                    f.food_sickness(),
+                    f.pain_reduction.to_bits(),
+                    f.calories.to_bits(),
+                    f.carbohydrates.to_bits(),
+                    f.proteins.to_bits(),
+                    f.lipids.to_bits(),
+                    f.poison_power,
+                    f.freezing_time.to_bits(),
+                    u8::from(f.frozen)
+                );
+            }
+            if let Some(inner) = &i.inner {
+                let (clo, chi) = self.bag_contents_weight(i)?;
+                let (ulo, uhi) = self.unequipped_weight(i)?;
+                if clo != chi || ulo != uhi {
+                    return Err(unported("a bag's weight depends on a fluid amount"));
+                }
+                let mut cap = inner.capacity.min(50);
+                if cap as f32 > 50.0f32 - i.actual_weight {
+                    cap = (50.0f32 - i.actual_weight) as i32;
+                }
+                let _ = write!(
+                    out,
+                    " cap={cap} icap={} red={} nin={} cw={:x} uw={:x} exp={}",
+                    inner.capacity.min(50),
+                    i.weight_reduction,
+                    inner.items.len(),
+                    clo.to_bits(),
+                    ulo.to_bits(),
+                    u8::from(inner.explored)
+                );
+            }
+            out.push('\n');
+            if let Some(inner) = &i.inner {
+                self.item_lines(&path, inner, out)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `InventoryContainer.getContentsWeight`: its container's contents weight plus its fluid.
+    fn bag_contents_weight(&self, it: &LootItem) -> Result<(f32, f32), String> {
+        let (flo, fhi) = it.fluid_amount.unwrap_or((0.0, 0.0));
+        let Some(inner) = &it.inner else {
+            return self.item_contents_weight(it);
+        };
+        let (mut lo, mut hi) = self.contents_weight(inner)?;
+        if it.fluid_amount.is_some() {
+            lo += flo;
+            hi += fhi;
+        }
+        Ok((lo, hi))
     }
 
     /// InventoryItem.getActualWeight of an item of the container (what `weight` prints).
@@ -1417,10 +2299,9 @@ impl<'a> LootRoller<'a> {
     /// InventoryItem.getCurrentUses and its Food override (`(int)Math.abs(hungChange * 100)` once the food has a
     /// base hunger).
     pub fn item_current_uses(&self, it: &LootItem) -> Result<i32, String> {
-        if it.class == ItemType::Food {
-            let base_hunger = script_float(self.script(it.script)?, "hungerChange") / 100.0f32;
-            if base_hunger != 0.0 {
-                return Ok((base_hunger * 100.0f32).abs() as i32);
+        if let Some(food) = &it.food {
+            if food.base_hunger != 0.0 {
+                return Ok((food.hung_change * 100.0f32).abs() as i32);
             }
         }
         Ok(it.uses)
@@ -1432,7 +2313,7 @@ impl<'a> LootRoller<'a> {
         let Some(v) = it.sharpness else {
             return Ok(0.0);
         };
-        let max = it.condition as f32 / script_int(self.script(it.script)?, "conditionMax") as f32;
+        let max = self.max_sharpness(it)?;
         Ok(if v > max { max } else { v })
     }
 
