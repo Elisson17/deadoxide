@@ -84,6 +84,7 @@ pub fn get_dist_to_core(index: usize) -> f32 {
 /// `BodyPartType.ToIndex` of the named part (`Neck`, `Torso_Upper`, ...).
 pub const NECK: usize = 9;
 pub const TORSO_UPPER: usize = 6;
+pub const TORSO_LOWER: usize = 7;
 pub const HEAD: usize = 8;
 pub const HAND_L: usize = 0;
 pub const HAND_R: usize = 1;

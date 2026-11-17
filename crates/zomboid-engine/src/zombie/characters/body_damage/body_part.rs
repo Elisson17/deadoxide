@@ -65,6 +65,8 @@ pub struct BodyPart {
     pub cut_time: f32,
     pub cut: bool,
     pub wetness: f32,
+    /// `damageScaler`: field initialiser 0.0057142857F, times 5 for the neck
+    pub damage_scaler: f32,
 }
 
 type R = Result<(), String>;
@@ -74,7 +76,8 @@ impl BodyPart {
     pub fn new(index: i32) -> Self {
         BodyPart {
             index,
-            health: 0.0,
+            // the constructor ends in RestoreToFullHealth
+            health: 100.0,
             bandaged: false,
             bitten: false,
             bleeding: false,
@@ -116,6 +119,11 @@ impl BodyPart {
             cut_time: 0.0,
             cut: false,
             wetness: 0.0,
+            damage_scaler: if index == body_part_type::NECK as i32 {
+                0.0057142857f32 * 5.0
+            } else {
+                0.0057142857f32
+            },
         }
     }
 
@@ -354,5 +362,131 @@ impl BodyPart {
         bleeding_time *= body_part_type::get_bleeding_time_modifyer(self.index);
         self.set_bleeding_time(bleeding_time);
         Ok(())
+    }
+}
+
+impl BodyPart {
+    /// zombie.characters.BodyDamage.BodyPart.AddHealth
+    pub fn add_health(&mut self, val: f32) {
+        self.health = pz_math::clamp(self.health + val, 0.0, 100.0);
+    }
+
+    /// zombie.characters.BodyDamage.BodyPart.ReduceHealth
+    pub fn reduce_health(&mut self, val: f32) {
+        self.health = pz_math::clamp(self.health - val, 0.0, 100.0);
+    }
+
+    /// zombie.characters.BodyDamage.BodyPart.getAdditionalPain (boolean includeStiffness)
+    pub fn get_additional_pain(&self, include_stiffness: bool) -> f32 {
+        if include_stiffness {
+            self.additional_pain + self.stiffness / 3.5
+        } else {
+            self.additional_pain
+        }
+    }
+
+    /// zombie.characters.BodyDamage.BodyPart.getPain
+    pub fn get_pain(&self, injury_severity: i32) -> f32 {
+        let mut result = 0.0f32;
+        if self.scratch_time > 0.0 {
+            result += self.scratch_time * 1.7;
+        }
+        if self.cut_time > 0.0 {
+            result += self.cut_time * 2.5;
+        }
+        if self.bite_time > 0.0 {
+            if self.bandaged {
+                result += 30.0;
+            } else {
+                result += 50.0;
+            }
+        }
+        if self.deep_wound_time > 0.0 {
+            result += self.deep_wound_time * 3.7;
+        }
+        if self.stitch_time > 0.0 && self.stitch_time < 35.0 {
+            if self.bandaged {
+                result += (35.0 - self.stitch_time) / 2.0;
+            } else {
+                result += 35.0 - self.stitch_time;
+            }
+        }
+        if self.fracture_time > 0.0 {
+            if self.splint_factor > 0.0 {
+                result += self.fracture_time / 2.0;
+            } else {
+                result += self.fracture_time;
+            }
+        }
+        if self.have_bullet {
+            result += 50.0;
+        }
+        if self.have_glass {
+            result += 10.0;
+        }
+        if self.burn_time > 0.0 {
+            result += self.burn_time;
+        }
+        if self.bandaged {
+            result /= 1.5;
+        }
+        if self.wound_infection_level > 0.0 {
+            result += self.wound_infection_level;
+        }
+        result += self.get_additional_pain(true);
+        match injury_severity {
+            1 => result *= 0.7,
+            3 => result *= 1.3,
+            _ => {}
+        }
+        result
+    }
+
+    /// zombie.characters.BodyDamage.BodyPart.resetPoulticeFactors
+    pub fn reset_poultice_factors(&mut self) {
+        self.set_comfrey_factor(0.0);
+        self.set_garlic_factor(0.0);
+        self.set_plantain_factor(0.0);
+    }
+
+    /// zombie.characters.BodyDamage.BodyPart.RestoreToFullHealth
+    pub fn restore_to_full_health(&mut self) {
+        self.health = 100.0;
+        self.additional_pain = 0.0;
+        self.alcoholic_bandage = false;
+        self.alcohol_level = 0.0;
+        self.bleeding = false;
+        self.bandaged = false;
+        self.bandage_life = 0.0;
+        self.bite_time = 0.0;
+        self.bitten = false;
+        self.bleeding_time = 0.0;
+        self.burn_time = 0.0;
+        self.comfrey_factor = 0.0;
+        self.deep_wounded = false;
+        self.deep_wound_time = 0.0;
+        self.fracture_time = 0.0;
+        self.garlic_factor = 0.0;
+        self.have_bullet = false;
+        self.have_glass = false;
+        self.infected_wound = false;
+        self.is_bleeding_stemmed = false;
+        self.is_cauterized = false;
+        self.is_fake_infected = false;
+        self.is_infected = false;
+        self.last_time_burn_wash = 0.0;
+        self.need_burn_wash = false;
+        self.plantain_factor = 0.0;
+        self.scratched = false;
+        self.scratch_time = 0.0;
+        self.splint = false;
+        self.splint_factor = 0.0;
+        self.splint_item = None;
+        self.stitched = false;
+        self.stitch_time = 0.0;
+        self.wound_infection_level = 0.0;
+        self.cut_time = 0.0;
+        self.cut = false;
+        self.stiffness = 0.0;
     }
 }

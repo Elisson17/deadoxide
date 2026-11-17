@@ -80,6 +80,27 @@ pub fn equal(a: f32, b: f32, delta: f32) -> bool {
     (b - a).abs() < delta
 }
 
+/// zombie.core.math.PZMath.equal (float, float): the default delta 1.0E-7F.
+pub fn equal_default(a: f32, b: f32) -> bool {
+    equal(a, b, 1.0E-7)
+}
+
+/// zombie.core.math.PZMath.abs (float): `val * sign(val)`.
+pub fn abs(val: f32) -> f32 {
+    val * sign(val) as f32
+}
+
+/// zombie.core.math.PZMath.lerp (float, float, float).
+pub fn lerp(src: f32, dest: f32, alpha: f32) -> f32 {
+    src + (dest - src) * alpha
+}
+
+/// zombie.core.math.PZMath.c_lerp: cosine interpolation, `Math.cos` as StrictMath's fdlibm.
+pub fn c_lerp(src: f32, dest: f32, alpha: f32) -> f32 {
+    let t2 = (1.0 - crate::java_fdlibm::cos(f64::from(alpha * std::f32::consts::PI))) as f32 / 2.0;
+    src * (1.0 - t2) + dest * t2
+}
+
 /// zombie.core.math.PZMath.max (float).
 pub fn max(a: f32, b: f32) -> f32 {
     if a > b {

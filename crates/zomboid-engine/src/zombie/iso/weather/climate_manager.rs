@@ -969,6 +969,30 @@ impl ClimateManager {
         self.climate_floats[FLOAT_TEMPERATURE].final_value
     }
 
+    /// zombie.iso.weather.ClimateManager.getHumidity
+    pub fn get_humidity(&self) -> f32 {
+        self.climate_floats[FLOAT_HUMIDITY].final_value
+    }
+
+    /// zombie.iso.weather.ClimateManager.getPrecipitationIntensity
+    pub fn get_precipitation_intensity(&self) -> f32 {
+        self.climate_floats[FLOAT_PRECIPITATION_INTENSITY].final_value
+    }
+
+    /// zombie.iso.weather.ClimateManager.isRaining
+    pub fn is_raining(&self) -> bool {
+        self.get_precipitation_intensity() > 0.0 && !self.climate_booleans[BOOL_IS_SNOW].final_value
+    }
+
+    /// zombie.iso.weather.ClimateManager.getRainIntensity
+    pub fn get_rain_intensity(&self) -> f32 {
+        if self.is_raining() {
+            self.get_precipitation_intensity()
+        } else {
+            0.0
+        }
+    }
+
     /// zombie.iso.weather.ClimateManager.getWindspeedKph
     pub fn get_windspeed_kph(&self) -> f32 {
         self.wind_power * 120.0

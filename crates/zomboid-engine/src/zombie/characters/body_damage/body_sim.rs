@@ -72,6 +72,14 @@ impl BodyWorld {
     pub fn sandbox_int(&self, name: &str) -> i32 {
         self.sandbox.get_int(name).unwrap_or(0)
     }
+
+    /// `SandboxOptions.instance.<double option>.getValue()`.
+    pub fn sandbox_double(&self, name: &str) -> f64 {
+        match self.sandbox.get(name) {
+            Some(Value::Double(v)) => *v,
+            _ => 0.0,
+        }
+    }
 }
 
 /// The parts of the `IsoGameCharacter` (an `IsoPlayer`) the body simulation reads or changes.
@@ -137,12 +145,69 @@ pub struct CharCtx {
     pub time_of_sleep: f32,
     pub delay_to_actually_sleep: f32,
     pub bed_type: String,
+    /// `IsoPlayer.isAllowSprint()`
+    pub allow_sprint: bool,
+    /// `isSneaking()`
+    pub sneaking: bool,
+    /// `IsoPlayer.currentSpeed`
+    pub current_speed: f32,
+    /// `isAttacking()`
+    pub attacking: bool,
+    /// `getFitness().getCurrentExe() != null`
+    pub fitness_exercise: bool,
+    /// `IsoGameCharacter.health` (what `setHealth` writes)
+    pub health: f32,
+    /// `IsoPlayer.moveSpeed`
+    pub move_speed: f32,
+    /// `IsoGameCharacter.forceWakeUp`
+    pub force_wake_up: bool,
+    /// `IsoPlayer.getSleepingPillsTaken()`
+    pub sleeping_pills_taken: i32,
+    /// `getBetaEffect()` and `getBetaDelta()`
+    pub beta_effect: f32,
+    pub beta_delta: f32,
+    /// `isDraggingCorpse()`
+    pub dragging_corpse: bool,
+    /// `CorpseCount.instance.getCorpseCount(character)`
+    pub corpse_count: i32,
+    /// `getHoursSurvived()` (`GameTime.getWorldAgeHours()`)
+    pub hours_survived: f64,
+    /// `getClothingDiscomfortModifier()`
+    pub clothing_discomfort_modifier: f32,
+    /// `getMaxWeightBase()` (8) and `IsoPlayer.maxWeightDelta` (1.0)
+    pub max_weight_base: i32,
+    pub max_weight_delta: f32,
+    /// `getPerkLevel(PerkFactory.Perks.Strength)`
+    pub perk_strength: i32,
+    /// `getTimeSinceLastSmoke()`
+    pub time_since_last_smoke: f32,
+    /// `getNumSurvivorsInVicinity()`
+    pub num_survivors_in_vicinity: i32,
+    /// `IsSpeaking()` and `callOut`
+    pub speaking: bool,
+    pub call_out: bool,
+    /// `isInCombat()`
+    pub currently_in_combat: bool,
+    /// `getReduceInfectionPower()`
+    pub reduce_infection_power: f32,
+    /// `getPainEffect()` and `getPainDelta()`
+    pub pain_effect: f32,
+    pub pain_delta: f32,
+    /// `IsoPlayer.bleedingLevel`
+    pub bleeding_level: i8,
+    /// `getFitness().onGoingStiffness()`
+    pub ongoing_stiffness: bool,
+    /// the character wears at least one item (clothing paths are not ported)
+    pub has_worn_clothing: bool,
+    /// `getBed()` is a tent
+    pub bed_is_tent: bool,
 }
 
-/// What the simulation reads of an `IsoGridSquare`: `isInARoom()` and `getZ()`.
+/// What the simulation reads of an `IsoGridSquare`: `isInARoom()`, `haveRoof` and `getZ()`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SquareFacts {
     pub in_room: bool,
+    pub have_roof: bool,
     pub z: i32,
 }
 
@@ -590,7 +655,7 @@ impl PlayerBody {
     }
 
     /// IsoGameCharacter.isCurrentlyIdle (a player on a server whose network states are unset)
-    fn is_currently_idle(&self) -> bool {
+    pub(super) fn is_currently_idle(&self) -> bool {
         let moving_on_foot =
             self.ch.player_moving && (self.ch.walking || self.ch.running || self.ch.sprinting);
         let tired_sitting =

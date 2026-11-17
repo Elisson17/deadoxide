@@ -6351,13 +6351,13 @@ mod save_dump {
                 "TH\t{},{},{},{},{},{},{},{},{}",
                 fh(t.set_point),
                 fh(t.metabolic_rate),
-                fh(t.metabolic_rate_real.unwrap_or(0.0)),
+                fh(t.metabolic_rate_real),
                 fh(t.metabolic_target),
                 fh(t.body_heat_delta),
                 fh(t.core_heat_delta),
                 fh(t.thermal_damage),
                 fh(t.damage_counter),
-                fh(t.thermal_duration.unwrap_or(0.0))
+                fh(t.thermal_duration)
             );
             for (i, n) in &t.nodes {
                 let _ = writeln!(
@@ -8876,6 +8876,10 @@ pub fn zombie(root: &Path, scenarios: &[String]) -> Result<String, String> {
 /// the same defaults and the options set the same fields.
 pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
     use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::characters::body_damage::body_fields::{
+        body_field, char_field, node_field, part_field, thermo_field, BODY_FIELDS, CHAR_FIELDS,
+        NODE_FIELDS, PART_FIELDS, THERMO_FIELDS,
+    };
     use zomboid_engine::zombie::characters::body_damage::body_sim::{BodyWorld, PlayerBody};
     use zomboid_engine::zombie::characters::stats::{CharacterStat, ALL_STATS};
     use zomboid_engine::zombie::game_time::GameTime;
@@ -8974,9 +8978,15 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
         // the headless player the probe builds: outdoors on (8280, 11670, 0), no `square` field, nothing carried
         pl.ch.current_square = Some(SquareFacts {
             in_room: false,
+            have_roof: false,
             z: 0,
         });
         pl.ch.max_weight = 8;
+        pl.ch.max_weight_base = 8;
+        pl.ch.max_weight_delta = 1.0;
+        pl.ch.health = 1.0;
+        pl.ch.move_speed = 0.06;
+        pl.ch.allow_sprint = true;
         pl.ch.bed_type = "averageBed".to_string();
         pl.ch.sleep_blocked = true;
         for (k, v) in &o {
@@ -9009,6 +9019,56 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                 "fitness" => pl.ch.perk_fitness = v.parse().map_err(|e| format!("fitness: {e}"))?,
                 "sleep" => pl.ch.sleep_blocked = v != "1",
                 "sqfield" => pl.ch.square_field_set = v == "1",
+                "strength" => {
+                    pl.ch.perk_strength = v.parse().map_err(|e| format!("strength: {e}"))?
+                }
+                "zombies" => {
+                    pl.stats.num_visible_zombies = v.parse().map_err(|e| format!("zombies: {e}"))?
+                }
+                "sneak" => pl.ch.sneaking = v == "1",
+                // fields set directly, as a loaded save would: no Rand draw of a setter is made
+                _ if k.starts_with("bp.") => {
+                    let mut it = k.splitn(3, '.');
+                    let (_, idx, name) = (it.next(), it.next(), it.next());
+                    let (Some(idx), Some(name)) = (idx, name) else {
+                        return Err(format!("option {k}"));
+                    };
+                    let idx: usize = idx.parse().map_err(|e| format!("{k}: {e}"))?;
+                    let part = pl
+                        .body
+                        .body_parts
+                        .get_mut(idx)
+                        .ok_or_else(|| format!("{k}: no part"))?;
+                    part_field(part, name)?.assign(v)?;
+                }
+                _ if k.starts_with("bd.") => body_field(&mut pl.body, &k[3..])?.assign(v)?,
+                _ if k.starts_with("ch.") => char_field(&mut pl.ch, &k[3..])?.assign(v)?,
+                _ if k.starts_with("th.") => {
+                    let t = pl
+                        .body
+                        .thermoregulator
+                        .as_mut()
+                        .ok_or("no thermoregulator")?;
+                    thermo_field(t, &k[3..])?.assign(v)?;
+                }
+                _ if k.starts_with("node.") => {
+                    let mut it = k.splitn(3, '.');
+                    let (_, idx, name) = (it.next(), it.next(), it.next());
+                    let (Some(idx), Some(name)) = (idx, name) else {
+                        return Err(format!("option {k}"));
+                    };
+                    let idx: usize = idx.parse().map_err(|e| format!("{k}: {e}"))?;
+                    let t = pl
+                        .body
+                        .thermoregulator
+                        .as_mut()
+                        .ok_or("no thermoregulator")?;
+                    let n = t
+                        .nodes
+                        .get_mut(&idx)
+                        .ok_or_else(|| format!("{k}: no node"))?;
+                    node_field(n, name)?.assign(v)?;
+                }
                 "building" => pl.ch.in_building = v == "1",
                 // the square the probe found for `room`: its facts, as FACTS prints them
                 "inroom" => {
@@ -9024,7 +9084,7 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                 k if k.starts_with("sb.")
                     || matches!(
                         k,
-                        "mult" | "mpd" | "sneak" | "temp" | "wind" | "daylight" | "night" | "room"
+                        "mult" | "mpd" | "temp" | "wind" | "daylight" | "night" | "room"
                     ) => {}
                 _ => return Err(format!("option {k}")),
             }
@@ -9042,7 +9102,7 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
         let sq = pl.ch.current_square;
         let _ = writeln!(
             sb,
-            "FACTS inroom={} z={} hydro={} capw={} maxw={} lastsq={} vehicle={} building={} toxic={} sleepblock={} allasleep={} instance={} heatsources=0 airtemp={} airwind={} windchill={} fitnessperk={} strperk=0",
+            "FACTS inroom={} z={} hydro={} capw={} maxw={} lastsq={} vehicle={} building={} toxic={} sleepblock={} allasleep={} instance={} heatsources=0 airtemp={} airwind={} windchill={} fitnessperk={} strperk={} hours={:x} corpses={} cdm={} mwbase={} mwdelta={} roof={} health={} allowsprint={} movespeed={}",
             u8::from(sq.is_some_and(|s| s.in_room)),
             sq.map_or(0, |s| s.z),
             u8::from(pl.world.hydro_power_on),
@@ -9058,7 +9118,17 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
             hx(pl.ch.air_temperature_for_character(&pl.world, false)),
             hx(pl.ch.air_temperature_for_character(&pl.world, true)),
             hx(pl.ch.wind_chill_amount(&pl.world)),
-            pl.ch.perk_fitness
+            pl.ch.perk_fitness,
+            pl.ch.perk_strength,
+            pl.ch.hours_survived.to_bits(),
+            pl.ch.corpse_count,
+            hx(pl.ch.clothing_discomfort_modifier),
+            pl.ch.max_weight_base,
+            hx(pl.ch.max_weight_delta),
+            u8::from(sq.is_some_and(|s| s.have_roof)),
+            hx(pl.ch.health),
+            u8::from(pl.ch.allow_sprint),
+            hx(pl.ch.move_speed)
         );
         for n in 1..=ticks {
             for r in &run {
@@ -9066,6 +9136,7 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                     "nutrition" => pl.update_nutrition(),
                     "calc" => pl.calculate_stats()?,
                     "moodles" => pl.update_moodles()?,
+                    "body" => pl.update_body()?,
                     _ => return Err(format!("run {r}")),
                 }
             }
@@ -9125,6 +9196,43 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                         }
                         "draws" => {
                             let _ = write!(sb, " draws={}", pl.world.rand.id());
+                        }
+                        "thermo" => {
+                            let t = pl
+                                .body
+                                .thermoregulator
+                                .as_mut()
+                                .ok_or("no thermoregulator")?;
+                            sb.push_str(" thermo");
+                            for name in THERMO_FIELDS {
+                                let _ = write!(sb, " {}", thermo_field(t, name)?.show());
+                            }
+                            for n in t.nodes.values_mut() {
+                                sb.push_str(" |");
+                                for name in NODE_FIELDS {
+                                    let _ = write!(sb, " {}", node_field(n, name)?.show());
+                                }
+                            }
+                        }
+                        "parts" => {
+                            sb.push_str(" parts");
+                            let sev = pl.world.sandbox_int("InjurySeverity");
+                            for part in &mut pl.body.body_parts {
+                                let _ = write!(sb, " | {}", hx(part.get_pain(sev)));
+                                for name in PART_FIELDS {
+                                    let _ = write!(sb, " {}", part_field(part, name)?.show());
+                                }
+                            }
+                        }
+                        "bodyst" => {
+                            sb.push_str(" bodyst");
+                            for name in BODY_FIELDS {
+                                let _ = write!(sb, " {}", body_field(&mut pl.body, name)?.show());
+                            }
+                            sb.push_str(" |");
+                            for name in CHAR_FIELDS {
+                                let _ = write!(sb, " {}", char_field(&mut pl.ch, name)?.show());
+                            }
                         }
                         _ => return Err(format!("show {sec}")),
                     }

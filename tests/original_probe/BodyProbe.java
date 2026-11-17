@@ -48,6 +48,55 @@ public class BodyProbe {
 
     static String f(float v) { return Integer.toHexString(Float.floatToRawIntBits(v)); }
 
+    static String d(double v) { return Long.toHexString(Double.doubleToRawLongBits(v)); }
+
+    // the value of a (private) field as the probe prints it: floats and doubles as hex bits, booleans as 0/1
+    static String fv(Object o, String name) throws Exception {
+        Object v = g(o, name);
+        if (v instanceof Float x) return f(x);
+        if (v instanceof Double x) return d(x);
+        if (v instanceof Boolean x) return x ? "1" : "0";
+        return String.valueOf(v);
+    }
+
+    // sets a (private) field of a scenario object from text; the type of the field says how the text is read
+    static void setTyped(Object o, String name, String v) throws Exception {
+        Class<?> c = o.getClass();
+        while (c != null) {
+            try {
+                Field fd = c.getDeclaredField(name);
+                fd.setAccessible(true);
+                Class<?> t = fd.getType();
+                if (t == float.class) fd.setFloat(o, Float.parseFloat(v));
+                else if (t == double.class) fd.setDouble(o, Double.parseDouble(v));
+                else if (t == int.class) fd.setInt(o, Integer.parseInt(v));
+                else if (t == byte.class) fd.setByte(o, Byte.parseByte(v));
+                else if (t == boolean.class) fd.setBoolean(o, v.equals("1"));
+                else throw new IllegalArgumentException("field type " + t + " of " + name);
+                return;
+            } catch (NoSuchFieldException e) { c = c.getSuperclass(); }
+        }
+        throw new NoSuchFieldException(name);
+    }
+
+    static final String[] PART_FIELDS = {"health", "bandaged", "bitten", "bleeding", "isBleedingStemmed", "isCauterized", "scratched", "stitched",
+        "deepWounded", "isInfected", "isFakeInfected", "bandageLife", "scratchTime", "biteTime", "alcoholicBandage", "stiffness", "woundInfectionLevel",
+        "infectedWound", "bleedingTime", "deepWoundTime", "haveGlass", "stitchTime", "alcoholLevel", "additionalPain", "getBandageXp", "getStitchXp",
+        "getSplintXp", "fractureTime", "splint", "splintFactor", "haveBullet", "burnTime", "needBurnWash", "lastTimeBurnWash", "plantainFactor",
+        "comfreyFactor", "garlicFactor", "cutTime", "cut", "wetness"};
+    static final String[] BODY_FIELDS = {"overallBodyHealth", "catchACold", "hasACold", "coldStrength", "timeToSneezeOrCough", "healthFromFoodTimer",
+        "painReduction", "coldReduction", "infectionTime", "infectionMortalityDuration", "coldDamageStage", "isInfected", "isFakeInfected",
+        "reduceFakeInfection", "oldNumZombiesVisible", "sneezeCoughActive", "sneezeCoughTime", "wasDraggingCorpse", "startedDraggingCorpse",
+        "burntToDeath"};
+    static final String[] CHAR_FIELDS = {"bleedingLevel", "painEffect", "painDelta", "reduceInfectionPower", "timeSinceLastSmoke", "forceWakeUp",
+        "moveSpeed", "health", "maxWeight", "corpseSicknessRate"};
+    static final String[] THERMO_FIELDS = {"setPoint", "metabolicRate", "metabolicRateReal", "metabolicTarget", "bodyHeatDelta", "coreHeatDelta",
+        "thermalDamage", "damageCounter", "thermalDuration", "totalHeatRaw", "totalHeat", "primTotal", "secTotal", "externalAirTemperature",
+        "airTemperature", "airAndWindTemp", "rateOfChangeCounter", "coreCelciusCache", "coreRateOfChange", "fluidsMultiplier", "energyMultiplier",
+        "fatigueMultiplier", "thermalChevronUp"};
+    static final String[] NODE_FIELDS = {"celcius", "skinCelcius", "heatDelta", "primaryDelta", "secondaryDelta", "insulation", "windresist",
+        "bodyWetness", "clothingWetness"};
+
     static void load(IsoCell cell) throws Exception {
         Method gp = IsoChunk.class.getDeclaredMethod("getFromPool");
         gp.setAccessible(true);
@@ -193,6 +242,19 @@ public class BodyProbe {
             else if (k.equals("bed")) pl.setBedType(v);
             else if (k.equals("delay")) pl.setDelayToSleep(Float.parseFloat(v));
             else if (k.equals("fitness")) pl.setPerkLevelDebug(zombie.characters.skills.PerkFactory.Perks.Fitness, Integer.parseInt(v));
+            else if (k.equals("strength")) pl.setPerkLevelDebug(zombie.characters.skills.PerkFactory.Perks.Strength, Integer.parseInt(v));
+            else if (k.equals("zombies")) pl.getStats().numVisibleZombies = Integer.parseInt(v);
+            else if (k.startsWith("bp.")) {
+                String[] kp = k.split("\\.");
+                setTyped(pl.getBodyDamage().getBodyParts().get(Integer.parseInt(kp[1])), kp[2], v);
+            }
+            else if (k.startsWith("bd.")) setTyped(pl.getBodyDamage(), k.substring(3), v);
+            else if (k.startsWith("ch.")) setTyped(pl, k.substring(3), v);
+            else if (k.startsWith("th.")) setTyped(pl.getBodyDamage().getThermoregulator(), k.substring(3), v);
+            else if (k.startsWith("node.")) {
+                String[] kp = k.split("\\.");
+                setTyped(pl.getBodyDamage().getThermoregulator().getNode(Integer.parseInt(kp[1])), kp[2], v);
+            }
             else if (k.equals("sleep")) {
                 zombie.network.ServerOptions so2 = zombie.network.ServerOptions.instance;
                 boolean oa = so2.sleepAllowed.getValue(), on = so2.sleepNeeded.getValue();
@@ -215,7 +277,10 @@ public class BodyProbe {
             + " heatsources=" + ((java.util.List<?>) g(cell, "heatSources")).size()
             + " airtemp=" + f(clim.getAirTemperatureForCharacter(pl, false)) + " airwind=" + f(clim.getAirTemperatureForCharacter(pl, true))
             + " windchill=" + f(zombie.iso.weather.Temperature.getWindChillAmountForPlayer(pl))
-            + " fitnessperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Fitness) + " strperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Strength));
+            + " fitnessperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Fitness) + " strperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Strength)
+            + " hours=" + d(pl.getHoursSurvived()) + " corpses=" + zombie.iso.CorpseCount.instance.getCorpseCount(pl) + " cdm=" + f(pl.getClothingDiscomfortModifier())
+            + " mwbase=" + pl.getMaxWeightBase() + " mwdelta=" + f(pl.getMaxWeightDelta()) + " roof=" + (sq.haveRoof ? 1 : 0) + " health=" + f(pl.getHealth())
+            + " allowsprint=" + (pl.isAllowSprint() ? 1 : 0) + " movespeed=" + f((Float) g(pl, "moveSpeed")));
         BodyDamage bd = pl.getBodyDamage();
         Method calc = IsoGameCharacter.class.getDeclaredMethod("calculateStats");
         calc.setAccessible(true);
@@ -260,6 +325,28 @@ public class BodyProbe {
                             for (CharacterTrait t : pl.getCharacterTraits().getKnownTraits()) sb.append(' ').append(t);
                         }
                         case "draws" -> sb.append(" draws=").append(g(RandStandard.INSTANCE, "id"));
+                        case "thermo" -> {
+                            zombie.characters.BodyDamage.Thermoregulator t = pl.getBodyDamage().getThermoregulator();
+                            sb.append(" thermo");
+                            for (String fn : THERMO_FIELDS) sb.append(' ').append(fv(t, fn));
+                            for (int ni = 0; ni < t.getNodeSize(); ni++) {
+                                sb.append(" |");
+                                for (String fn : NODE_FIELDS) sb.append(' ').append(fv(t.getNode(ni), fn));
+                            }
+                        }
+                        case "parts" -> {
+                            sb.append(" parts");
+                            for (BodyPart bp : pl.getBodyDamage().getBodyParts()) {
+                                sb.append(" | ").append(f(bp.getPain()));
+                                for (String fn : PART_FIELDS) sb.append(' ').append(fv(bp, fn));
+                            }
+                        }
+                        case "bodyst" -> {
+                            sb.append(" bodyst");
+                            for (String fn : BODY_FIELDS) sb.append(' ').append(fv(pl.getBodyDamage(), fn));
+                            sb.append(" |");
+                            for (String fn : CHAR_FIELDS) sb.append(' ').append(fv(pl, fn));
+                        }
                         default -> throw new IllegalArgumentException("show " + sec);
                     }
                 }

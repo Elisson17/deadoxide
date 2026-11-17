@@ -43,6 +43,8 @@ pub struct Stats {
     pub last_very_close_zombies: i32,
     /// `lastNumChasingZombies` (`getNumChasingZombies`)
     pub last_num_chasing_zombies: i32,
+    /// `numVisibleZombies`
+    pub num_visible_zombies: i32,
 }
 
 impl Stats {
@@ -177,6 +179,7 @@ impl Default for Stats {
             tripping_rot_angle: 0.0,
             last_very_close_zombies: 0,
             last_num_chasing_zombies: 0,
+            num_visible_zombies: 0,
         }
     }
 }
