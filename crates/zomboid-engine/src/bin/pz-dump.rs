@@ -69,6 +69,7 @@ fn main() {
         {
             models::aiscene(Path::new(&a[2]), &a[3..])
         }
+        Some("fbxdoc") if a.len() >= 3 => models::fbxdoc(Path::new(&a[2]), &a[3..]),
         Some("xmodels" | "animclips" | "processedscene") if a.len() >= 3 => {
             models::processed(Path::new(&a[2]), &a[3..])
         }

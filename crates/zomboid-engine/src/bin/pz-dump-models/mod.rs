@@ -724,3 +724,32 @@ pub fn processed(root: &Path, args: &[String]) -> Result<String, String> {
     }
     Ok(out)
 }
+
+/// Scratch: `fbxdoc <ext,..> <dir>...`: the FBX container of every file (document built, objects, connections).
+pub fn fbxdoc(root: &Path, args: &[String]) -> Result<String, String> {
+    let mut files = Vec::new();
+    let exts: Vec<&str> = args[0].split(',').collect();
+    for d in &args[1..] {
+        collect(root, d, &exts, &mut files)?;
+    }
+    let mut out = String::new();
+    for rel in &files {
+        let bytes = std::fs::read(root.join(rel)).map_err(|e| e.to_string())?;
+        match zomboid_engine::native::assimp::fbx::read_document(&bytes) {
+            Ok(doc) => {
+                let _ = writeln!(
+                    out,
+                    "{rel} ok binary={} version={} objects={} stacks={}",
+                    doc.binary,
+                    doc.fbx_version,
+                    doc.object_ids().len() - 1,
+                    doc.animation_stacks.len()
+                );
+            }
+            Err(e) => {
+                let _ = writeln!(out, "{rel} error {e}");
+            }
+        }
+    }
+    Ok(out)
+}

@@ -13,6 +13,7 @@
 //! for some results (the quaternion -> matrix -> quaternion round trip of the X importer's rotation keys); it is not
 //! the reference.
 pub mod fast_atof;
+pub mod fbx;
 pub mod post_process;
 pub mod scene;
 pub mod std_sort;
