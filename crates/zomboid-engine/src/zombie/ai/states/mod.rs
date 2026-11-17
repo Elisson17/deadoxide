@@ -6,3 +6,5 @@
 pub mod attack_state;
 pub mod lunge_state;
 pub mod path_find_state;
+pub mod walk_toward_state;
+pub mod zombie_face_target_state;

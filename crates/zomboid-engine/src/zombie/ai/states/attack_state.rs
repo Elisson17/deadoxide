@@ -67,7 +67,7 @@ impl IsoZombie {
 
     /// IsoGameCharacter.faceThisObject(player) = faceThisObjectAlt: the direction to the player's position when it is
     /// not on the zombie, then the animation player's `updateForwardDirection` (the player is made if there is none).
-    fn face_this_object_player(&mut self, rd: &SpRead) -> Result<(), String> {
+    pub(crate) fn face_this_object_player(&mut self, rd: &SpRead) -> Result<(), String> {
         let (mx, my) = (self.character.moving.x, self.character.moving.y);
         let tempo = Vector2::new(rd.world.player.x - mx, rd.world.player.y - my);
         if tempo.get_length() > 0.0 {

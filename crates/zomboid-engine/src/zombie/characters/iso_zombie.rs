@@ -249,6 +249,10 @@ pub enum ZombieState {
     Lunge,
     /// zombie.ai.states.AttackState
     Attack,
+    /// zombie.ai.states.ZombieFaceTargetState
+    FaceTarget,
+    /// zombie.ai.states.WalkTowardState
+    WalkToward,
 }
 
 impl ZombieState {
@@ -259,6 +263,8 @@ impl ZombieState {
             ZombieState::PathFind => "PathFindState",
             ZombieState::Lunge => "LungeState",
             ZombieState::Attack => "AttackState",
+            ZombieState::FaceTarget => "ZombieFaceTargetState",
+            ZombieState::WalkToward => "WalkTowardState",
         }
     }
 }
@@ -328,6 +334,8 @@ pub struct SpState {
     pub is_turning: bool,
     pub is_turning90: bool,
     pub is_turning_around: bool,
+    /// `initialTurningAroundTarget` (degrees)
+    pub initial_turning_around_target: f32,
     /// `maxTwist` (degrees, 15) and `moveDelta`
     pub max_twist: f32,
     pub move_delta: f32,
@@ -352,6 +360,9 @@ pub struct SpState {
     /// the AI states' TICK_COUNT params
     pub path_find_tick_count: i64,
     pub lunge_tick_count: i64,
+    /// WalkTowardState's `IGNORE_OFFSET` (None until the state is first entered) and `TICK_COUNT`
+    pub walk_toward_ignore_offset: Option<bool>,
+    pub walk_toward_tick_count: i64,
 }
 
 impl Default for SpState {
@@ -367,6 +378,7 @@ impl Default for SpState {
             is_turning: false,
             is_turning90: false,
             is_turning_around: false,
+            initial_turning_around_target: 0.0,
             max_twist: 15.0,
             move_delta: 1.0,
             knocked_down: false,
@@ -382,6 +394,8 @@ impl Default for SpState {
             attack_did_damage: false,
             path_find_tick_count: 0,
             lunge_tick_count: 0,
+            walk_toward_ignore_offset: None,
+            walk_toward_tick_count: 0,
         }
     }
 }

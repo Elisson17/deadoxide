@@ -35,11 +35,20 @@ public class ZombieAiProbe {
 
     static final java.util.Set<String> NO_READ = new java.util.HashSet<>(java.util.Arrays.asList("useragdollvehiclecollision", "isonback", "isupright", "canragdoll", "anygrappleanim", "numtwistbones", "grappleanim"));
 
+    // the variables whose getters make the animation player: read once it exists (the first animation frame makes it), "?" before
+    static final String[] RAG = {
+        "canRagdoll", "isUpright", "isOnBack", "anyGrappleAnim", "grappleAnim", "numTwistBones", "useRagdollVehicleCollision"
+    };
+
     static String vars(IsoZombie z) {
         StringBuilder sb = new StringBuilder();
         for (String n : VARS) {
             var s = z.getVariable(n);
             sb.append(n).append('=').append(s == null ? "-" : s.getValueString()).append(' ');
+        }
+        boolean made = z.hasAnimationPlayer();
+        for (String n : RAG) {
+            sb.append(n).append('=').append(made ? z.getVariable(n).getValueString() : "?").append(' ');
         }
         return sb.toString().trim();
     }
@@ -89,6 +98,7 @@ public class ZombieAiProbe {
         cell.chunkMap[0] = cm;
         // the player stand-in first, so its construction draws are not in the zombie's sequence
         int px = (int) Math.floor(8280.5f + dx), py = (int) Math.floor(11670.5f + dy);
+        zombie.iso.IsoMovingObject.setIDCount(0);
         IsoPlayer pl = new IsoPlayer(cell, new SurvivorDesc(), px, py, 0);
         IsoGridSquare psq = cell.getGridSquare(px, py, 0);
         pl.setCurrent(psq);
@@ -107,7 +117,7 @@ public class ZombieAiProbe {
         idf.set(RandStandard.INSTANCE, 0);
         OutfitRNG.setSeed(seed);
         IsoZombie z = new IsoZombie(cell);
-        out.println("ZOMBIE draws=" + ActionContextProbe.g(RandStandard.INSTANCE, "id") + " vars=" + ActionContextProbe.gameVars(z));
+        out.println("ZOMBIE draws=" + ActionContextProbe.g(RandStandard.INSTANCE, "id") + " vars=" + ActionContextProbe.gameVars(z) + " id=" + z.getID() + " zombieId=" + ActionContextProbe.g(z, "zombieId"));
         // the zombie's variables at construction: name, slot type and value (the port's table of the registered callbacks)
         java.util.List<String> varLines = new java.util.ArrayList<>();
         for (var slot : z.getGameVariables()) {

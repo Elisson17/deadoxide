@@ -62,6 +62,8 @@ pub struct PathFindBehavior2 {
     pub finder_progress: PathFindProgress,
     /// `pathNextIsSet` (false until a found path sets its next point)
     pub path_next_is_set: bool,
+    /// `walkingOnTheSpot`
+    pub walking_on_the_spot: crate::zombie::ai::walking_on_the_spot::WalkingOnTheSpot,
 }
 
 impl Default for PathFindBehavior2 {
@@ -80,6 +82,7 @@ impl Default for PathFindBehavior2 {
             stopping: false,
             finder_progress: PathFindProgress::NotRunning,
             path_next_is_set: false,
+            walking_on_the_spot: Default::default(),
         }
     }
 }

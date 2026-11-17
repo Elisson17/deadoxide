@@ -21,7 +21,7 @@ use crate::zombie::core::math::pz_math;
 use crate::zombie::core::skinnedmodel::advancedanimation::advanced_animator::{
     AnimatorOwner, Env,
 };
-use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{AnimEvent, AnimEventKind};
+use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{AnimEvent, AnimEventKind, AnimEventTime};
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
     AnimationVariableSlot, SlotValue,
@@ -55,6 +55,8 @@ pub struct SinglePlayerWorld {
     pub player: PlayerStandIn,
     pub loaded_chunks: Vec<(i32, i32)>,
     pub alias: Rc<TilePropertyAliasMap>,
+    /// the zombie's `IsoMovingObject.getID()`: the scenario's second moving object (the player stand-in is the first)
+    pub zombie_object_id: i32,
 }
 
 impl SinglePlayerWorld {
@@ -545,6 +547,31 @@ impl IsoZombie {
             } else {
                 -1.0
             }),
+            "canragdoll" | "useragdollvehiclecollision" | "isupright" | "isonback" | "anygrappleanim"
+            | "grappleanim" | "numtwistbones" => {
+                if p.is_none() {
+                    // the Java getters make the animation player (`getAnimationPlayer()`): not reproduced through a
+                    // read-only view, the first animation update frame makes it before any state reads these
+                    rd.flag(&format!("{name} (before the animation player exists)"));
+                    return None;
+                }
+                match name {
+                    // IsoGameCharacter.canRagdoll in the single-player game: no debug option, the default
+                    // `usePhysicsHitReaction` option, no ragdoll controller (`getRagdollController()` null, 0 active
+                    // simulations of 20), worn clothing allows it, `canCurrentStateRagdoll()` = `hasCurrentState()`
+                    // (IStateFlagsSource.canRagdoll is true; only ClimbOverFenceState/ClimbThroughWindowState differ)
+                    "canragdoll" => b(self.current_state.is_some()),
+                    // `canRagdoll() && vehicleCollision`: no vehicle ever hits the zombie here
+                    "useragdollvehiclecollision" => b(false),
+                    // no ragdoll controller: not upright, not on the back
+                    "isupright" | "isonback" => b(false),
+                    // `isPerformingAnyGrappleAnimation` / `isPerformingGrappleAnimation`: the player is never ready
+                    // headless (no model), its track list is empty
+                    "anygrappleanim" | "grappleanim" => b(false),
+                    // AnimationPlayer.getNumTwistBones: the five bones IsoGameCharacter.getAnimationPlayer sets
+                    _ => f(5.0),
+                }
+            }
             "turndirection" => {
                 // `getPath2() != null` is never true here; a target at a distance turns by the `calculateDir` of
                 // CrawlingZombieTurnState unless it is already in the target's direction
@@ -592,6 +619,18 @@ impl IsoZombie {
             }
         };
         Some(slot(name, value))
+    }
+
+    /// `gameVars(z)`: the number of the zombie's game variables (the registered ones; the plain ones set later are
+    /// counted when present).
+    pub fn sp_variable_count(&self) -> usize {
+        REGISTERED.len()
+            + self
+                .sp
+                .plain
+                .get_game_variables()
+                .filter(|s| !PLAIN_REGISTERED.iter().any(|r| java::equals_ignore_case(r, &s.key)))
+                .count()
     }
 
     /// The `VAR name Type value` lines the probe prints for the zombie's variables, sorted by name (the oracle's
@@ -794,20 +833,58 @@ impl IsoZombie {
         }
     }
 
-    /// IsoGameCharacter.setTurningAround: starting a 180 turn raises a global anim event (not ported).
-    fn set_turning_around(&mut self, is_turning_around: bool) -> Result<(), String> {
+    /// IsoGameCharacter.setTurningAround: starting a 180 turn raises the global anim event `Turn180Started`; a turn that
+    /// is under way raises `Turn180TargetChanged` (and ends) when the direction moved more than 90 degrees from the one
+    /// it started towards.
+    fn set_turning_around(
+        &mut self,
+        anim: &mut ZombieAnim,
+        rd: &SpRead,
+        is_turning_around: bool,
+    ) -> Result<(), String> {
         let is_different = self.sp.is_turning_around != is_turning_around;
-        let was = self.sp.is_turning_around;
-        if is_different || was {
-            if is_different && is_turning_around {
-                return Err("IsoGameCharacter.setTurningAround: the Turn180Started global anim event is not ported".into());
-            }
-            if !is_different && was {
-                return Err("IsoGameCharacter.setTurningAround: the 180 turn target check is not ported".into());
-            }
+        let was_turning_around = self.sp.is_turning_around;
+        if is_different || was_turning_around {
             self.sp.is_turning_around = is_turning_around;
+            let previous_target_angle = self.sp.initial_turning_around_target;
+            let current_target_angle = to_degrees(self.direction_angle_radians());
+            if is_different && is_turning_around {
+                self.invoke_global_anim_event(anim, rd, "Turn180Started")?;
+                self.sp.initial_turning_around_target = current_target_angle;
+            }
+            if !is_different && was_turning_around {
+                let angle_diff = pz_math::rad_to_deg(pz_math::get_closest_angle(
+                    pz_math::deg_to_rad(previous_target_angle),
+                    pz_math::deg_to_rad(current_target_angle),
+                ));
+                if pz_abs(angle_diff) > 90.0f32 {
+                    self.invoke_global_anim_event(anim, rd, "Turn180TargetChanged")?;
+                    self.sp.is_turning_around = false;
+                }
+            }
         }
         Ok(())
+    }
+
+    /// IsoGameCharacter.invokeGlobalAnimEvent -> AdvancedAnimator.invokeGlobalAnimEvent: `invokeAnimEvent(null, null,
+    /// event)` calls the one callback the animator has, the character's `OnAnimEvent`, with no layer.
+    fn invoke_global_anim_event(
+        &mut self,
+        anim: &mut ZombieAnim,
+        rd: &SpRead,
+        name: &str,
+    ) -> Result<(), String> {
+        let event = AnimEvent {
+            event_name: Some(name.to_string()),
+            time: Some(AnimEventTime::End),
+            ..AnimEvent::default()
+        };
+        let mut owner = SpOwner {
+            z: self,
+            ctx: &mut anim.action_context,
+            rd,
+        };
+        owner.on_anim_event(-1, None, None, &event)
     }
 
     /// `getAnimationPlayer()`: the animation player is made on first use.
@@ -920,6 +997,8 @@ impl IsoZombie {
             Some(ZombieState::PathFind) => self.path_find_execute(),
             Some(ZombieState::Lunge) => self.lunge_execute(world, rd),
             Some(ZombieState::Attack) => self.attack_execute(rd),
+            Some(ZombieState::FaceTarget) => self.face_target_execute(rd),
+            Some(ZombieState::WalkToward) => self.walk_toward_execute(world, rd),
         }
     }
 
@@ -935,14 +1014,17 @@ impl IsoZombie {
                 Ok(())
             }
             ZombieState::Attack => self.attack_enter(),
+            ZombieState::FaceTarget => Ok(()),
+            ZombieState::WalkToward => self.walk_toward_enter(),
         }
     }
 
     fn state_exit(&mut self, state: ZombieState) -> Result<(), String> {
         match state {
-            ZombieState::Idle | ZombieState::Lunge => Ok(()),
+            ZombieState::Idle | ZombieState::Lunge | ZombieState::FaceTarget => Ok(()),
             ZombieState::PathFind => self.path_find_exit(),
             ZombieState::Attack => self.attack_exit(),
+            ZombieState::WalkToward => self.walk_toward_exit(),
         }
     }
 
@@ -983,6 +1065,8 @@ impl IsoZombie {
             "pathfind" => ZombieState::PathFind,
             "lunge" => ZombieState::Lunge,
             "attack" => ZombieState::Attack,
+            "face-target" => ZombieState::FaceTarget,
+            "walktoward" => ZombieState::WalkToward,
             _ => {
                 return Err(format!(
                     "IsoZombie.actionStateChanged: the AI state of action state '{root}' is not ported"
@@ -1036,7 +1120,7 @@ impl IsoZombie {
         let t90 = self.should_be_turning90();
         self.sp.is_turning90 = t90;
         let ta = self.should_be_turning_around();
-        self.set_turning_around(ta)?;
+        self.set_turning_around(anim, rd, ta)?;
         let changed = {
             let view = SpView { z: self, rd };
             anim.action_context.update(&view)
@@ -1231,6 +1315,9 @@ impl AnimatorOwner for SpOwner<'_> {
                         self.z.sp_clear_variable(&r.name)?;
                     }
                 }
+                // IsoZombie.DoFootstepSound(type): the sound manager's listener test and the zombie footstep manager's
+                // queue (audio only; no state, no random draw: the oracle's draw counts cover it)
+                (_, "footstep") => {}
                 _ => {
                     return Err(format!(
                         "IsoGameCharacter.OnAnimEvent: the handler of '{name}' is not ported"
