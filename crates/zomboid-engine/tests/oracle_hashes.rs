@@ -521,6 +521,61 @@ fn radio_matches_original() {
     );
 }
 
+/// assimp's X importer (E59) over every `.x` of `media/models_X` and `media/anims_X`, no post-processing step.
+#[test]
+fn xscene_matches_original() {
+    check("xscene", &["none", "x", "media/models_X", "media/anims_X"]);
+}
+
+/// The same files with the animation flags of `FileTask_LoadAnimation` (E59).
+#[test]
+fn animscene_matches_original() {
+    check("animscene", &["anim", "x", "media/anims_X"]);
+}
+
+/// The same files with the mesh flags of `FileTask_LoadMesh` (E59).
+#[test]
+fn xmodelscene_matches_original() {
+    check("xmodelscene", &["mesh", "x", "media/models_X"]);
+}
+
+/// `ProcessedAiScene.process` (E59) on the scenes of every `.x` model: skeleton, skinned and static meshes in the game's
+/// modes, by mesh name, all meshes, and skinned to another skeleton.
+#[test]
+fn xmodels_matches_original() {
+    check(
+        "xmodels",
+        &[
+            "Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x",
+            "mesh",
+            "x",
+            "media/models_X",
+        ],
+    );
+}
+
+/// `ProcessedAiScene.process` (E59) on every `.x` animation: the clips with their keyframes, with the `.fbx`
+/// modifiers, and skinned to another skeleton.
+#[test]
+fn animclips_matches_original() {
+    check(
+        "animclips",
+        &[
+            "AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x",
+            "anim",
+            "x",
+            "media/anims_X",
+        ],
+    );
+}
+
+/// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
+/// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
+#[test]
+fn txtmodels_matches_original() {
+    check("txtmodels", &[]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

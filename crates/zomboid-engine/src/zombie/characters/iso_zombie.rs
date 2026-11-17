@@ -22,7 +22,7 @@ use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_sou
     AnimationVariableSlot, AnimationVariableSource,
 };
 use crate::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
-use crate::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+use crate::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips;
 use crate::zombie::core::skinnedmodel::animation::animation_track::AnimationTrack;
 use crate::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 use crate::zombie::iso::iso_directions::IsoDirections;

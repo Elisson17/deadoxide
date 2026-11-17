@@ -187,11 +187,20 @@ pub fn string_hash_code(s: &str) -> i32 {
 /// `keys_in_insertion_order`, duplicates keeping their first position. Buckets ascend, entries of one bucket keep
 /// insertion order. Bins that Java would turn into trees (8+ entries with 64+ buckets) may iterate differently there.
 pub fn hash_map_order(keys_in_insertion_order: &[&str]) -> Vec<usize> {
+    hash_map_order_from(keys_in_insertion_order, 16)
+}
+
+/// `hash_map_order` for a map whose table started at `initial_capacity` buckets (a power of two): 16 for `new HashMap()`,
+/// `tableSizeFor((int)(size / 0.75f + 1.0f))` for `new HashMap(Map)`.
+pub fn hash_map_order_from(
+    keys_in_insertion_order: &[&str],
+    initial_capacity: usize,
+) -> Vec<usize> {
     let mut seen = std::collections::HashSet::new();
     let unique: Vec<usize> = (0..keys_in_insertion_order.len())
         .filter(|i| seen.insert(keys_in_insertion_order[*i]))
         .collect();
-    let mut cap: usize = 16;
+    let mut cap: usize = initial_capacity;
     while unique.len() as f64 > cap as f64 * 0.75 {
         cap *= 2;
     }
@@ -210,6 +219,8 @@ pub fn hash_map_order(keys_in_insertion_order: &[&str]) -> Vec<usize> {
 pub struct JavaHashMap<V> {
     keys: Vec<String>,
     values: Vec<V>,
+    /// Buckets the table starts with: 16, or the copy constructor's `tableSizeFor(size / 0.75 + 1)`.
+    initial_capacity: usize,
 }
 
 impl<V> Default for JavaHashMap<V> {
@@ -217,6 +228,7 @@ impl<V> Default for JavaHashMap<V> {
         JavaHashMap {
             keys: Vec::new(),
             values: Vec::new(),
+            initial_capacity: 16,
         }
     }
 }
@@ -254,10 +266,65 @@ impl<V> JavaHashMap<V> {
 
     /// java.util.HashMap.values(), in the map's iteration order.
     pub fn values(&self) -> impl Iterator<Item = &V> {
+        self.iter().map(|(_, v)| v)
+    }
+
+    /// java.util.HashMap.entrySet() / forEach order: the entries in the map's iteration order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
         let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
-        hash_map_order(&keys)
+        hash_map_order_from(&keys, self.initial_capacity)
             .into_iter()
-            .map(move |i| &self.values[i])
+            .map(move |i| (self.keys[i].as_str(), &self.values[i]))
+    }
+
+    /// java.util.HashMap.values(), mutable, in the map's iteration order.
+    pub fn values_mut(&mut self) -> Vec<&mut V> {
+        let keys: Vec<&str> = self.keys.iter().map(String::as_str).collect();
+        let order = hash_map_order_from(&keys, self.initial_capacity);
+        let mut slots: Vec<Option<&mut V>> = self.values.iter_mut().map(Some).collect();
+        order.into_iter().filter_map(|i| slots[i].take()).collect()
+    }
+
+    /// java.util.HashMap.containsKey
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.keys.iter().any(|k| k == key)
+    }
+
+    /// java.util.HashMap.getOrDefault
+    pub fn get_or_default(&self, key: &str, default: V) -> V
+    where
+        V: Clone,
+    {
+        self.get(key).cloned().unwrap_or(default)
+    }
+
+    /// java.util.HashMap.clear (the table keeps its size).
+    pub fn clear(&mut self) {
+        self.keys.clear();
+        self.values.clear();
+    }
+
+    /// `new HashMap<>(Map)`: the entries put in the source's iteration order into a table sized
+    /// `tableSizeFor((int)(size / 0.75f + 1.0f))`.
+    pub fn copy_of(&self) -> JavaHashMap<V>
+    where
+        V: Clone,
+    {
+        let ft = (self.keys.len() as f32 / 0.75f32 + 1.0f32) as usize;
+        let mut cap = 1usize;
+        while cap < ft {
+            cap <<= 1;
+        }
+        let mut out = JavaHashMap {
+            keys: Vec::new(),
+            values: Vec::new(),
+            initial_capacity: if self.keys.is_empty() { 16 } else { cap },
+        };
+        for (k, v) in self.iter() {
+            out.keys.push(k.to_string());
+            out.values.push(v.clone());
+        }
+        out
     }
 }
 
@@ -743,6 +810,49 @@ pub fn split_char(s: &str, c: char) -> Vec<&str> {
     parts
 }
 
+/// Double/Float.toString choose, among the shortest decimals that read back as the value, the one closest to it and,
+/// when two are equally close (the value is exactly half way between them, e.g. 0.447265625f), the one whose last
+/// digit is even; Rust's `{:e}` rounds such a tie up. `digits`/`exp` are Rust's shortest; `a` is the value, `max_prec`
+/// enough fractional digits to print it exactly, `same` tells whether a decimal reads back as the value.
+fn java_even_tie(
+    a: f64,
+    digits: String,
+    exp: i32,
+    max_prec: usize,
+    same: impl Fn(&str) -> bool,
+) -> (String, i32) {
+    let n = digits.len();
+    if n > 17 {
+        return (digits, exp);
+    }
+    let (longer, longer_exp) = split_sci(&format!("{a:.n$e}"));
+    if longer_exp != exp || longer.len() != n + 1 || !longer.ends_with('5') {
+        return (digits, exp);
+    }
+    let (exact, exact_exp) = split_sci(&format!("{a:.max_prec$e}"));
+    if exact_exp != exp || exact[..n + 1] != longer || !exact[n + 1..].bytes().all(|b| b == b'0') {
+        return (digits, exp);
+    }
+    let trunc: u128 = longer[..n].parse().unwrap_or(0);
+    let pick = if trunc.is_multiple_of(2) {
+        trunc
+    } else {
+        trunc + 1
+    };
+    let mut text = pick.to_string();
+    let mut new_exp = exp;
+    if text.len() > n {
+        text.truncate(n);
+        new_exp += 1;
+    }
+    let candidate = format!("{}.{}e{}", &text[..1], &text[1..], new_exp);
+    if same(&candidate) {
+        (text, new_exp)
+    } else {
+        (digits, exp)
+    }
+}
+
 /// java.lang.Double.toString (JDK 19 and later, the game's JRE 25): the shortest decimal that reads back as `d`;
 /// when a single digit would do, the closest of the one- and two-digit decimals (so 2^-1074 is "4.9E-324").
 /// Plain notation for 10^-3 <= |d| < 10^7, else "d.dddE<n>".
@@ -774,15 +884,7 @@ pub fn double_to_string(d: f64) -> String {
             exp = e2;
         }
     }
-    // Of the decimals of that length that read back as `a`, Java takes the closest to `a` and, with two equally
-    // close (a tie of the exact value), the one with the even last digit: the correctly rounded (half-even)
-    // decimal of that length, when it reads back as `a`.
-    let exact = format!("{:.*e}", digits.len() - 1, a);
-    if exact.parse::<f64>().ok() == Some(a) {
-        let (d2, e2) = split_sci(&exact);
-        digits = d2;
-        exp = e2;
-    }
+    (digits, exp) = java_even_tie(a, digits, exp, 800, |t| t.parse::<f64>().ok() == Some(a));
     java_decimal(d < 0.0, &digits, exp)
 }
 
@@ -816,15 +918,9 @@ pub fn float_to_string(f: f32) -> String {
             exp = e2;
         }
     }
-    // Of the decimals of that length that read back as `a`, Java takes the closest to `a` and, with two equally
-    // close (a tie of the exact value), the one with the even last digit: the correctly rounded (half-even)
-    // decimal of that length, when it reads back as `a`.
-    let exact = format!("{:.*e}", digits.len() - 1, a);
-    if exact.parse::<f32>().ok() == Some(a) {
-        let (d2, e2) = split_sci(&exact);
-        digits = d2;
-        exp = e2;
-    }
+    (digits, exp) = java_even_tie(f64::from(a), digits, exp, 200, |t| {
+        t.parse::<f32>().ok() == Some(a)
+    });
     java_decimal(f < 0.0, &digits, exp)
 }
 
@@ -1135,6 +1231,18 @@ mod jdk_string_tests {
         );
         assert_eq!(double_to_string(0.1), "0.1");
         assert_eq!(float_to_string(9.350197), "9.350197");
+    }
+
+    /// Values the original printed (E59, `AiSceneProbe`): an exact tie between two shortest decimals goes to the even one.
+    #[test]
+    fn to_string_takes_the_even_digit_on_an_exact_tie() {
+        assert_eq!(float_to_string(f32::from_bits(0x3ee5_0000)), "0.44726562"); // 0.447265625
+        assert_eq!(float_to_string(f32::from_bits(0x3eb1_0000)), "0.34570312"); // 0.345703125
+        assert_eq!(float_to_string(0.97656244), "0.97656244");
+        assert_eq!(float_to_string(0.5), "0.5");
+        assert_eq!(float_to_string(1.0e10), "1.0E10");
+        assert_eq!(double_to_string(0.5), "0.5");
+        assert_eq!(double_to_string(0.1), "0.1");
     }
 
     #[test]

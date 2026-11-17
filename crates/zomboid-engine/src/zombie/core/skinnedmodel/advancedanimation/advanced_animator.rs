@@ -27,7 +27,7 @@ use super::i_animation_variable_source::IAnimationVariableSource;
 use crate::java::{self, Random};
 use crate::zombie::core::math::pz_math;
 use crate::zombie::core::random::rand_abstract::RandAbstract;
-use crate::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+use crate::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips;
 use crate::zombie::core::skinnedmodel::animation::animation_track::{
     AnimationTrack, ListenerRef, TrackEvent,
 };

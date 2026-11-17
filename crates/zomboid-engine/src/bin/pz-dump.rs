@@ -12,6 +12,9 @@
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 //!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
 //!   pz-dump sounds <game root> [<command file> <scratch dir>]   (pairs with SoundsProbe.java)
+#[path = "pz-dump-models/mod.rs"]
+mod models;
+
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -61,6 +64,15 @@ fn main() {
             Path::new(&a[4]),
             a.get(5).map(Path::new),
         ),
+        Some("txtmodels") if a.len() >= 3 => models::txtmodels(Path::new(&a[2]), &a[3..]),
+        Some("aiscene" | "xscene" | "xmodelscene" | "animscene" | "fbxscene" | "glbscene")
+            if a.len() >= 3 =>
+        {
+            models::aiscene(Path::new(&a[2]), &a[3..])
+        }
+        Some("xmodels" | "animclips" | "processedscene") if a.len() >= 3 => {
+            models::processed(Path::new(&a[2]), &a[3..])
+        }
         Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
@@ -8898,7 +8910,7 @@ fn zombie_anim_assets(
 ) -> Result<zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets, String> {
     use zomboid_engine::zombie::characters::action::action_group::ActionGroups;
     use zomboid_engine::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSets;
-    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips;
     use zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem;
     let fs = ZomboidFileSystem::init(root)?;
     let mut groups = ActionGroups::default();
@@ -9618,11 +9630,11 @@ fn animation_clips(
     fs: &zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem,
 ) -> Result<
     std::rc::Rc<
-        zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips,
+        zomboid_engine::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips,
     >,
     String,
 > {
-    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+    use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips;
     let (clips, _dups) = AnimationClips::load(fs, "Human")?;
     Ok(std::rc::Rc::new(clips))
 }
@@ -9704,7 +9716,7 @@ fn anim_scenario(
     sb: &mut String,
     fs: &zomboid_engine::zombie::zomboid_file_system::ZomboidFileSystem,
     clips: &std::rc::Rc<
-        zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips,
+        zomboid_engine::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips,
     >,
     spec: &str,
 ) -> Result<(), String> {
@@ -10099,7 +10111,7 @@ pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String
     let mut sb = String::new();
     for spec in scenarios {
         if spec == "clips" {
-            use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+            use zomboid_engine::zombie::core::skinnedmodel::animation::animation_clips::AnimationClips;
             let (clips, _dups) = AnimationClips::load(&fs, "Human")?;
             let mut names: Vec<&String> = clips.clips.keys().collect();
             names.sort();
