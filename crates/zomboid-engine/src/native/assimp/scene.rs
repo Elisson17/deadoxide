@@ -382,8 +382,9 @@ impl Mat4 {
             + self.a4 * self.b3 * self.c2 * self.d1
     }
 
-    /// aiMatrix4x4::Decompose(scaling, rotation, position), with the arithmetic order of the compiled library: the
-    /// column lengths add the squares as z, x, y and the columns are normalized by multiplying with `1 / scale`.
+    /// aiMatrix4x4::Decompose(scaling, rotation, position), with the arithmetic of the compiled library: the column
+    /// lengths add the squares as x, y, z (measured against the original on 3000 random rotation keys, the other sum
+    /// orders differ in the last bit) and the columns are normalized by multiplying with `1 / scale`.
     pub fn decompose(&self) -> (Vec3, Quat, Vec3) {
         let pos = Vec3::new(self.a4, self.b4, self.c4);
         let mut cols = [
@@ -391,7 +392,7 @@ impl Mat4 {
             Vec3::new(self.a2, self.b2, self.c2),
             Vec3::new(self.a3, self.b3, self.c3),
         ];
-        let len = |v: &Vec3| (v.z * v.z + v.x * v.x + v.y * v.y).sqrt();
+        let len = |v: &Vec3| (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
         let mut scaling = Vec3::new(len(&cols[0]), len(&cols[1]), len(&cols[2]));
         if !(0.0 <= self.determinant()) {
             scaling = Vec3::new(-scaling.x, -scaling.y, -scaling.z);

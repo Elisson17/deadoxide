@@ -108,14 +108,14 @@ fn chain_node_name(name: &str, comp: usize) -> String {
     format!("{name}{MAGIC_NODE_TAG}_{}", comp_name(comp))
 }
 
-/// aiVector3D::SquareLength (the library adds the squares as z, x, y)
+/// aiVector3D::SquareLength
 fn sq_len(v: Vec3) -> f32 {
-    v.z * v.z + v.x * v.x + v.y * v.y
+    v.x * v.x + v.y * v.y + v.z * v.z
 }
 
 /// `(v - (1, 1, 1)).SquareLength()`
 fn sq_len_minus_one(v: Vec3) -> f32 {
-    (v.z + -1.0) * (v.z + -1.0) + (v.x + -1.0) * (v.x + -1.0) + (v.y + -1.0) * (v.y + -1.0)
+    (v.x + -1.0) * (v.x + -1.0) + (v.y + -1.0) * (v.y + -1.0) + (v.z + -1.0) * (v.z + -1.0)
 }
 
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
@@ -1923,7 +1923,8 @@ impl<'a> Conv<'a> {
         for t in temp {
             let m = rotation_matrix(order, t.value);
             let mut quat = Quat::from_matrix(&mat3_of(&m));
-            if quat.x * lastq.x + quat.y * lastq.y + quat.z * lastq.z + quat.w * lastq.w < 0.0 {
+            // the library adds the products as w, (z, (x, y)) (read from the assembly of InterpolateKeys)
+            if quat.w * lastq.w + (quat.z * lastq.z + (quat.x * lastq.x + quat.y * lastq.y)) < 0.0 {
                 quat.x = -quat.x;
                 quat.y = -quat.y;
                 quat.z = -quat.z;
