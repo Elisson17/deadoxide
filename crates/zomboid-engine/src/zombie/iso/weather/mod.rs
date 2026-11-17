@@ -6,5 +6,6 @@ pub mod climate_manager;
 pub mod climate_moon;
 pub mod climate_values;
 pub mod simplex_noise;
+pub mod temperature;
 pub mod thunder_storm;
 pub mod weather_period;

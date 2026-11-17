@@ -98,6 +98,7 @@ fn main() {
         Some("erosion") if a.len() >= 4 => erosion(Path::new(&a[2]), &a[3..]),
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
+        Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -6364,13 +6365,13 @@ mod save_dump {
                 "TH\t{},{},{},{},{},{},{},{},{}",
                 fh(t.set_point),
                 fh(t.metabolic_rate),
-                fh(t.metabolic_rate_real.unwrap_or(0.0)),
+                fh(t.metabolic_rate_real),
                 fh(t.metabolic_target),
                 fh(t.body_heat_delta),
                 fh(t.core_heat_delta),
                 fh(t.thermal_damage),
                 fh(t.damage_counter),
-                fh(t.thermal_duration.unwrap_or(0.0))
+                fh(t.thermal_duration)
             );
             for (i, n) in &t.nodes {
                 let _ = writeln!(
@@ -8923,6 +8924,434 @@ fn zombie_anim_assets(
             clips: std::rc::Rc::new(clips),
         },
     )
+}
+
+/// BodyProbe's scenarios on the port: "seed:ticks:run:every:show[:options]" (see tests/original_probe/BodyProbe.java).
+/// The probe's player stands on a real square and is built by the game's constructors; the port's body is built from
+/// the same defaults and the options set the same fields.
+pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
+    use zomboid_engine::se::krka::kahlua::vm::object::Object;
+    use zomboid_engine::zombie::characters::body_damage::body_fields::{
+        body_field, char_field, node_field, part_field, thermo_field, BODY_FIELDS, CHAR_FIELDS,
+        NODE_FIELDS, PART_FIELDS, THERMO_FIELDS,
+    };
+    use zomboid_engine::zombie::characters::body_damage::body_sim::{BodyWorld, PlayerBody};
+    use zomboid_engine::zombie::characters::stats::{CharacterStat, ALL_STATS};
+    use zomboid_engine::zombie::game_time::GameTime;
+    use zomboid_engine::zombie::iso::weather::climate_manager::{
+        FLOAT_HUMIDITY, FLOAT_PRECIPITATION_INTENSITY, FLOAT_TEMPERATURE,
+    };
+    use zomboid_engine::zombie::sandbox_options::SandboxOptions;
+    use zomboid_engine::zombie::scripting::objects::resource_location::ResourceLocation;
+
+    fn hx(v: f32) -> String {
+        format!("{:x}", v.to_bits())
+    }
+    fn parse_f(v: &str) -> Result<f32, String> {
+        v.parse::<f32>().map_err(|e| format!("float {v}: {e}"))
+    }
+    use zomboid_engine::zombie::characters::body_damage::body_sim::SquareFacts;
+    use zomboid_engine::zombie::iso::weather::climate_manager::ClimateManager;
+    use zomboid_engine::zombie::lua::lua_manager::{run_lua, LuaManager};
+    use zomboid_engine::zombie::scripting::objects::moodle_type::ALL_MOODLE_TYPES;
+    let text = std::fs::read_to_string(cases).map_err(|e| format!("{}: {e}", cases.display()))?;
+    let mut sb = String::new();
+    // ZomboidGlobals.Load of the real defines.lua (the table the game reads them from)
+    let globals = {
+        let mut lm = LuaManager::init(root).map_err(|e| format!("lua: {e:?}"))?;
+        let defines = root.join("media/lua/shared/defines.lua");
+        run_lua(
+            &lm.loader,
+            &lm.platform,
+            &lm.env,
+            &mut lm.thread,
+            &defines.to_string_lossy(),
+        )
+        .map_err(|e| format!("defines.lua: {e:?}"))?;
+        let mut g = zomboid_engine::zombie::zomboid_globals::ZomboidGlobals::default();
+        g.load(&lm.env)
+            .map_err(|e| format!("ZomboidGlobals.Load: {e:?}"))?;
+        g
+    };
+    for (name, bits) in globals.fields() {
+        let _ = writeln!(sb, "GLOBALS {name} {bits}");
+    }
+    for spec in text
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .map(str::trim)
+    {
+        let p: Vec<&str> = spec.splitn(6, ':').collect();
+        if p.len() < 5 {
+            return Err(format!("body scenario {spec}"));
+        }
+        let seed: i64 = p[0].parse().map_err(|e| format!("seed: {e}"))?;
+        let ticks: i32 = p[1].parse().map_err(|e| format!("ticks: {e}"))?;
+        let run: Vec<&str> = p[2].split('+').collect();
+        let every: i32 = p[3].parse().map_err(|e| format!("every: {e}"))?;
+        let show: Vec<&str> = p[4].split('+').collect();
+        let mut o: Vec<(String, String)> = Vec::new();
+        if p.len() > 5 && !p[5].is_empty() {
+            for kv in p[5].split(',') {
+                let (k, v) = kv.split_once('=').ok_or_else(|| format!("option {kv}"))?;
+                o.push((k.to_string(), v.to_string()));
+            }
+        }
+        let opt = |name: &str, default: &str| -> String {
+            o.iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| default.to_string())
+        };
+        let _ = writeln!(sb, "SCENARIO {spec}");
+        let gt = GameTime {
+            multiplier: parse_f(&opt("mult", "1.0"))?,
+            minutes_per_day: parse_f(&opt("mpd", "30.0"))?,
+            // the booted server's clock stands at 9:00 of night 0
+            time_of_day: parse_f(&opt("tod", "9.0"))?,
+            nights_survived: opt("nights", "0")
+                .parse()
+                .map_err(|e| format!("nights: {e}"))?,
+            ..GameTime::default()
+        };
+        let mut sandbox = SandboxOptions::new();
+        for (name, v) in [
+            ("Nutrition", 1.0),
+            ("MuscleStrainFactor", 0.7),
+            ("WoundInfectionFactor", 1.0),
+        ] {
+            if !sandbox.set_by_name(name, &Object::Number(v)) {
+                return Err(format!("sandbox option {name}"));
+            }
+        }
+        for (k, v) in &o {
+            if let Some(name) = k.strip_prefix("sb.") {
+                let d: f64 = v.parse().map_err(|e| format!("sandbox {k}: {e}"))?;
+                if !sandbox.set_by_name(name, &Object::Number(d)) {
+                    return Err(format!("sandbox option {name}"));
+                }
+            }
+        }
+        let mut climate = ClimateManager::default();
+        let mut world = BodyWorld::new(gt, sandbox, globals.clone(), climate.clone(), seed);
+        world.hydro_power_on = true;
+        for (k, v) in &o {
+            match k.as_str() {
+                "temp" => climate.climate_floats[FLOAT_TEMPERATURE].final_value = parse_f(v)?,
+                "wind" => climate.wind_power = parse_f(v)?,
+                "daylight" => climate.day_light_lagged = parse_f(v)?,
+                "night" => climate.night_lagged = parse_f(v)?,
+                "rain" => {
+                    climate.climate_floats[FLOAT_PRECIPITATION_INTENSITY].final_value = parse_f(v)?
+                }
+                "humidity" => climate.climate_floats[FLOAT_HUMIDITY].final_value = parse_f(v)?,
+                _ => {}
+            }
+        }
+        world.climate = climate;
+        let mut pl = PlayerBody::new(world);
+        // the headless player the probe builds: outdoors on (8280, 11670, 0), no `square` field, nothing carried
+        pl.ch.current_square = Some(SquareFacts {
+            in_room: false,
+            have_roof: false,
+            z: 0,
+        });
+        pl.ch.bed_type = "averageBed".to_string();
+        pl.ch.sleep_blocked = true;
+        for (k, v) in &o {
+            match k.as_str() {
+                _ if k.starts_with("stat.") => {
+                    let st = CharacterStat::by_id(&k[5..]).ok_or_else(|| format!("stat {k}"))?;
+                    pl.stats.set(st, parse_f(v)?);
+                }
+                "weight" => {
+                    let _ = pl
+                        .nutrition
+                        .set_weight(v.parse().map_err(|e| format!("weight: {e}"))?);
+                }
+                "cal" => pl.nutrition.set_calories(parse_f(v)?),
+                "carb" => pl.nutrition.set_carbohydrates(parse_f(v)?),
+                "lip" => pl.nutrition.set_lipids(parse_f(v)?),
+                "prot" => pl.nutrition.set_proteins(parse_f(v)?),
+                "trait" => {
+                    for t in v.split('+') {
+                        pl.ch.traits.set(ResourceLocation::of(t)?, true);
+                    }
+                }
+                "moving" => pl.ch.player_moving = v == "1",
+                "running" => pl.ch.running = v == "1",
+                "sprint" => pl.ch.sprinting = v == "1",
+                "asleep" => pl.ch.asleep = v == "1",
+                "sit" => pl.ch.sitting = v == "1",
+                "bed" => pl.ch.bed_type = v.clone(),
+                "delay" => pl.ch.delay_to_actually_sleep = parse_f(v)?,
+                "fitness" => pl.ch.perk_fitness = v.parse().map_err(|e| format!("fitness: {e}"))?,
+                "sleep" => pl.ch.sleep_blocked = v != "1",
+                "sqfield" => pl.ch.square_field_set = v == "1",
+                "strength" => {
+                    pl.ch.perk_strength = v.parse().map_err(|e| format!("strength: {e}"))?
+                }
+                "zombies" => {
+                    pl.stats.num_visible_zombies = v.parse().map_err(|e| format!("zombies: {e}"))?
+                }
+                "sneak" => pl.ch.sneaking = v == "1",
+                // fields set directly, as a loaded save would: no Rand draw of a setter is made
+                _ if k.starts_with("bp.") => {
+                    let mut it = k.splitn(3, '.');
+                    let (_, idx, name) = (it.next(), it.next(), it.next());
+                    let (Some(idx), Some(name)) = (idx, name) else {
+                        return Err(format!("option {k}"));
+                    };
+                    let idx: usize = idx.parse().map_err(|e| format!("{k}: {e}"))?;
+                    let part = pl
+                        .body
+                        .body_parts
+                        .get_mut(idx)
+                        .ok_or_else(|| format!("{k}: no part"))?;
+                    part_field(part, name)?.assign(v)?;
+                }
+                _ if k.starts_with("bd.") => body_field(&mut pl.body, &k[3..])?.assign(v)?,
+                _ if k.starts_with("ch.") => char_field(&mut pl.ch, &k[3..])?.assign(v)?,
+                _ if k.starts_with("th.") => {
+                    let t = pl
+                        .body
+                        .thermoregulator
+                        .as_mut()
+                        .ok_or("no thermoregulator")?;
+                    thermo_field(t, &k[3..])?.assign(v)?;
+                }
+                _ if k.starts_with("node.") => {
+                    let mut it = k.splitn(3, '.');
+                    let (_, idx, name) = (it.next(), it.next(), it.next());
+                    let (Some(idx), Some(name)) = (idx, name) else {
+                        return Err(format!("option {k}"));
+                    };
+                    let idx: usize = idx.parse().map_err(|e| format!("{k}: {e}"))?;
+                    let t = pl
+                        .body
+                        .thermoregulator
+                        .as_mut()
+                        .ok_or("no thermoregulator")?;
+                    let n = t
+                        .nodes
+                        .get_mut(&idx)
+                        .ok_or_else(|| format!("{k}: no node"))?;
+                    node_field(n, name)?.assign(v)?;
+                }
+                "building" => pl.ch.in_building = v == "1",
+                // the square the probe found for `room`: its facts, as FACTS prints them
+                "inroom" => {
+                    if let Some(sq) = pl.ch.current_square.as_mut() {
+                        sq.in_room = v == "1";
+                    }
+                }
+                "roof" => {
+                    if let Some(sq) = pl.ch.current_square.as_mut() {
+                        sq.have_roof = v == "1";
+                    }
+                }
+                "floor" => {
+                    if let Some(sq) = pl.ch.current_square.as_mut() {
+                        sq.z = v.parse().map_err(|e| format!("floor: {e}"))?;
+                    }
+                }
+                k if k.starts_with("sb.")
+                    || matches!(
+                        k,
+                        "mult"
+                            | "mpd"
+                            | "temp"
+                            | "wind"
+                            | "daylight"
+                            | "night"
+                            | "room"
+                            | "rain"
+                            | "humidity"
+                            | "tod"
+                            | "nights"
+                    ) => {}
+                _ => return Err(format!("option {k}")),
+            }
+        }
+        let gt = &pl.world.game_time;
+        let _ = writeln!(
+            sb,
+            "ENV tod={} nights={} mult={} delta={} gwsslu={} mpd={} dmpd={}",
+            hx(gt.time_of_day),
+            gt.nights_survived,
+            hx(gt.get_multiplier()),
+            hx(gt.get_time_delta()),
+            hx(gt.get_game_world_seconds_since_last_update()),
+            hx(gt.minutes_per_day),
+            hx(gt.get_delta_minutes_per_day())
+        );
+        let _ = write!(sb, "SANDBOX");
+        for name in [
+            "Nutrition",
+            "InjurySeverity",
+            "StatsDecrease",
+            "ZombieLore.Mortality",
+            "ZombieLore.Transmission",
+            "MuscleStrainFactor",
+            "WoundInfectionFactor",
+            "DecayingCorpseHealthImpact",
+            "EndRegen",
+            "BoneFracture",
+            "ClothingDegradation",
+        ] {
+            let i = pl
+                .world
+                .sandbox
+                .get_option_by_name(name)
+                .ok_or_else(|| format!("sandbox option {name}"))?;
+            let _ = write!(sb, " {name}={}", pl.world.sandbox.value_as_string(i));
+        }
+        sb.push('\n');
+        let sq = pl.ch.current_square;
+        let _ = writeln!(
+            sb,
+            "FACTS inroom={} z={} hydro={} capw={} maxw={} lastsq={} vehicle={} building={} toxic={} sleepblock={} allasleep={} instance={} heatsources=0 airtemp={} airwind={} windchill={} fitnessperk={} strperk={} hours={:x} corpses={} cdm={} mwbase={} mwdelta={} roof={} health={} allowsprint={} movespeed={} rain={} humidity={}",
+            u8::from(sq.is_some_and(|s| s.in_room)),
+            sq.map_or(0, |s| s.z),
+            u8::from(pl.world.hydro_power_on),
+            hx(pl.ch.capacity_weight),
+            pl.ch.max_weight,
+            if pl.ch.last_square_same { "same" } else { "null" },
+            u8::from(pl.ch.vehicle_inside_temperature.is_some()),
+            u8::from(pl.ch.in_building),
+            u8::from(pl.ch.in_toxic_building),
+            u8::from(pl.ch.sleep_blocked),
+            u8::from(pl.ch.all_players_asleep),
+            u8::from(pl.ch.is_local_instance),
+            hx(pl.ch.air_temperature_for_character(&pl.world, false)),
+            hx(pl.ch.air_temperature_for_character(&pl.world, true)),
+            hx(pl.ch.wind_chill_amount(&pl.world)),
+            pl.ch.perk_fitness,
+            pl.ch.perk_strength,
+            pl.ch.hours_survived.to_bits(),
+            pl.ch.corpse_count,
+            hx(pl.ch.clothing_discomfort_modifier),
+            pl.ch.max_weight_base,
+            hx(pl.ch.max_weight_delta),
+            u8::from(sq.is_some_and(|s| s.have_roof)),
+            hx(pl.ch.health),
+            u8::from(pl.ch.allow_sprint),
+            hx(pl.ch.move_speed),
+            hx(pl.world.climate.get_rain_intensity()),
+            hx(pl.world.climate.get_humidity())
+        );
+        for n in 1..=ticks {
+            for r in &run {
+                match *r {
+                    "nutrition" => pl.update_nutrition(),
+                    "calc" => pl.calculate_stats()?,
+                    "moodles" => pl.update_moodles()?,
+                    "body" => pl.update_body()?,
+                    _ => return Err(format!("run {r}")),
+                }
+            }
+            if n <= 3 || n % every == 0 || n == ticks {
+                let _ = write!(sb, "TICK {n}");
+                for sec in &show {
+                    match *sec {
+                        "stats" => {
+                            sb.push_str(" stats");
+                            for st in ALL_STATS {
+                                let _ = write!(sb, " {}", hx(pl.stats.get(st)));
+                            }
+                        }
+                        "nut" => {
+                            let nu = &pl.nutrition;
+                            let _ = write!(
+                                sb,
+                                " nut {} {} {} {} {:x} {}{}{} {} {} {}",
+                                hx(nu.calories),
+                                hx(nu.proteins),
+                                hx(nu.lipids),
+                                hx(nu.carbohydrates),
+                                nu.weight.to_bits(),
+                                u8::from(nu.inc_weight),
+                                u8::from(nu.inc_weight_lot),
+                                u8::from(nu.dec_weight),
+                                nu.updated_weight,
+                                hx(nu.calories_max),
+                                hx(nu.calories_min)
+                            );
+                        }
+                        "moodles" => {
+                            sb.push_str(" moodles");
+                            for t in ALL_MOODLE_TYPES {
+                                let m = &pl.moodles.moodles[t as usize];
+                                let _ = write!(sb, " {}", m.level);
+                                if matches!(
+                                    t,
+                                    zomboid_engine::zombie::scripting::objects::moodle_type::MoodleType::Hyperthermia
+                                        | zomboid_engine::zombie::scripting::objects::moodle_type::MoodleType::Hypothermia
+                                ) {
+                                    let _ = write!(
+                                        sb,
+                                        "/{}{}{}",
+                                        m.chevron_count,
+                                        u8::from(m.chevron_is_up),
+                                        m.chevron_color as u8
+                                    );
+                                }
+                            }
+                        }
+                        "traits" => {
+                            sb.push_str(" traits");
+                            for t in &pl.ch.traits.known_traits {
+                                let _ = write!(sb, " {t}");
+                            }
+                        }
+                        "draws" => {
+                            let _ = write!(sb, " draws={}", pl.world.rand.id());
+                        }
+                        "thermo" => {
+                            let t = pl
+                                .body
+                                .thermoregulator
+                                .as_mut()
+                                .ok_or("no thermoregulator")?;
+                            sb.push_str(" thermo");
+                            for name in THERMO_FIELDS {
+                                let _ = write!(sb, " {}", thermo_field(t, name)?.show());
+                            }
+                            for n in t.nodes.values_mut() {
+                                sb.push_str(" |");
+                                for name in NODE_FIELDS {
+                                    let _ = write!(sb, " {}", node_field(n, name)?.show());
+                                }
+                            }
+                        }
+                        "parts" => {
+                            sb.push_str(" parts");
+                            let sev = pl.world.sandbox_int("InjurySeverity");
+                            for part in &mut pl.body.body_parts {
+                                let _ = write!(sb, " | {}", hx(part.get_pain(sev)));
+                                for name in PART_FIELDS {
+                                    let _ = write!(sb, " {}", part_field(part, name)?.show());
+                                }
+                            }
+                        }
+                        "bodyst" => {
+                            sb.push_str(" bodyst");
+                            for name in BODY_FIELDS {
+                                let _ = write!(sb, " {}", body_field(&mut pl.body, name)?.show());
+                            }
+                            sb.push_str(" |");
+                            for name in CHAR_FIELDS {
+                                let _ = write!(sb, " {}", char_field(&mut pl.ch, name)?.show());
+                            }
+                        }
+                        _ => return Err(format!("show {sec}")),
+                    }
+                }
+                sb.push('\n');
+            }
+        }
+    }
+    Ok(sb)
 }
 
 /// The chunks 1034..=1035 x 1458..=1459 of the real map as ZombieProbe loads them, with their squares' properties.

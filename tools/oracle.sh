@@ -327,6 +327,8 @@ sel xmodelscene && ai_case xmodelscene AiSceneProbe mesh x media/models_X
 # hierarchy, bind/inverse/skin matrices), every clip's keyframes, vertex arrays, elements, bounds and transforms, section digests
 sel xmodels && ai_case xmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x mesh x media/models_X
 sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x anim x media/anims_X
+# zombie.characters.BodyDamage and the stat updates of IsoGameCharacter on a headless IsoPlayer in the booted server
+sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

@@ -576,6 +576,16 @@ fn txtmodels_matches_original() {
     check("txtmodels", &[]);
 }
 
+/// zombie.characters.BodyDamage, Thermoregulator, Nutrition, Stats and Moodles of a headless player over the scenarios of
+/// tests/body_cases.txt.
+#[test]
+fn body_matches_original() {
+    // BodyProbe's scenarios: tests/body_cases.txt, shared with the `body` line of tools/oracle.sh
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = root.join("tests/body_cases.txt");
+    check("body", &[cases.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {
