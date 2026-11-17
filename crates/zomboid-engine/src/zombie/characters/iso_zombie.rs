@@ -19,7 +19,7 @@ use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{AnimEvent
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_set::AnimationSet;
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
-    AnimationVariableSlot, AnimationVariableSource,
+    AnimationVariableHandlePool, AnimationVariableSlot, AnimationVariableSource,
 };
 use crate::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
 use crate::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
@@ -116,7 +116,7 @@ pub struct ZombieAnim {
 }
 
 /// The names `IsoGameCharacter` registers anim event handlers for (`registerAnimEventListeners`).
-const ANIM_EVENT_HANDLERS: [&str; 15] = [
+pub(crate) const ANIM_EVENT_HANDLERS: [&str; 15] = [
     "SetVariable",
     "ClearVariable",
     "PlaySound",
@@ -317,8 +317,10 @@ pub struct SpState {
     pub target: bool,
     /// `vectorToTarget`
     pub vector_to_target: Vector2,
-    /// variables set by `setVariable` that are not one of the registered callbacks, by lower-case name
-    pub plain_vars: std::collections::HashMap<String, AnimationVariableSlot>,
+    /// the slots `setVariable` made that are not one of the registered callbacks (and the two plain registered ones)
+    pub plain: AnimationVariableSource,
+    /// the handle pool the plain slots are named by
+    pub pool: AnimationVariableHandlePool,
     /// `animPlayer`, made by the first `getAnimationPlayer()` (the first animation update frame)
     pub anim_player: Option<AnimationPlayer>,
     /// `isMoving`
@@ -336,6 +338,12 @@ pub struct SpState {
     pub alerted: bool,
     pub lunge_timer: f32,
     pub target_seen_time: f32,
+    /// `StateMachine.previousState`
+    pub previous_state: Option<ZombieState>,
+    /// `getActionContext().peekPreviousStateName()` as of the last change of the action states
+    pub previous_action_state: String,
+    /// `walkVariantUse`
+    pub walk_variant_use: Option<String>,
     /// `lastTargetSeenX` (-1: none)
     pub last_target_seen_x: i32,
     /// `attackOutcome`, `attackDidDamage`
@@ -352,7 +360,8 @@ impl Default for SpState {
             enabled: false,
             target: false,
             vector_to_target: Vector2::default(),
-            plain_vars: std::collections::HashMap::new(),
+            plain: AnimationVariableSource::default(),
+            pool: AnimationVariableHandlePool::default(),
             anim_player: None,
             is_moving: false,
             is_turning: false,
@@ -365,6 +374,9 @@ impl Default for SpState {
             alerted: false,
             lunge_timer: 0.0,
             target_seen_time: 0.0,
+            previous_state: None,
+            previous_action_state: "idle".to_string(),
+            walk_variant_use: None,
             last_target_seen_x: -1,
             attack_outcome: String::new(),
             attack_did_damage: false,
@@ -449,6 +461,12 @@ impl IsoZombie {
                 ..SpState::default()
             },
         };
+        if z.sp.enabled {
+            // `this.setVariable("bGetUpFromKnees", false)`, `("bGetUpFromProne", false)`: plain slots
+            let sp = &mut z.sp;
+            sp.plain.set_variable_bool(&mut sp.pool, "bGetUpFromKnees", false);
+            sp.plain.set_variable_bool(&mut sp.pool, "bGetUpFromProne", false);
+        }
         z.init_sprite_parts_zombie(world);
         for t in &mut z.tint {
             *t = 0.95 + world.rand.next(5) as f32 / 100.0;
@@ -754,7 +772,7 @@ impl IsoZombie {
     }
 
     /// zombie.characters.IsoZombie.damageSheetRope: `Rand.Next(30) == 0` then the square's climb-sheet flags.
-    fn damage_sheet_rope(
+    pub(crate) fn damage_sheet_rope(
         &mut self,
         world: &mut ZombieWorld,
         squares: &dyn GetSquare,
@@ -893,15 +911,35 @@ impl IsoZombie {
     }
 
     /// zombie.ai.states.ZombieIdleState.enter
-    fn idle_enter(&mut self, world: &mut ZombieWorld) {
+    pub(crate) fn idle_enter(&mut self, world: &mut ZombieWorld) {
         self.movex = 0.0;
         self.movey = 0.0;
         self.character.moving.state_event_delay_timer = pick_random_wander_interval(world);
         self.idle_tick_count = 0;
     }
 
-    /// zombie.ai.states.ZombieIdleState.execute, without `Core.lastStand`, a target, a useless or indoor zombie.
+    /// zombie.ai.states.ZombieIdleState.execute, without `Core.lastStand`, a useless or indoor zombie.
     fn idle_execute(&mut self, world: &mut ZombieWorld, squares: &dyn GetSquare) {
+        // the server's world has no player and no variables: `pathToAux` changes nothing visible there
+        let _ = self.idle_execute_in(world, squares, None);
+    }
+
+    /// ZombieIdleState.execute of the single-player zombie: as the server's, and `pathToLocation` goes on to
+    /// `pathToAux`, which sets `bPathfind` and `bMoving` from the line to the goal.
+    pub(crate) fn idle_execute_sp(
+        &mut self,
+        world: &mut ZombieWorld,
+        rd: &super::iso_zombie_sp::SpRead,
+    ) -> Result<(), String> {
+        self.idle_execute_in(world, rd.squares, Some(rd))
+    }
+
+    fn idle_execute_in(
+        &mut self,
+        world: &mut ZombieWorld,
+        squares: &dyn GetSquare,
+        rd: Option<&super::iso_zombie_sp::SpRead>,
+    ) -> Result<(), String> {
         self.movex = 0.0;
         self.movey = 0.0;
         // `if (!zombie.isReanimatedForGrappleOnly()) zombie.setOnFloor(zombie.crawling)`
@@ -923,16 +961,24 @@ impl IsoZombie {
             let x = sx + world.rand.next(8) - 4;
             let y = sy + world.rand.next(8) - 4;
             if let Some(sq) = squares.get_grid_square(x, y, sz) {
-                // the zombie stands in its own square's movingObjects, and nothing else does
+                // the zombie stands in its own square's movingObjects (and the player in his)
                 let own = x == sx && y == sy;
-                if sq.is_free(true, own) {
-                    // IsoGameCharacter.pathToLocation: PathFindBehavior2.pathToLocation, then pathToAux (the polygonal
-                    // map's lineClearCollide, setMoving and the bPathfind variable: NOT PORTED, UNKNOWN)
+                let player_here = rd.is_some_and(|rd| {
+                    pz_math::fastfloor(rd.world.player.x) == x
+                        && pz_math::fastfloor(rd.world.player.y) == y
+                        && pz_math::fastfloor(rd.world.player.z) == sz
+                });
+                if sq.is_free(true, own || player_here) {
+                    // IsoGameCharacter.pathToLocation: PathFindBehavior2.pathToLocation, then pathToAux
                     self.path.path_to_location((px, py, pz), x, y, sz);
+                    if let Some(rd) = rd {
+                        self.path_to_aux(x as f32 + 0.5f32, y as f32 + 0.5f32, sz as f32, rd)?;
+                    }
                     self.allow_repath_delay = 200.0;
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -947,7 +993,7 @@ fn pick_random_wander_interval(world: &mut ZombieWorld) -> f32 {
 
 /// zombie.GameTime.isZombieInactivityPhase: `!isZombieActivityPhase()`. With `ActiveOnly` "both" (1) the zombies are
 /// always active; the day and night options need the climate's dawn and dusk, which this port does not feed in yet.
-fn zombie_inactivity_phase(lore: &Lore) -> Result<bool, String> {
+pub(crate) fn zombie_inactivity_phase(lore: &Lore) -> Result<bool, String> {
     if lore.active_only == 1 {
         Ok(false)
     } else {
