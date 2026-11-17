@@ -44,6 +44,23 @@ const golden = expected.length, parityKinds = actual.length;
 const tests = execFileSync("cargo", ["test", "--release", "-p", "zomboid-lua", "-p", "zomboid-content", "-p", "zomboid-client", "-p", "zomboid-ctl"], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const passed = [...tests.matchAll(/test result: ok\. (\d+) passed/g)].reduce((s, x) => s + +x[1], 0);
 
+// ---- method coverage of the gameplay packages, from docs/CLASS_LEDGER.md (regenerate it first: node tools/class_ledger.mjs) ----
+// A method counts as cited when a Rust doc comment names it, so this is an UPPER bound of what is reproduced: the evidence
+// that a cited method behaves like the original is the oracle cases listed in docs/COMPATIBILITY.md.
+const GAMEPLAY_PACKAGES = new Set([
+  "zombie", "zombie.iso", "zombie.characters", "zombie.entity", "zombie.inventory", "zombie.vehicles", "zombie.randomizedWorld",
+  "zombie.pathfind", "zombie.ai", "zombie.erosion", "zombie.radio", "zombie.popman", "zombie.globalObjects", "zombie.combat",
+  "zombie.seating", "zombie.buildingRooms", "zombie.fireFighting", "zombie.basements", "zombie.vispoly", "zombie.viewCone",
+  "zombie.seams", "zombie.world", "zombie.sandbox",
+]);
+const ledgerLines = fs.readFileSync(path.join(repo, "docs", "CLASS_LEDGER.md"), "utf8").split("\n");
+const ledgerHead = ledgerLines.findIndex((l) => l.startsWith("| Package |"));
+let simCited = 0, simMethods = 0;
+for (let i = ledgerHead + 2; i < ledgerLines.length && ledgerLines[i].startsWith("|"); i++) {
+  const c = ledgerLines[i].split("|").map((x) => x.trim());
+  if (GAMEPLAY_PACKAGES.has(c[1])) { simMethods += +c[4]; simCited += +c[5].match(/^(\d+)/)[1]; }
+}
+
 const FAMILIES = [
   ["maps: lotheader (with rooms)", true], ["maps: lotpack (chunks)", true], ["texture packs (.pack)", true], ["tile definitions", true],
   ["item scripts and blocks", true], ["translations", true], ["map zones (objects.lua)", true], ["save: players.db", true],
@@ -64,9 +81,9 @@ const areas = [
     score: Math.max(0, 1 - d1 / 60) * 0.5,
     how: "frame similarity to the game, 1 - (diff/60), times 0.5: lighting, characters, weather and animation are not there yet",
     facts: [`frame 1 difference from the game: ${d1} of 255`, `frame 2 difference: ${d2} of 255 (lighting factor was also checked on this frame)`, `before the visibility mask: ${d0} of 255`] },
-  { id: "sim", name: "Gameplay and zombies", weight: 25, measured: false, score: 0.03,
-    how: "author estimate: a 30 Hz step, movement and collision exist in simplified form; zombies are placeholders with invented parameters",
-    facts: ["26 cardinal, 32,768 diagonal, 256 water, 256 water-window, 4,096 window-flag, 8,192 mixed-solid and 9,216 adjacent-window static cases checked against the original", "a real water square at (1, 4803, 0) checked through loaded scene collision; no original walk trace", "continuous player movement, sliding, doors, window objects and stairs: incomplete", "fishing trash abundance: 75 selected original Java results and six from an isolated real save match; seeded RNG and selected Lua fishing action, chum abundance and lure selection cases match original under controlled conditions; natural fish zones and full gameplay incomplete", "zombies: placeholder", "inventory, crafting, skills, health: none"] },
+  { id: "sim", name: "Gameplay and zombies", weight: 25, measured: false, score: simCited / simMethods,
+    how: `share of the method names of the gameplay packages (iso, characters, inventory, vehicles, entity, ai, pathfind, erosion, radio, popman and the like) that a Rust doc comment cites: ${simCited} of ${simMethods}. An upper bound, because a cited method is not proof of parity (the evidence is the oracle cases in docs/COMPATIBILITY.md).`,
+    facts: [`ported by direct port and compared with the original: zombie construction and the idle tick, ActionContext and the animator, the player's body and needs (BodyDamage, Thermoregulator, Moodles), loot generation, erosion, radio`, `not yet: zombie targeting and attack (E62 in progress), pathfinding beyond the first steps, the player's actions and inventory, vehicles in motion, world cell loading`, "26 cardinal, 32,768 diagonal, 256 water, 256 water-window, 4,096 window-flag, 8,192 mixed-solid and 9,216 adjacent-window static cases checked against the original", "a real water square at (1, 4803, 0) checked through loaded scene collision; no original walk trace", "continuous player movement, sliding, doors, window objects and stairs: incomplete", "fishing trash abundance: 75 selected original Java results and six from an isolated real save match; seeded RNG and selected Lua fishing action, chum abundance and lure selection cases match original under controlled conditions; natural fish zones and full gameplay incomplete", "zombies: placeholder", "inventory, crafting, skills, health: none"] },
   { id: "saves", name: "Saves", weight: 5, measured: false, score: 0.1,
     how: "author estimate: player position and selected time fields are read; most save state and writing are missing",
     facts: ["player position and floor drive window and offscreen camera; a synthetic live-WAL test verifies committed player coordinates", "saved time and day length initialize a partial World clock; controlled clock state and event-signal traces match selected original cases; explicitly loaded Lua handlers receive clock events; game APIs and save writing remain incomplete"] },
