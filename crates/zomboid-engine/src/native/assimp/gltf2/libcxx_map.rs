@@ -42,7 +42,7 @@ fn next_prime(n: usize) -> usize {
         let mut prime = true;
         let mut d = 2;
         while d * d <= p {
-            if p % d == 0 {
+            if p.is_multiple_of(d) {
                 prime = false;
                 break;
             }

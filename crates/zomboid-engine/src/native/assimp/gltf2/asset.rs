@@ -306,457 +306,10 @@ fn index_in(len: usize, what: &str, i: u32) -> R<usize> {
 }
 
 impl Asset {
-    /// `Asset::Load` for a binary container: every dictionary of the document in the order the library reads it.
+    /// `Asset::Load` for a binary container: the objects of the document, loaded lazily in the order the library
+    /// retrieves them (see [`Loader`]).
     pub fn load(doc: &Json, body: &[u8]) -> R<Asset> {
-        let mut a = Asset::default();
-        let version = doc
-            .get("asset")
-            .and_then(|x| x.get("version"))
-            .and_then(Json::as_str);
-        match version {
-            Some(v) if v.starts_with('2') => {}
-            Some(_) => return Err("GLTF: Unsupported glTF version".to_string()),
-            None => return Err("GLTF: Missing asset.version".to_string()),
-        }
-        if let Some(req) = doc.get("extensionsRequired").and_then(Json::as_array) {
-            if !req.is_empty() {
-                return unported("extensionsRequired");
-            }
-        }
-        if let Some(used) = doc.get("extensionsUsed").and_then(Json::as_array) {
-            if !used.is_empty() {
-                return unported("extensionsUsed");
-            }
-        }
-        a.read_buffers(doc, body)?;
-        a.read_buffer_views(doc)?;
-        a.read_accessors(doc)?;
-        a.read_images(doc)?;
-        a.read_samplers(doc);
-        a.read_textures(doc)?;
-        a.read_materials(doc)?;
-        a.read_meshes(doc)?;
-        a.read_skins(doc)?;
-        a.read_nodes(doc)?;
-        a.read_animations(doc)?;
-        a.read_scene(doc)?;
-        Ok(a)
-    }
-
-    /// `Buffer::Read`: the buffer without a URI is the binary chunk (`byteLength` bytes of it).
-    fn read_buffers(&mut self, doc: &Json, body: &[u8]) -> R<()> {
-        for (i, b) in dict(doc, "buffers").iter().enumerate() {
-            let byte_length = uint_member(b, "byteLength")
-                .ok_or_else(|| "GLTF: Buffer without byteLength".to_string())?
-                as usize;
-            if b.get("uri").is_some() {
-                return unported("a buffer with a URI");
-            }
-            if i != 0 {
-                return unported("a second buffer without a URI");
-            }
-            if byte_length > body.len() {
-                return Err(format!(
-                    "GLTF: Buffer \"buffers[{i}]\" length {byte_length} exceeds the binary chunk of {} bytes",
-                    body.len()
-                ));
-            }
-            self.buffers.push(body[..byte_length].to_vec());
-        }
-        Ok(())
-    }
-
-    /// `BufferView::Read`
-    fn read_buffer_views(&mut self, doc: &Json) -> R<()> {
-        for v in dict(doc, "bufferViews") {
-            let buffer = index_in(
-                self.buffers.len(),
-                "buffers",
-                uint_member(v, "buffer")
-                    .ok_or_else(|| "GLTF: bufferView without buffer".to_string())?,
-            )?;
-            self.buffer_views.push(BufferView {
-                buffer,
-                byte_offset: uint_member(v, "byteOffset").unwrap_or(0) as usize,
-                byte_length: uint_member(v, "byteLength").unwrap_or(0) as usize,
-                byte_stride: uint_member(v, "byteStride").unwrap_or(0) as usize,
-            });
-        }
-        Ok(())
-    }
-
-    /// `Accessor::Read` (without the sparse part)
-    fn read_accessors(&mut self, doc: &Json) -> R<()> {
-        for (i, v) in dict(doc, "accessors").iter().enumerate() {
-            if v.get("sparse").is_some() {
-                return unported("a sparse accessor");
-            }
-            let buffer_view = match uint_member(v, "bufferView") {
-                Some(bv) => Some(index_in(self.buffer_views.len(), "bufferViews", bv)?),
-                None => None,
-            };
-            let ty = string_member(v, "type");
-            if num_components(&ty).is_none() {
-                return Err(format!("GLTF: Unknown accessor type \"{ty}\""));
-            }
-            self.accessors.push(Accessor {
-                id: format!("accessors[{i}]"),
-                name: string_member(v, "name"),
-                buffer_view,
-                byte_offset: uint_member(v, "byteOffset").unwrap_or(0) as usize,
-                component_type: uint_member(v, "componentType")
-                    .ok_or_else(|| "GLTF: accessor without componentType".to_string())?,
-                count: uint_member(v, "count")
-                    .ok_or_else(|| "GLTF: accessor without count".to_string())?
-                    as usize,
-                ty,
-            });
-        }
-        Ok(())
-    }
-
-    /// `Image::Read`: a buffer view image is embedded; a plain URI names an external file.
-    fn read_images(&mut self, doc: &Json) -> R<()> {
-        for v in dict(doc, "images") {
-            let uri = v.get("uri").and_then(Json::as_str).map(str::to_string);
-            if uri.as_deref().is_some_and(|u| u.starts_with("data:")) {
-                return unported("an image with a data URI");
-            }
-            let buffer_view = match uint_member(v, "bufferView") {
-                Some(bv) => Some(index_in(self.buffer_views.len(), "bufferViews", bv)?),
-                None => None,
-            };
-            if uri.is_none() && buffer_view.is_none() {
-                return Err("GLTF: image without data".to_string());
-            }
-            self.images.push(Image { uri, buffer_view });
-        }
-        Ok(())
-    }
-
-    /// `Sampler::Read`
-    fn read_samplers(&mut self, doc: &Json) {
-        for (i, v) in dict(doc, "samplers").iter().enumerate() {
-            self.samplers.push(Sampler {
-                id: format!("samplers[{i}]"),
-                name: string_member(v, "name"),
-                mag_filter: uint_member(v, "magFilter"),
-                min_filter: uint_member(v, "minFilter"),
-                wrap_s: uint_member(v, "wrapS"),
-                wrap_t: uint_member(v, "wrapT"),
-            });
-        }
-    }
-
-    /// `Texture::Read`
-    fn read_textures(&mut self, doc: &Json) -> R<()> {
-        for v in dict(doc, "textures") {
-            let sampler = match uint_member(v, "sampler") {
-                Some(s) => Some(index_in(self.samplers.len(), "samplers", s)?),
-                None => None,
-            };
-            let source = match uint_member(v, "source") {
-                Some(s) => Some(index_in(self.images.len(), "images", s)?),
-                None => None,
-            };
-            self.textures.push(Texture { sampler, source });
-        }
-        Ok(())
-    }
-
-    fn texture_info(&self, info: &Json) -> R<TextureInfo> {
-        for (k, _) in info.as_object().unwrap_or(&[]) {
-            if k != "index" && k != "texCoord" {
-                return unported(&format!("texture info member \"{k}\""));
-            }
-        }
-        let index = index_in(
-            self.textures.len(),
-            "textures",
-            uint_member(info, "index")
-                .ok_or_else(|| "GLTF: texture info without index".to_string())?,
-        )?;
-        Ok(TextureInfo {
-            index,
-            tex_coord: uint_member(info, "texCoord").unwrap_or(0),
-        })
-    }
-
-    /// `Material::Read` (`pbrMetallicRoughness`, `emissiveFactor`, `doubleSided`, `alphaMode`, `alphaCutoff`)
-    fn read_materials(&mut self, doc: &Json) -> R<()> {
-        for v in dict(doc, "materials") {
-            let mut m = Material {
-                name: string_member(v, "name"),
-                ..Material::default()
-            };
-            for (k, _) in v.as_object().unwrap_or(&[]) {
-                match k.as_str() {
-                    "name"
-                    | "pbrMetallicRoughness"
-                    | "emissiveFactor"
-                    | "doubleSided"
-                    | "alphaMode"
-                    | "alphaCutoff" => {}
-                    other => return unported(&format!("material member \"{other}\"")),
-                }
-            }
-            if let Some(f) = float_array::<3>(v, "emissiveFactor") {
-                m.emissive_factor = f;
-            }
-            if let Some(b) = v.get("doubleSided").and_then(Json::as_bool) {
-                m.double_sided = b;
-            }
-            if let Some(s) = v.get("alphaMode").and_then(Json::as_str) {
-                m.alpha_mode = s.to_string();
-            }
-            if let Some(f) = v.get("alphaCutoff").and_then(Json::as_f32) {
-                m.alpha_cutoff = f;
-            }
-            if let Some(pbr) = v.get("pbrMetallicRoughness") {
-                for (k, _) in pbr.as_object().unwrap_or(&[]) {
-                    match k.as_str() {
-                        "baseColorFactor" | "baseColorTexture" | "metallicFactor"
-                        | "roughnessFactor" => {}
-                        other => {
-                            return unported(&format!("pbrMetallicRoughness member \"{other}\""))
-                        }
-                    }
-                }
-                if let Some(f) = float_array::<4>(pbr, "baseColorFactor") {
-                    m.base_color_factor = f;
-                }
-                if let Some(f) = pbr.get("metallicFactor").and_then(Json::as_f32) {
-                    m.metallic_factor = f;
-                }
-                if let Some(f) = pbr.get("roughnessFactor").and_then(Json::as_f32) {
-                    m.roughness_factor = f;
-                }
-                if let Some(t) = pbr.get("baseColorTexture") {
-                    m.base_color_texture = Some(self.texture_info(t)?);
-                }
-            }
-            self.materials.push(m);
-        }
-        Ok(())
-    }
-
-    /// `Mesh::Read`: the primitives with their attribute lists (`GetAttribVector`).
-    fn read_meshes(&mut self, doc: &Json) -> R<()> {
-        for (i, v) in dict(doc, "meshes").iter().enumerate() {
-            let mut mesh = Mesh {
-                id: format!("meshes[{i}]"),
-                name: string_member(v, "name"),
-                primitives: Vec::new(),
-            };
-            for k in ["weights", "extensions"] {
-                if v.get(k).is_some() {
-                    return unported(&format!("mesh member \"{k}\""));
-                }
-            }
-            for p in v.get("primitives").and_then(Json::as_array).unwrap_or(&[]) {
-                for k in ["targets", "extensions"] {
-                    if p.get(k).is_some() {
-                        return unported(&format!("primitive member \"{k}\" (morph targets)"));
-                    }
-                }
-                let mut prim = Primitive {
-                    mode: uint_member(p, "mode").unwrap_or(4),
-                    attributes: Attributes::default(),
-                    indices: None,
-                    material: None,
-                };
-                if let Some(attrs) = p.get("attributes").and_then(Json::as_object) {
-                    for (name, value) in attrs {
-                        let (list, prefix) = match prim.attributes.list_for(name) {
-                            Some(x) => x,
-                            None => continue,
-                        };
-                        let idx = if name.as_bytes().get(prefix) == Some(&b'_') {
-                            name[prefix + 1..]
-                                .bytes()
-                                .take_while(u8::is_ascii_digit)
-                                .fold(0usize, |a, b| a * 10 + usize::from(b - b'0'))
-                        } else {
-                            0
-                        };
-                        let acc = index_in(
-                            self.accessors.len(),
-                            "accessors",
-                            value.as_uint().ok_or_else(|| {
-                                format!("GLTF: attribute {name} is not an accessor index")
-                            })?,
-                        )?;
-                        if list.len() <= idx {
-                            list.resize(idx + 1, None);
-                        }
-                        list[idx] = Some(acc);
-                    }
-                }
-                if let Some(i) = uint_member(p, "indices") {
-                    prim.indices = Some(index_in(self.accessors.len(), "accessors", i)?);
-                }
-                if let Some(m) = uint_member(p, "material") {
-                    // the materials are read after the accessors but before the meshes
-                    prim.material = Some(index_in(self.materials.len(), "materials", m)?);
-                }
-                mesh.primitives.push(prim);
-            }
-            self.meshes.push(mesh);
-        }
-        Ok(())
-    }
-
-    /// `Skin::Read`
-    fn read_skins(&mut self, doc: &Json) -> R<()> {
-        let n_nodes = dict(doc, "nodes").len();
-        for v in dict(doc, "skins") {
-            for k in ["skeleton", "extensions"] {
-                if v.get(k).is_some() {
-                    return unported(&format!("skin member \"{k}\""));
-                }
-            }
-            let inverse_bind_matrices = match uint_member(v, "inverseBindMatrices") {
-                Some(a) => Some(index_in(self.accessors.len(), "accessors", a)?),
-                None => None,
-            };
-            let mut joints = Vec::new();
-            for j in v.get("joints").and_then(Json::as_array).unwrap_or(&[]) {
-                joints.push(index_in(
-                    n_nodes,
-                    "nodes",
-                    j.as_uint()
-                        .ok_or_else(|| "GLTF: joint is not a node index".to_string())?,
-                )?);
-            }
-            self.skins.push(Skin {
-                inverse_bind_matrices,
-                joints,
-            });
-        }
-        Ok(())
-    }
-
-    /// `Node::Read`
-    fn read_nodes(&mut self, doc: &Json) -> R<()> {
-        let nodes = dict(doc, "nodes");
-        for (i, v) in nodes.iter().enumerate() {
-            for k in ["camera", "extensions", "weights"] {
-                if v.get(k).is_some() {
-                    return unported(&format!("node member \"{k}\""));
-                }
-            }
-            let mut children = Vec::new();
-            for c in v.get("children").and_then(Json::as_array).unwrap_or(&[]) {
-                children.push(index_in(
-                    nodes.len(),
-                    "nodes",
-                    c.as_uint()
-                        .ok_or_else(|| "GLTF: child is not a node index".to_string())?,
-                )?);
-            }
-            let mut meshes = Vec::new();
-            if let Some(m) = uint_member(v, "mesh") {
-                meshes.push(index_in(self.meshes.len(), "meshes", m)?);
-            }
-            let skin = match uint_member(v, "skin") {
-                Some(s) => Some(index_in(self.skins.len(), "skins", s)?),
-                None => None,
-            };
-            self.nodes.push(Node {
-                id: format!("nodes[{i}]"),
-                name: string_member(v, "name"),
-                children,
-                meshes,
-                skin,
-                matrix: float_array::<16>(v, "matrix"),
-                translation: float_array::<3>(v, "translation"),
-                rotation: float_array::<4>(v, "rotation"),
-                scale: float_array::<3>(v, "scale"),
-            });
-        }
-        Ok(())
-    }
-
-    /// `Animation::Read`
-    fn read_animations(&mut self, doc: &Json) -> R<()> {
-        for v in dict(doc, "animations") {
-            let mut anim = Animation {
-                name: string_member(v, "name"),
-                samplers: Vec::new(),
-                channels: Vec::new(),
-            };
-            for s in v.get("samplers").and_then(Json::as_array).unwrap_or(&[]) {
-                let access = |key: &str| -> R<Option<usize>> {
-                    match uint_member(s, key) {
-                        Some(a) => Ok(Some(index_in(self.accessors.len(), "accessors", a)?)),
-                        None => Ok(None),
-                    }
-                };
-                let interpolation = match s.get("interpolation").and_then(Json::as_str) {
-                    None | Some("LINEAR") => Interpolation::Linear,
-                    Some("STEP") => Interpolation::Step,
-                    Some("CUBICSPLINE") => Interpolation::CubicSpline,
-                    Some(other) => return Err(format!("GLTF: unknown interpolation \"{other}\"")),
-                };
-                anim.samplers.push(AnimSampler {
-                    input: access("input")?,
-                    output: access("output")?,
-                    interpolation,
-                });
-            }
-            for c in v.get("channels").and_then(Json::as_array).unwrap_or(&[]) {
-                let target = c
-                    .get("target")
-                    .ok_or_else(|| "GLTF: animation channel without target".to_string())?;
-                let Some(node) = uint_member(target, "node") else {
-                    return unported("an animation channel target without a node");
-                };
-                let path = match target.get("path").and_then(Json::as_str) {
-                    Some("translation") => Path::Translation,
-                    Some("rotation") => Path::Rotation,
-                    Some("scale") => Path::Scale,
-                    Some("weights") => Path::Weights,
-                    _ => return Err("GLTF: unknown animation channel path".to_string()),
-                };
-                anim.channels.push(Channel {
-                    sampler: c
-                        .get("sampler")
-                        .and_then(Json::as_int)
-                        .map_or(-1, i64::from),
-                    node: index_in(self.nodes.len(), "nodes", node)?,
-                    path,
-                });
-            }
-            self.animations.push(anim);
-        }
-        Ok(())
-    }
-
-    /// `Asset::Load`: the default scene (`"scene"`, or the first one) and its root nodes.
-    fn read_scene(&mut self, doc: &Json) -> R<()> {
-        let scenes = dict(doc, "scenes");
-        let which = match doc.get("scene").and_then(Json::as_uint) {
-            Some(i) => Some(index_in(scenes.len(), "scenes", i)?),
-            None if !scenes.is_empty() => Some(0),
-            None => None,
-        };
-        if let Some(i) = which {
-            let mut roots = Vec::new();
-            for n in scenes[i]
-                .get("nodes")
-                .and_then(Json::as_array)
-                .unwrap_or(&[])
-            {
-                roots.push(index_in(
-                    self.nodes.len(),
-                    "nodes",
-                    n.as_uint()
-                        .ok_or_else(|| "GLTF: scene node is not an index".to_string())?,
-                )?);
-            }
-            self.scene_nodes = Some(roots);
-        }
-        Ok(())
+        Loader::new(doc).run(body)
     }
 
     /// `Accessor::GetStride`: the buffer view's `byteStride`, else the size of one element.
@@ -909,4 +462,515 @@ impl Attributes {
 /// Parse the JSON chunk of a binary glTF.
 pub fn parse_document(text: &[u8]) -> R<Json> {
     json::parse(text)
+}
+
+/// The part of `glTF2::LazyDict<T>` the importer's output depends on. A dictionary object is created when something
+/// first refers to it (`LazyDict::Retrieve`), and it is appended to the dictionary after its own `Read` returned, so
+/// a node's children and everything they refer to come before the node. `Asset::Load` starts from the default scene,
+/// then retrieves every skin and every animation. The index of an object in its dictionary (`Ref::index`) is its position
+/// in that order, not its position in the document: the aiMesh order, the material indices, the numbering of embedded
+/// textures and the keys of the `unordered_map` of `GatherSamplers` all follow it. Objects nothing refers to are never
+/// loaded.
+struct Loader<'a> {
+    doc: &'a Json,
+    asset: Asset,
+    nodes: Slots,
+    meshes: Slots,
+    materials: Slots,
+    skins: Slots,
+    textures: Slots,
+    images: Slots,
+}
+
+/// `mObjsByOIndex` of one dictionary: the document index -> the position in the loaded order (`None` while the object is
+/// being read, which only a cycle of children can observe).
+#[derive(Default)]
+struct Slots(std::collections::HashMap<usize, Option<usize>>);
+
+impl<'a> Loader<'a> {
+    fn new(doc: &'a Json) -> Self {
+        Loader {
+            doc,
+            asset: Asset::default(),
+            nodes: Slots::default(),
+            meshes: Slots::default(),
+            materials: Slots::default(),
+            skins: Slots::default(),
+            textures: Slots::default(),
+            images: Slots::default(),
+        }
+    }
+
+    /// `Asset::Load`
+    fn run(mut self, body: &[u8]) -> R<Asset> {
+        let doc = self.doc;
+        let version = doc
+            .get("asset")
+            .and_then(|x| x.get("version"))
+            .and_then(Json::as_str);
+        match version {
+            Some(v) if v.starts_with('2') => {}
+            Some(_) => return Err("GLTF: Unsupported glTF version".to_string()),
+            None => return Err("GLTF: Missing asset.version".to_string()),
+        }
+        for key in ["extensionsRequired", "extensionsUsed"] {
+            if doc
+                .get(key)
+                .and_then(Json::as_array)
+                .is_some_and(|a| !a.is_empty())
+            {
+                return unported(key);
+            }
+        }
+        self.read_buffers(body)?;
+        self.read_buffer_views()?;
+        self.read_accessors()?;
+        self.read_samplers();
+        // the default scene: its nodes, depth first
+        let scenes = dict(doc, "scenes");
+        // without a "scene" member the first scene is the default one
+        let default_scene = match doc.get("scene").and_then(Json::as_uint) {
+            Some(si) => Some(si as usize),
+            None if !scenes.is_empty() => Some(0),
+            None => None,
+        };
+        if let Some(si) = default_scene {
+            let scene = scenes
+                .get(si)
+                .ok_or_else(|| format!("GLTF: Object at index \"{si}\" is not found in scenes"))?;
+            let mut roots = Vec::new();
+            for n in scene.get("nodes").and_then(Json::as_array).unwrap_or(&[]) {
+                let Some(n) = n.as_uint() else { continue };
+                roots.push(self.node(n as usize)?);
+            }
+            self.asset.scene_nodes = Some(roots);
+        }
+        for i in 0..dict(doc, "skins").len() {
+            self.skin(i)?;
+        }
+        for i in 0..dict(doc, "animations").len() {
+            let anim = self.read_animation(&dict(doc, "animations")[i])?;
+            self.asset.animations.push(anim);
+        }
+        Ok(self.asset)
+    }
+
+    /// `Buffer::Read`: the buffer without a URI is the binary chunk (`byteLength` bytes of it).
+    fn read_buffers(&mut self, body: &[u8]) -> R<()> {
+        for (i, b) in dict(self.doc, "buffers").iter().enumerate() {
+            let byte_length = uint_member(b, "byteLength")
+                .ok_or_else(|| "GLTF: Buffer without byteLength".to_string())?
+                as usize;
+            if b.get("uri").is_some() {
+                return unported("a buffer with a URI");
+            }
+            if i != 0 {
+                return unported("a second buffer without a URI");
+            }
+            if byte_length > body.len() {
+                return Err(format!(
+                    "GLTF: Buffer \"buffers[{i}]\" length {byte_length} exceeds the binary chunk of {} bytes",
+                    body.len()
+                ));
+            }
+            self.asset.buffers.push(body[..byte_length].to_vec());
+        }
+        Ok(())
+    }
+
+    /// `BufferView::Read`
+    fn read_buffer_views(&mut self) -> R<()> {
+        for v in dict(self.doc, "bufferViews") {
+            let buffer = index_in(
+                self.asset.buffers.len(),
+                "buffers",
+                uint_member(v, "buffer")
+                    .ok_or_else(|| "GLTF: bufferView without buffer".to_string())?,
+            )?;
+            self.asset.buffer_views.push(BufferView {
+                buffer,
+                byte_offset: uint_member(v, "byteOffset").unwrap_or(0) as usize,
+                byte_length: uint_member(v, "byteLength").unwrap_or(0) as usize,
+                byte_stride: uint_member(v, "byteStride").unwrap_or(0) as usize,
+            });
+        }
+        Ok(())
+    }
+
+    /// `Accessor::Read` (without the sparse part)
+    fn read_accessors(&mut self) -> R<()> {
+        for (i, v) in dict(self.doc, "accessors").iter().enumerate() {
+            if v.get("sparse").is_some() {
+                return unported("a sparse accessor");
+            }
+            let buffer_view = match uint_member(v, "bufferView") {
+                Some(bv) => Some(index_in(self.asset.buffer_views.len(), "bufferViews", bv)?),
+                None => None,
+            };
+            let ty = string_member(v, "type");
+            if num_components(&ty).is_none() {
+                return Err(format!("GLTF: Unknown accessor type \"{ty}\""));
+            }
+            self.asset.accessors.push(Accessor {
+                id: format!("accessors[{i}]"),
+                name: string_member(v, "name"),
+                buffer_view,
+                byte_offset: uint_member(v, "byteOffset").unwrap_or(0) as usize,
+                component_type: uint_member(v, "componentType")
+                    .ok_or_else(|| "GLTF: accessor without componentType".to_string())?,
+                count: uint_member(v, "count")
+                    .ok_or_else(|| "GLTF: accessor without count".to_string())?
+                    as usize,
+                ty,
+            });
+        }
+        Ok(())
+    }
+
+    /// `Sampler::Read`
+    fn read_samplers(&mut self) {
+        for (i, v) in dict(self.doc, "samplers").iter().enumerate() {
+            self.asset.samplers.push(Sampler {
+                id: format!("samplers[{i}]"),
+                name: string_member(v, "name"),
+                mag_filter: uint_member(v, "magFilter"),
+                min_filter: uint_member(v, "minFilter"),
+                wrap_s: uint_member(v, "wrapS"),
+                wrap_t: uint_member(v, "wrapT"),
+            });
+        }
+    }
+
+    fn missing(what: &str, i: usize) -> String {
+        format!("GLTF: Object at index \"{i}\" is not found in {what}")
+    }
+
+    /// `Ref<Image> = images.Retrieve(i)`
+    fn image(&mut self, o: usize) -> R<usize> {
+        if let Some(r) = self.images.0.get(&o) {
+            return r.ok_or_else(|| "GLTF: cyclic reference".to_string());
+        }
+        let v = dict(self.doc, "images")
+            .get(o)
+            .ok_or_else(|| Self::missing("images", o))?;
+        let uri = v.get("uri").and_then(Json::as_str).map(str::to_string);
+        if uri.as_deref().is_some_and(|u| u.starts_with("data:")) {
+            return unported("an image with a data URI");
+        }
+        let buffer_view = match uint_member(v, "bufferView") {
+            Some(bv) => Some(index_in(self.asset.buffer_views.len(), "bufferViews", bv)?),
+            None => None,
+        };
+        let mime = v.get("mimeType").and_then(Json::as_str).unwrap_or("");
+        if uri.is_none() && (buffer_view.is_none() || mime.is_empty()) {
+            return Err(format!(
+                "GLTF2: images[{o}] does not have a URI, so it must have a valid bufferView and mimetype"
+            ));
+        }
+        self.asset.images.push(Image { uri, buffer_view });
+        let r = self.asset.images.len() - 1;
+        self.images.0.insert(o, Some(r));
+        Ok(r)
+    }
+
+    /// `Ref<Texture> = textures.Retrieve(i)`: `Texture::Read` retrieves the sampler and then the source image.
+    fn texture(&mut self, o: usize) -> R<usize> {
+        if let Some(r) = self.textures.0.get(&o) {
+            return r.ok_or_else(|| "GLTF: cyclic reference".to_string());
+        }
+        let v = dict(self.doc, "textures")
+            .get(o)
+            .ok_or_else(|| Self::missing("textures", o))?;
+        let sampler = match uint_member(v, "sampler") {
+            Some(s) => Some(index_in(self.asset.samplers.len(), "samplers", s)?),
+            None => None,
+        };
+        let source = match uint_member(v, "source") {
+            Some(s) => Some(self.image(s as usize)?),
+            None => None,
+        };
+        self.asset.textures.push(Texture { sampler, source });
+        let r = self.asset.textures.len() - 1;
+        self.textures.0.insert(o, Some(r));
+        Ok(r)
+    }
+
+    fn texture_info(&mut self, info: &Json) -> R<TextureInfo> {
+        for (k, _) in info.as_object().unwrap_or(&[]) {
+            if k != "index" && k != "texCoord" {
+                return unported(&format!("texture info member \"{k}\""));
+            }
+        }
+        let index = self.texture(
+            uint_member(info, "index")
+                .ok_or_else(|| "GLTF: texture info without index".to_string())?
+                as usize,
+        )?;
+        Ok(TextureInfo {
+            index,
+            tex_coord: uint_member(info, "texCoord").unwrap_or(0),
+        })
+    }
+
+    /// `Ref<Material> = materials.Retrieve(i)`: `Material::Read` (`pbrMetallicRoughness`, `emissiveFactor`,
+    /// `doubleSided`, `alphaMode`, `alphaCutoff`)
+    fn material(&mut self, o: usize) -> R<usize> {
+        if let Some(r) = self.materials.0.get(&o) {
+            return r.ok_or_else(|| "GLTF: cyclic reference".to_string());
+        }
+        let v = dict(self.doc, "materials")
+            .get(o)
+            .ok_or_else(|| Self::missing("materials", o))?;
+        let mut m = Material {
+            name: string_member(v, "name"),
+            ..Material::default()
+        };
+        for (k, _) in v.as_object().unwrap_or(&[]) {
+            match k.as_str() {
+                "name"
+                | "pbrMetallicRoughness"
+                | "emissiveFactor"
+                | "doubleSided"
+                | "alphaMode"
+                | "alphaCutoff" => {}
+                other => return unported(&format!("material member \"{other}\"")),
+            }
+        }
+        if let Some(f) = float_array::<3>(v, "emissiveFactor") {
+            m.emissive_factor = f;
+        }
+        if let Some(b) = v.get("doubleSided").and_then(Json::as_bool) {
+            m.double_sided = b;
+        }
+        if let Some(s) = v.get("alphaMode").and_then(Json::as_str) {
+            m.alpha_mode = s.to_string();
+        }
+        if let Some(f) = v.get("alphaCutoff").and_then(Json::as_f32) {
+            m.alpha_cutoff = f;
+        }
+        if let Some(pbr) = v.get("pbrMetallicRoughness") {
+            for (k, _) in pbr.as_object().unwrap_or(&[]) {
+                match k.as_str() {
+                    "baseColorFactor" | "baseColorTexture" | "metallicFactor"
+                    | "roughnessFactor" => {}
+                    other => return unported(&format!("pbrMetallicRoughness member \"{other}\"")),
+                }
+            }
+            if let Some(f) = float_array::<4>(pbr, "baseColorFactor") {
+                m.base_color_factor = f;
+            }
+            if let Some(f) = pbr.get("metallicFactor").and_then(Json::as_f32) {
+                m.metallic_factor = f;
+            }
+            if let Some(f) = pbr.get("roughnessFactor").and_then(Json::as_f32) {
+                m.roughness_factor = f;
+            }
+            if let Some(t) = pbr.get("baseColorTexture") {
+                m.base_color_texture = Some(self.texture_info(t)?);
+            }
+        }
+        self.asset.materials.push(m);
+        let r = self.asset.materials.len() - 1;
+        self.materials.0.insert(o, Some(r));
+        Ok(r)
+    }
+
+    /// `Ref<Mesh> = meshes.Retrieve(i)`: `Mesh::Read`, the primitives with their attribute lists (`GetAttribVector`).
+    fn mesh(&mut self, o: usize) -> R<usize> {
+        if let Some(r) = self.meshes.0.get(&o) {
+            return r.ok_or_else(|| "GLTF: cyclic reference".to_string());
+        }
+        let v = dict(self.doc, "meshes")
+            .get(o)
+            .ok_or_else(|| Self::missing("meshes", o))?;
+        let mut mesh = Mesh {
+            id: format!("meshes[{o}]"),
+            name: string_member(v, "name"),
+            primitives: Vec::new(),
+        };
+        for k in ["weights", "extensions"] {
+            if v.get(k).is_some() {
+                return unported(&format!("mesh member \"{k}\""));
+            }
+        }
+        for p in v.get("primitives").and_then(Json::as_array).unwrap_or(&[]) {
+            for k in ["targets", "extensions"] {
+                if p.get(k).is_some() {
+                    return unported(&format!("primitive member \"{k}\" (morph targets)"));
+                }
+            }
+            let mut prim = Primitive {
+                mode: uint_member(p, "mode").unwrap_or(4),
+                attributes: Attributes::default(),
+                indices: None,
+                material: None,
+            };
+            if let Some(attrs) = p.get("attributes").and_then(Json::as_object) {
+                for (name, value) in attrs {
+                    let Some(acc) = value.as_uint() else { continue };
+                    let Some((list, prefix)) = prim.attributes.list_for(name) else {
+                        continue;
+                    };
+                    let idx = if name.as_bytes().get(prefix) == Some(&b'_') {
+                        name[prefix + 1..]
+                            .bytes()
+                            .take_while(u8::is_ascii_digit)
+                            .fold(0usize, |a, b| a * 10 + usize::from(b - b'0'))
+                    } else {
+                        0
+                    };
+                    let acc = index_in(self.asset.accessors.len(), "accessors", acc)?;
+                    if list.len() <= idx {
+                        list.resize(idx + 1, None);
+                    }
+                    list[idx] = Some(acc);
+                }
+            }
+            if let Some(i) = uint_member(p, "indices") {
+                prim.indices = Some(index_in(self.asset.accessors.len(), "accessors", i)?);
+            }
+            if let Some(m) = uint_member(p, "material") {
+                prim.material = Some(self.material(m as usize)?);
+            }
+            mesh.primitives.push(prim);
+        }
+        self.asset.meshes.push(mesh);
+        let r = self.asset.meshes.len() - 1;
+        self.meshes.0.insert(o, Some(r));
+        Ok(r)
+    }
+
+    /// `Ref<Skin> = skins.Retrieve(i)`: `Skin::Read`, the inverse bind matrices and the joint nodes in order.
+    fn skin(&mut self, o: usize) -> R<usize> {
+        if let Some(r) = self.skins.0.get(&o) {
+            return r.ok_or_else(|| "GLTF: cyclic reference".to_string());
+        }
+        let v = dict(self.doc, "skins")
+            .get(o)
+            .ok_or_else(|| Self::missing("skins", o))?;
+        for k in ["skeleton", "extensions"] {
+            if v.get(k).is_some() {
+                return unported(&format!("skin member \"{k}\""));
+            }
+        }
+        self.skins.0.insert(o, None);
+        let inverse_bind_matrices = match uint_member(v, "inverseBindMatrices") {
+            Some(a) => Some(index_in(self.asset.accessors.len(), "accessors", a)?),
+            None => None,
+        };
+        let mut joints = Vec::new();
+        for j in v.get("joints").and_then(Json::as_array).unwrap_or(&[]) {
+            let Some(j) = j.as_uint() else { continue };
+            joints.push(self.node(j as usize)?);
+        }
+        self.asset.skins.push(Skin {
+            inverse_bind_matrices,
+            joints,
+        });
+        let r = self.asset.skins.len() - 1;
+        self.skins.0.insert(o, Some(r));
+        Ok(r)
+    }
+
+    /// `Ref<Node> = nodes.Retrieve(i)`: `Node::Read`. The children are retrieved first, then the mesh, then the skin; an
+    /// unnamed node is named after its id.
+    fn node(&mut self, o: usize) -> R<usize> {
+        if let Some(r) = self.nodes.0.get(&o) {
+            return r.ok_or_else(|| "GLTF: a node is its own ancestor".to_string());
+        }
+        let v = dict(self.doc, "nodes")
+            .get(o)
+            .ok_or_else(|| Self::missing("nodes", o))?;
+        for k in ["camera", "extensions", "weights"] {
+            if v.get(k).is_some() {
+                return unported(&format!("node member \"{k}\""));
+            }
+        }
+        self.nodes.0.insert(o, None);
+        let id = format!("nodes[{o}]");
+        let mut name = string_member(v, "name");
+        if name.is_empty() {
+            name = id.clone();
+        }
+        let mut children = Vec::new();
+        for c in v.get("children").and_then(Json::as_array).unwrap_or(&[]) {
+            let Some(c) = c.as_uint() else { continue };
+            children.push(self.node(c as usize)?);
+        }
+        let mut meshes = Vec::new();
+        if let Some(m) = uint_member(v, "mesh") {
+            meshes.push(self.mesh(m as usize)?);
+        }
+        let skin = match uint_member(v, "skin") {
+            Some(s) => Some(self.skin(s as usize)?),
+            None => None,
+        };
+        self.asset.nodes.push(Node {
+            id,
+            name,
+            children,
+            meshes,
+            skin,
+            matrix: float_array::<16>(v, "matrix"),
+            translation: float_array::<3>(v, "translation"),
+            rotation: float_array::<4>(v, "rotation"),
+            scale: float_array::<3>(v, "scale"),
+        });
+        let r = self.asset.nodes.len() - 1;
+        self.nodes.0.insert(o, Some(r));
+        Ok(r)
+    }
+
+    /// `Animation::Read`: the samplers' accessors and the target nodes of the channels (a node outside the scene is
+    /// loaded here).
+    fn read_animation(&mut self, v: &Json) -> R<Animation> {
+        let mut anim = Animation {
+            name: string_member(v, "name"),
+            samplers: Vec::new(),
+            channels: Vec::new(),
+        };
+        for s in v.get("samplers").and_then(Json::as_array).unwrap_or(&[]) {
+            let access = |this: &Self, key: &str| -> R<Option<usize>> {
+                match uint_member(s, key) {
+                    Some(a) => Ok(Some(index_in(this.asset.accessors.len(), "accessors", a)?)),
+                    None => Ok(None),
+                }
+            };
+            let interpolation = match s.get("interpolation").and_then(Json::as_str) {
+                None | Some("LINEAR") => Interpolation::Linear,
+                Some("STEP") => Interpolation::Step,
+                Some("CUBICSPLINE") => Interpolation::CubicSpline,
+                Some(other) => return Err(format!("GLTF: unknown interpolation \"{other}\"")),
+            };
+            anim.samplers.push(AnimSampler {
+                input: access(self, "input")?,
+                output: access(self, "output")?,
+                interpolation,
+            });
+        }
+        for c in v.get("channels").and_then(Json::as_array).unwrap_or(&[]) {
+            let target = c
+                .get("target")
+                .ok_or_else(|| "GLTF: animation channel without target".to_string())?;
+            let Some(node) = uint_member(target, "node") else {
+                return unported("an animation channel target without a node");
+            };
+            let path = match target.get("path").and_then(Json::as_str) {
+                Some("translation") => Path::Translation,
+                Some("rotation") => Path::Rotation,
+                Some("scale") => Path::Scale,
+                Some("weights") => Path::Weights,
+                _ => return Err("GLTF: unknown animation channel path".to_string()),
+            };
+            anim.channels.push(Channel {
+                sampler: c
+                    .get("sampler")
+                    .and_then(Json::as_int)
+                    .map_or(-1, i64::from),
+                node: self.node(node as usize)?,
+                path,
+            });
+        }
+        Ok(anim)
+    }
 }

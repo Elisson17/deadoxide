@@ -134,33 +134,34 @@ fn set_texture(
         PT_INTEGER,
         info.tex_coord.to_le_bytes().to_vec(),
     );
-    let Some(si) = tex.sampler else {
-        return unported("a texture without a sampler");
-    };
-    let sampler = &asset.samplers[si];
-    add(
-        mat,
-        "$tex.mappingname",
-        tex_type,
-        0,
-        PT_STRING,
-        ai_string(&sampler.name),
-    );
-    add(
-        mat,
-        "$tex.mappingid",
-        tex_type,
-        0,
-        PT_STRING,
-        ai_string(&sampler.id),
-    );
+    let sampler = tex.sampler.map(|si| &asset.samplers[si]);
+    if let Some(sampler) = sampler {
+        add(
+            mat,
+            "$tex.mappingname",
+            tex_type,
+            0,
+            PT_STRING,
+            ai_string(&sampler.name),
+        );
+        add(
+            mat,
+            "$tex.mappingid",
+            tex_type,
+            0,
+            PT_STRING,
+            ai_string(&sampler.id),
+        );
+    }
+    // a texture without a sampler wraps in both directions
+    let (wrap_s, wrap_t) = sampler.map_or((None, None), |s| (s.wrap_s, s.wrap_t));
     add(
         mat,
         "$tex.mapmodeu",
         tex_type,
         0,
         PT_BUFFER,
-        map_mode(sampler.wrap_s).to_le_bytes().to_vec(),
+        map_mode(wrap_s).to_le_bytes().to_vec(),
     );
     add(
         mat,
@@ -168,8 +169,11 @@ fn set_texture(
         tex_type,
         0,
         PT_BUFFER,
-        map_mode(sampler.wrap_t).to_le_bytes().to_vec(),
+        map_mode(wrap_t).to_le_bytes().to_vec(),
     );
+    let Some(sampler) = sampler else {
+        return Ok(());
+    };
     if let Some(f) = sampler.mag_filter {
         add(
             mat,
@@ -640,11 +644,8 @@ impl Importer<'_> {
         let mut bones = Vec::with_capacity(n_joints);
         for (i, &ji) in skin.joints.iter().enumerate() {
             let joint = &asset.nodes[ji];
-            let name = if joint.name.is_empty() {
-                format!("bone_{i}")
-            } else {
-                joint.name.clone()
-            };
+            // an unnamed node is named after its id when it is loaded (`Node::Read`), so the name is never empty
+            let name = joint.name.clone();
             let mut weights = std::mem::take(&mut weighting[i]);
             if weights.is_empty() {
                 weights.push(VertexWeight {
