@@ -881,12 +881,9 @@ impl<'a> Conv<'a> {
             let Kind::Cluster(cluster) = &cluster_obj.kind else {
                 continue;
             };
+            // every cluster yields a bone, also one without a single weight for this mesh
             let indices = &cluster.indices;
-            if indices.is_empty() {
-                continue;
-            }
             let mats = &geo.materials;
-            let mut ok = false;
             let mut count_out: Vec<usize> = Vec::new();
             let mut index_out: Vec<usize> = Vec::new();
             let mut out_indices: Vec<usize> = Vec::new();
@@ -913,24 +910,22 @@ impl<'a> Conv<'a> {
                         if no_mat_check {
                             out_indices.push(out_idx_v);
                         } else {
-                            out_indices
-                                .push(output_vert_start_indices.unwrap()[out_idx_v] as usize);
+                            // std::lower_bound over the output vertex start indices of this mesh
+                            let starts = output_vert_start_indices.unwrap();
+                            out_indices.push(starts.partition_point(|&v| (v as usize) < out_idx_v));
                         }
                         *count_out.last_mut().unwrap() += 1;
-                        ok = true;
                     }
                 }
             }
-            if ok {
-                self.convert_cluster(
-                    &mut bones,
-                    cluster,
-                    &out_indices,
-                    &index_out,
-                    &count_out,
-                    absolute_transform,
-                );
-            }
+            self.convert_cluster(
+                &mut bones,
+                cluster,
+                &out_indices,
+                &index_out,
+                &count_out,
+                absolute_transform,
+            );
         }
         self.bone_map.clear();
         self.meshes[out_idx].bones = bones;
