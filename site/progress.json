@@ -4,11 +4,11 @@
   "overall": 25.2,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 448,
+    "classesTouched": 454,
     "classes": 3432,
-    "methodsCited": 1780,
+    "methodsCited": 1856,
     "methods": 46318,
-    "methodPercent": 3.84,
+    "methodPercent": 4.01,
     "oracleCases": [
       "actioncontext",
       "animalzones",
@@ -16,6 +16,7 @@
       "animscene",
       "animsets",
       "basements",
+      "body",
       "chunkobjects",
       "chunksave",
       "climate",
@@ -86,7 +87,7 @@
       "score": 0.8125,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 1780 of 46318 method names (3.84%) in 448 of 3432 classes; byte-identical to the original in 65 oracle cases (actioncontext, animalzones, animclips, animscene, animsets, basements, chunkobjects, chunksave, climate, clothingitems, collide, doortoggle, entitysprites, erosion, erosionini, fdlibm, fonts, gametime, gos, isoregion, items, javachars, loot, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luagame, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapver, mapzone, metagrid, moddata, mods, outfitrandom, outfits, radio, recipes, sandbox, savemeta, scriptparser, sounds, specialcollide, stairs, tiledefs, translator, txtmodels, vehicles, visited, worlddictionary, xmodels, xmodelscene, xscene, xui, zombie, zoneoutlines, zonetriangles)",
+        "direct port from decompiled Java: 1856 of 46318 method names (4.01%) in 454 of 3432 classes; byte-identical to the original in 66 oracle cases (actioncontext, animalzones, animclips, animscene, animsets, basements, body, chunkobjects, chunksave, climate, clothingitems, collide, doortoggle, entitysprites, erosion, erosionini, fdlibm, fonts, gametime, gos, isoregion, items, javachars, loot, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luagame, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapver, mapzone, metagrid, moddata, mods, outfitrandom, outfits, radio, recipes, sandbox, savemeta, scriptparser, sounds, specialcollide, stairs, tiledefs, translator, txtmodels, vehicles, visited, worlddictionary, xmodels, xmodelscene, xscene, xui, zombie, zoneoutlines, zonetriangles)",
         "format families read: 13 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",

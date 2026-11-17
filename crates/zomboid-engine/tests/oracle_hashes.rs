@@ -576,7 +576,7 @@ fn txtmodels_matches_original() {
     check("txtmodels", &[]);
 }
 
-/// zombie.characters.BodyDamage, Thermoregulator, Nutrition, Stats and Moodles of a headless player over the scenarios of
+/// BodyDamage, Thermoregulator, Nutrition, Stats and Moodles of a headless player over the scenarios of
 /// tests/body_cases.txt.
 #[test]
 fn body_matches_original() {
