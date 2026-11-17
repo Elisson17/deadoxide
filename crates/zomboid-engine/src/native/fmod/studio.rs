@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::bank::Bank;
+use super::events::{EventDetails, EventTables, ParamDef};
 use super::strings::StringTable;
 
 /// `fmod.fmod.FMODManager.init`: the banks it asks for, in order (`loadBank(name)` reads
@@ -99,6 +100,33 @@ impl StudioSystem {
             ));
         }
         Ok(out)
+    }
+
+    /// What `FMODManager.initEvent` asks each event of the bank at `i` for (sustain point, length, parameters), in the
+    /// order of `bank_event_list`.
+    pub fn bank_event_details(&self, i: usize) -> Result<Vec<EventDetails>, String> {
+        let bank = &self.banks[i];
+        let tables = EventTables::build(bank)?;
+        self.bank_event_list(i)?
+            .iter()
+            .map(|(g, _)| tables.details(bank, g))
+            .collect()
+    }
+
+    /// `FMOD_Studio_System_GetParameterDescriptionList`: the global parameters of all loaded banks, once each by GUID
+    /// (the banks that share a parameter hold the same record), in GUID order (measured: the 43 of the game's banks
+    /// come in this order).
+    pub fn parameter_description_list(&self) -> Result<Vec<ParamDef>, String> {
+        let mut all: Vec<ParamDef> = Vec::new();
+        for b in &self.banks {
+            for p in EventTables::build(b)?.params {
+                if p.is_global() && !all.iter().any(|q| q.guid == p.guid) {
+                    all.push(p);
+                }
+            }
+        }
+        all.sort_by_key(|a| a.guid);
+        Ok(all)
     }
 
     /// `FMOD_Studio_Bank_GetVCAList` of the bank at `i` with `FMOD_Studio_VCA_GetPath`: the paths in list order.

@@ -615,6 +615,13 @@ fn fmodstrings_matches_original() {
     let _ = std::fs::remove_file(&cand);
 }
 
+/// The FMOD event and parameter records: sustain flag, length and parameters of every event, the global parameter list
+/// and `FMODManager`'s parameter table.
+#[test]
+fn fmodevents_matches_original() {
+    check("fmodevents", &["-", "events"]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

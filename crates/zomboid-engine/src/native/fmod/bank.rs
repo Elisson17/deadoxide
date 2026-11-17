@@ -191,6 +191,27 @@ impl Bank {
         Ok(kids.into_iter().filter(|k| &k.tag != b"LCNT").collect())
     }
 
+    /// The chunks directly inside the list chunk `e` (a list entry or a nested list).
+    pub fn children(&self, e: &Chunk) -> Result<Vec<Chunk>, String> {
+        let base = self.proj.body_start();
+        let s = (e.body_start() - base) as usize;
+        parse_chunks(&self.proj_data, base, s, s + e.body_len() as usize)
+    }
+
+    /// The first chunk named `first` inside the list entry `e` (`EVNT` starts with an `EVTB`, `PARM` with a `PRMB`).
+    pub fn entry_child(&self, e: &Chunk, first: &[u8; 4]) -> Result<Chunk, String> {
+        self.children(e)?
+            .into_iter()
+            .find(|k| &k.tag == first)
+            .ok_or_else(|| {
+                format!(
+                    "{}: entry without {}",
+                    self.name,
+                    String::from_utf8_lossy(first)
+                )
+            })
+    }
+
     /// The first 16 bytes of the first chunk named `first` inside the list entry `e`: the GUID the entry starts with
     /// (`EVNT` starts with an `EVTB`, `VCA ` with a `VCAB`).
     pub fn entry_guid(&self, e: &Chunk, first: &[u8; 4]) -> Result<[u8; 16], String> {

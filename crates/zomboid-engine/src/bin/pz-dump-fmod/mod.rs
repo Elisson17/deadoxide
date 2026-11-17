@@ -129,6 +129,55 @@ fn strings(root: &Path, candidates: &Path) -> Result<String, String> {
     Ok(o)
 }
 
+/// `FmodBanksProbe events`: the global parameter list, every event of the path list with its sustain flag, length and
+/// parameters (as the record of the event gives them: id and flags; `gi` is the manager's `globalIndex` of the name),
+/// then the manager's parameter table. The id of a parameter no event uses is UNKNOWN (a hash the banks do not hold).
+fn events(root: &Path) -> Result<String, String> {
+    let m = FmodManager::init(root)?;
+    let globals = m.system.parameter_description_list()?;
+    let mut o = String::new();
+    let _ = writeln!(o, "GLOBALS {}", globals.len());
+    for (i, p) in globals.iter().enumerate() {
+        let _ = writeln!(o, "G {i} {} {}", p.name, p.flags());
+    }
+    let _ = writeln!(o, "EVENTS {}", m.event_path_list.len());
+    for (i, path) in m.event_path_list.iter().enumerate() {
+        let d = m
+            .get_event_description(path)
+            .ok_or_else(|| format!("{path}: no description"))?;
+        let _ = writeln!(
+            o,
+            "EVENT {i} {path} {} {} {} {}",
+            hex(&d.id),
+            u8::from(d.has_sustain_points),
+            d.length,
+            d.parameter_records.len()
+        );
+        for (ix, r) in d.parameters.iter().zip(&d.parameter_records) {
+            let _ = writeln!(
+                o,
+                "EP {} {} {} {}",
+                m.parameters[*ix].global_index,
+                r.name,
+                hex(&r.id),
+                r.flags
+            );
+        }
+    }
+    let _ = writeln!(o, "PARAMS {}", m.parameters.len());
+    for p in &m.parameters {
+        let _ = writeln!(
+            o,
+            "PD {} {} {} {}",
+            p.global_index,
+            p.name,
+            p.flags,
+            p.id.map_or("UNKNOWN".to_string(), |i| hex(&i))
+        );
+    }
+    Ok(o)
+}
+
 /// The names of the `parameter:/` strings (a parameter path is `parameter:/<folders>/<name>`; the game and the API use
 /// the last component), in Java `String` order.
 fn parameter_names(
@@ -181,6 +230,7 @@ pub fn dump(root: &Path, mode: &str, rest: &[String]) -> Result<String, String> 
     match (mode, rest) {
         ("banks", []) => banks(root),
         ("strings", [cand]) => strings(root, Path::new(cand)),
+        ("events", []) => events(root),
         _ => Err(format!("fmod: unknown mode {mode}")),
     }
 }

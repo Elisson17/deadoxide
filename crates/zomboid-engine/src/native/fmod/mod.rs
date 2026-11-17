@@ -5,6 +5,7 @@
 //! run the game's own `FMODManager.init()` headless and print what the API reports). A field that no API call exposes
 //! is parsed but never claimed: the docs table in COMPATIBILITY.md says which is which.
 pub mod bank;
+pub mod events;
 pub mod riff;
 pub mod strings;
 pub mod studio;

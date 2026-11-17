@@ -336,6 +336,9 @@ sel fmodbanks && game_case fmodbanks FmodBanksProbe banks
 # the string table (STDT of ZomboidSound.strings.bank): every event's path and GUID per bank in API list order, the VCAs, FMODManager's
 # sorted event path list, its parameter names, and GetBus/GetVCA over candidate paths the Rust side writes from its own table
 sel fmodstrings && { ./target/release/pz-dump fmodcandidates "$ROOT" >target/oracle/fmod_candidates.txt && game_case fmodstrings FmodBanksProbe strings "$HERE/target/oracle/fmod_candidates.txt"; }
+# the event and parameter records: per event the sustain flag, length (ms) and parameters (name, id, flags) the API reports, the global
+# parameter list and FMODManager's parameter table (globalIndex); the id of a parameter no event uses is UNKNOWN on both sides
+sel fmodevents && game_case fmodevents FmodBanksProbe events
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail
