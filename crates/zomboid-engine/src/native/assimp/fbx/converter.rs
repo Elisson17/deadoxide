@@ -265,7 +265,7 @@ fn euler_to_quaternion(rot: Vec3, order: i32) -> Quat {
 }
 
 fn convert_fbx_time(t: i64) -> f64 {
-    t as f64 / 46186158000_i64 as f64
+    t as f64 / 46_186_158_000.0
 }
 
 fn fix_node_name(name: &str) -> String {
@@ -409,10 +409,8 @@ impl<'a> Conv<'a> {
 
     /// ConvertNodes: the nodes of the models connected to `id`; an error while converting drops them all.
     fn convert_nodes(&mut self, id: u64, parent_transform: &Mat4) -> Vec<Node> {
-        match self.convert_nodes_inner(id, parent_transform) {
-            Ok(n) => n,
-            Err(_) => Vec::new(),
-        }
+        self.convert_nodes_inner(id, parent_transform)
+            .unwrap_or_default()
     }
 
     fn convert_nodes_inner(&mut self, id: u64, parent_transform: &Mat4) -> R<Vec<Node>> {
@@ -598,6 +596,7 @@ impl<'a> Conv<'a> {
         const COMPLEX_BITS: u32 = 0x1ef77;
         if mask & COMPLEX_BITS != 0 {
             mask |= self.node_anim_chain_bits.get(name).copied().unwrap_or(0);
+            #[allow(clippy::needless_range_loop)]
             for i in 0..TC_MAXIMUM {
                 if mask & bit(i) == 0 {
                     continue;
@@ -981,6 +980,7 @@ impl<'a> Conv<'a> {
         };
         let deformer_name = cl.node.name.clone();
         let bone_name = fix_node_name(&deformer_name);
+        #[allow(clippy::map_entry)]
         if !self.bone_map.contains_key(&deformer_name) {
             // the library's bone offset matrix is the cluster's `Transform` as it is (no inverse, no absolute transform)
             let offset = cl.transform;
@@ -1716,6 +1716,7 @@ impl<'a> Conv<'a> {
 
         // the chain bits are collected while the node animations are generated (the node chain consults them)
         let mut flags = 0u32;
+        #[allow(clippy::needless_range_loop)]
         for i in 0..TC_MAXIMUM {
             let Some(nodes) = chain[i] else { continue };
             let chain_name = chain_node_name(fixed_name, i);
@@ -1892,6 +1893,7 @@ impl<'a> Conv<'a> {
                     for n in 1..count {
                         loop {
                             let d = vc - vp;
+                            #[allow(clippy::neg_cmp_op_on_partial_ord)]
                             if !(180.0 <= d.abs()) {
                                 break;
                             }
@@ -2152,6 +2154,7 @@ impl<'a> Conv<'a> {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn generate_rotation_node_anim(
         &self,
         name: &str,

@@ -165,6 +165,7 @@ pub struct AnimCurve {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Kind {
     Model(Model),
     Mesh(MeshGeometry),
@@ -787,10 +788,8 @@ impl Document {
         }
         let alpha_source = s("Texture_Alpha_Source")?;
         let props = self.props("Texture.FbxFileTexture", sc)?;
-        if let Some(sv) = props.get("Scaling")? {
-            if let Prop::Vec3(v) = sv {
-                uv_scaling = [v.x, v.y];
-            }
+        if let Some(Prop::Vec3(v)) = props.get("Scaling")? {
+            uv_scaling = [v.x, v.y];
         }
         if let Some(Prop::Vec3(v)) = props.get("Translation")? {
             uv_trans = [v.x, v.y];

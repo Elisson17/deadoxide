@@ -107,7 +107,7 @@ fn triangulate_mesh(mesh: &mut Mesh) -> bool {
                 let diag = normalize(sub(v1, v));
                 let right = normalize(sub(v2, v));
                 let angle = dot(left, diag).acos() + dot(right, diag).acos();
-                if angle > 3.1415927_f32 {
+                if angle > std::f32::consts::PI {
                     start = i;
                     break;
                 }

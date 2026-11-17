@@ -394,6 +394,7 @@ impl Mat4 {
         ];
         let len = |v: &Vec3| (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
         let mut scaling = Vec3::new(len(&cols[0]), len(&cols[1]), len(&cols[2]));
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !(0.0 <= self.determinant()) {
             scaling = Vec3::new(-scaling.x, -scaling.y, -scaling.z);
         }

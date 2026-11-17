@@ -325,8 +325,6 @@ fn walk(n: &Node, depth: usize, lines: &mut Vec<String>) {
     }
 }
 
-/// `AiSceneProbe.dumpScene`.
-
 /// `jassimp.AiMaterial.PropertyType` of the raw aiPropertyTypeInfo
 fn property_type(t: u32) -> &'static str {
     match t {
@@ -379,6 +377,7 @@ fn property_data(p: &zomboid_engine::native::assimp::scene::MaterialProperty) ->
     }
 }
 
+/// `AiSceneProbe.dumpScene`.
 fn dump_scene(out: &mut String, full: bool, mats: bool, sc: &Scene) -> Result<(), String> {
     let _ = writeln!(
         out,
