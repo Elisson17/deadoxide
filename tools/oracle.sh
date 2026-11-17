@@ -247,6 +247,10 @@ sel txtmodels && run_case txtmodels TxtModelsProbe
 # every .x of media/models_X and media/anims_X imported by the native assimp with NO post-processing step, as an aiScene
 # (meshes, bones, nodes, animation channels): the port of XFileImporter (the game's own steps follow in xmodelscene/animscene)
 sel xscene && ai_case xscene AiSceneProbe none x media/models_X media/anims_X
+# the same files with the game's own flags (FileTask_LoadAnimation: MAKE_LEFT_HANDED, REMOVE_REDUNDANT_MATERIALS; FileTask_LoadMesh:
+# FIND_INSTANCES, MAKE_LEFT_HANDED, LIMIT_BONE_WEIGHTS, TRIANGULATE, OPTIMIZE_MESHES, REMOVE_REDUNDANT_MATERIALS, JOIN_IDENTICAL_VERTICES)
+sel animscene && ai_case animscene AiSceneProbe anim x media/anims_X
+sel xmodelscene && ai_case xmodelscene AiSceneProbe mesh x media/models_X
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

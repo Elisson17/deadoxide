@@ -120,6 +120,7 @@ fn default_material() -> Material {
     let mut data = Vec::new();
     data.extend_from_slice(&(name.len() as u32).to_le_bytes());
     data.extend_from_slice(name.as_bytes());
+    data.push(0);
     let mut m = Material::default();
     m.properties.push(MaterialProperty {
         key: "?mat.name".to_string(),

@@ -417,6 +417,18 @@ fn xscene_matches_original() {
     check("xscene", &["none", "x", "media/models_X", "media/anims_X"]);
 }
 
+/// The same files with the animation flags of `FileTask_LoadAnimation` (E59).
+#[test]
+fn animscene_matches_original() {
+    check("animscene", &["anim", "x", "media/anims_X"]);
+}
+
+/// The same files with the mesh flags of `FileTask_LoadMesh` (E59).
+#[test]
+fn xmodelscene_matches_original() {
+    check("xmodelscene", &["mesh", "x", "media/models_X"]);
+}
+
 /// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
 /// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
 #[test]

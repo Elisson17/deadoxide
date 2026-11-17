@@ -15,10 +15,12 @@ const SHADING_PHONG: i32 = 0x3;
 const TEXTURE_DIFFUSE: u32 = 1;
 const TEXTURE_NORMALS: u32 = 6;
 
+/// `aiMaterial::AddProperty(const aiString*)`: the length, the characters and a terminating NUL.
 fn ai_string(s: &str) -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&(s.len() as u32).to_le_bytes());
     data.extend_from_slice(s.as_bytes());
+    data.push(0);
     data
 }
 
@@ -41,7 +43,9 @@ fn convert_materials(scene: &mut Scene, materials: &mut [XMaterial]) -> Result<(
         if old.is_reference {
             for (i, m) in scene.materials.iter().enumerate() {
                 let name = m.properties.iter().find(|p| p.key == "?mat.name");
-                if name.is_some_and(|p| p.data.get(4..) == Some(old.name.as_bytes())) {
+                if name.is_some_and(|p| {
+                    p.data.get(4..p.data.len().saturating_sub(1)) == Some(old.name.as_bytes())
+                }) {
                     old.scene_index = i as u32;
                     break;
                 }

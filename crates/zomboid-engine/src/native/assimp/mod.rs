@@ -15,6 +15,7 @@
 pub mod fast_atof;
 pub mod post_process;
 pub mod scene;
+pub mod std_sort;
 pub mod x_file_importer;
 pub mod x_file_parser;
 
