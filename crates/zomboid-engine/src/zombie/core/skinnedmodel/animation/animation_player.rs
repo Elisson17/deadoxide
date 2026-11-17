@@ -143,9 +143,8 @@ impl AnimationPlayer {
             self.twist_angle = target_twist;
         } else {
             let twist_diff_sign = pz_math::sign(twist_diff);
-            let twist_angle_step = angle_scaled_step_base
-                * twist_diff_sign as f32
-                * pz_abs(self.angle_twist_delta);
+            let twist_angle_step =
+                angle_scaled_step_base * twist_diff_sign as f32 * pz_abs(self.angle_twist_delta);
             let prev_twist = self.twist_angle;
             let next_twist_unclamped = prev_twist + twist_angle_step;
             let new_diff_unclamped = pz_math::get_closest_angle(next_twist_unclamped, target_twist);

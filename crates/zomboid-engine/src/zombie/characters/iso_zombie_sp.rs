@@ -18,10 +18,10 @@ use super::action::action_context::ActionContext;
 use super::iso_zombie::{IsoZombie, ZombieAnim, ZombieState, ZombieWorld, ANIM_EVENT_HANDLERS};
 use crate::java;
 use crate::zombie::core::math::pz_math;
-use crate::zombie::core::skinnedmodel::advancedanimation::advanced_animator::{
-    AnimatorOwner, Env,
+use crate::zombie::core::skinnedmodel::advancedanimation::advanced_animator::{AnimatorOwner, Env};
+use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{
+    AnimEvent, AnimEventKind, AnimEventTime,
 };
-use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{AnimEvent, AnimEventKind, AnimEventTime};
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_reference::AnimationVariableReference;
 use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_source::{
     AnimationVariableSlot, SlotValue,
@@ -250,14 +250,57 @@ pub const REGISTERED: [(&str, &str, &str); 164] = [
 /// The registered variables whose slot has a setter (`this.setVariable(name, getter, setter, ...)`); `setVariable` of
 /// any other registered variable only warns and changes nothing.
 const SETTABLE_VARIABLES: [&str; 52] = [
-    "isrendered", "hitreaction", "collidetype", "bumptype", "onbed", "sittingonfurniture", "sitonground",
-    "nearwallcrouching", "frombehind", "fallonfront", "killedbyfall", "bumpdone", "bumpfall", "bumpfalltype",
-    "bumpstaggered", "bonfloor", "rangedweaponempty", "movedelta", "turndelta", "angle", "maxtwist", "isturning",
-    "isturning90", "isturningaround", "bmoving", "momentumscalar", "criticalhit", "bknockeddown", "attackanim",
-    "shoveanim", "stompanim", "isstompanim", "isanimatingbackwards", "grapplethrowoutwindow",
-    "grapplethrowoverfence", "grapplethrowintocontainer", "iseditingragdoll", "isragdollfall", "isvehiclecollision",
-    "usephysichitreaction", "recoilvarx", "recoilvary", "hideequippedhandl", "hideequippedhandr", "bbecomecrawler",
-    "breanimate", "unbalancedlevel", "bknifedeath", "bjawstabattach", "bcrawling", "attackdiddamage",
+    "isrendered",
+    "hitreaction",
+    "collidetype",
+    "bumptype",
+    "onbed",
+    "sittingonfurniture",
+    "sitonground",
+    "nearwallcrouching",
+    "frombehind",
+    "fallonfront",
+    "killedbyfall",
+    "bumpdone",
+    "bumpfall",
+    "bumpfalltype",
+    "bumpstaggered",
+    "bonfloor",
+    "rangedweaponempty",
+    "movedelta",
+    "turndelta",
+    "angle",
+    "maxtwist",
+    "isturning",
+    "isturning90",
+    "isturningaround",
+    "bmoving",
+    "momentumscalar",
+    "criticalhit",
+    "bknockeddown",
+    "attackanim",
+    "shoveanim",
+    "stompanim",
+    "isstompanim",
+    "isanimatingbackwards",
+    "grapplethrowoutwindow",
+    "grapplethrowoverfence",
+    "grapplethrowintocontainer",
+    "iseditingragdoll",
+    "isragdollfall",
+    "isvehiclecollision",
+    "usephysichitreaction",
+    "recoilvarx",
+    "recoilvary",
+    "hideequippedhandl",
+    "hideequippedhandr",
+    "bbecomecrawler",
+    "breanimate",
+    "unbalancedlevel",
+    "bknifedeath",
+    "bjawstabattach",
+    "bcrawling",
+    "attackdiddamage",
     "attackoutcome",
 ];
 
@@ -265,7 +308,12 @@ const SETTABLE_VARIABLES: [&str; 52] = [
 const PLAIN_REGISTERED: [&str; 2] = ["bgetupfromknees", "bgetupfromprone"];
 
 /// The String variables whose getter returns null at construction.
-const NULL_STRINGS: [&str; 4] = ["collidetype", "shouttype", "shoutitemmodel", "playerattackposition"];
+const NULL_STRINGS: [&str; 4] = [
+    "collidetype",
+    "shouttype",
+    "shoutitemmodel",
+    "playerattackposition",
+];
 
 /// What a variable callback reads besides the zombie.
 pub struct SpRead<'a> {
@@ -327,12 +375,12 @@ fn dot(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
 
 impl IsoZombie {
     /// The square at a position (`IsoCell.getGridSquare(floor x, floor y, floor z)`).
-    pub(crate) fn sp_square<'a>(
-        squares: &'a dyn GetSquare,
+    pub(crate) fn sp_square(
+        squares: &dyn GetSquare,
         x: f32,
         y: f32,
         z: f32,
-    ) -> Option<&'a IsoGridSquare> {
+    ) -> Option<&IsoGridSquare> {
         squares.get_grid_square(
             pz_math::fastfloor(x),
             pz_math::fastfloor(y),
@@ -487,8 +535,9 @@ impl IsoZombie {
         } else if self.lunge_timer() > 0.0 {
             false
         } else {
-            let distance_to_target =
-                self.sp.vector_to_target.get_length() - self.character.moving.width + rd.world.player.width;
+            let distance_to_target = self.sp.vector_to_target.get_length()
+                - self.character.moving.width
+                + rd.world.player.width;
             if self.lunge_timer() <= 0.0 && distance_to_target >= 0.8f32 {
                 true
             } else {
@@ -547,8 +596,13 @@ impl IsoZombie {
             } else {
                 -1.0
             }),
-            "canragdoll" | "useragdollvehiclecollision" | "isupright" | "isonback" | "anygrappleanim"
-            | "grappleanim" | "numtwistbones" => {
+            "canragdoll"
+            | "useragdollvehiclecollision"
+            | "isupright"
+            | "isonback"
+            | "anygrappleanim"
+            | "grappleanim"
+            | "numtwistbones" => {
                 if p.is_none() {
                     // the Java getters make the animation player (`getAnimationPlayer()`): not reproduced through a
                     // read-only view, the first animation update frame makes it before any state reads these
@@ -629,7 +683,11 @@ impl IsoZombie {
                 .sp
                 .plain
                 .get_game_variables()
-                .filter(|s| !PLAIN_REGISTERED.iter().any(|r| java::equals_ignore_case(r, &s.key)))
+                .filter(|s| {
+                    !PLAIN_REGISTERED
+                        .iter()
+                        .any(|r| java::equals_ignore_case(r, &s.key))
+                })
                 .count()
     }
 
@@ -653,12 +711,7 @@ impl IsoZombie {
     }
 
     /// IsoGameCharacter.getVariableBoolean (the action context's variable first): false without a slot.
-    pub fn sp_variable_boolean(
-        &self,
-        ctx: Option<&ActionContext>,
-        key: &str,
-        rd: &SpRead,
-    ) -> bool {
+    pub fn sp_variable_boolean(&self, ctx: Option<&ActionContext>, key: &str, rd: &SpRead) -> bool {
         let s = ctx
             .and_then(|c| c.get_variable(key))
             .or_else(|| self.sp_get_variable(key, rd));
@@ -1069,8 +1122,8 @@ impl IsoZombie {
             "walktoward" => ZombieState::WalkToward,
             _ => {
                 return Err(format!(
-                    "IsoZombie.actionStateChanged: the AI state of action state '{root}' is not ported"
-                ))
+                "IsoZombie.actionStateChanged: the AI state of action state '{root}' is not ported"
+            ))
             }
         };
         if !children.is_empty() {
@@ -1206,28 +1259,32 @@ impl IsoZombie {
         let mut b_line_clear = true;
         // IsoUtils.DistanceManhatten: `abs(x1 - x2) + abs(y1 - y2)`
         let manhatten = (x - mx).abs() + (y - my).abs();
-        if pz_math::fastfloor(z) == pz_math::fastfloor(mz) && manhatten <= 30.0f32 {
-            if rd
+        // the chunk test is the nested `if` of the Java, one condition here
+        if pz_math::fastfloor(z) == pz_math::fastfloor(mz)
+            && manhatten <= 30.0f32
+            && rd
                 .world
                 .has_chunk_for_square(pz_math::fastfloor(x), pz_math::fastfloor(y))
-            {
-                // flags: 1 (ignore doors) | 2 (close to walls); a zombie has no cost check
-                b_line_clear = !crate::zombie::pathfind::line_clear_collide_main::is_not_clear_old(
-                    rd.squares,
-                    &rd.world.alias,
-                    mx,
-                    my,
-                    x,
-                    y,
-                    pz_math::fastfloor(z),
-                    3,
-                )?;
-            }
+        {
+            // flags: 1 (ignore doors) | 2 (close to walls); a zombie has no cost check
+            b_line_clear = !crate::zombie::pathfind::line_clear_collide_main::is_not_clear_old(
+                rd.squares,
+                &rd.world.alias,
+                mx,
+                my,
+                x,
+                y,
+                pz_math::fastfloor(z),
+                3,
+            )?;
         }
         if b_line_clear {
             if let Some(cur) = Self::sp_square(rd.squares, mx, my, mz) {
                 if cur.has_stairs() {
-                    return Err("IsoGameCharacter.pathToAux: the zombie stands on stairs (not ported)".into());
+                    return Err(
+                        "IsoGameCharacter.pathToAux: the zombie stands on stairs (not ported)"
+                            .into(),
+                    );
                 }
             }
             // CanUsePathfindState(): !GameServer.server
@@ -1343,7 +1400,8 @@ impl AnimatorOwner for SpOwner<'_> {
     ) -> Result<(), String> {
         if reference.sub_variable_source_name.is_some() {
             return Err(
-                "AnimationVariableReference.setVariable: a sub variable source is not ported".into(),
+                "AnimationVariableReference.setVariable: a sub variable source is not ported"
+                    .into(),
             );
         }
         if self.ctx.get_variable(&reference.name).is_some() {

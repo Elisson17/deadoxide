@@ -28,8 +28,8 @@ use crate::zombie::core::skinnedmodel::animation::animation_track::AnimationTrac
 use crate::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 use crate::zombie::iso::iso_directions::IsoDirections;
 use crate::zombie::iso::iso_grid_square::GetSquare;
-use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::iso::sprite_details::iso_flag_type::IsoFlagType;
+use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::pathfind::path_find_behavior2::PathFindBehavior2;
 use crate::zombie::sandbox_options::SandboxOptions;
 use crate::zombie::util::frame_delay::FrameDelay;
@@ -478,8 +478,10 @@ impl IsoZombie {
         if z.sp.enabled {
             // `this.setVariable("bGetUpFromKnees", false)`, `("bGetUpFromProne", false)`: plain slots
             let sp = &mut z.sp;
-            sp.plain.set_variable_bool(&mut sp.pool, "bGetUpFromKnees", false);
-            sp.plain.set_variable_bool(&mut sp.pool, "bGetUpFromProne", false);
+            sp.plain
+                .set_variable_bool(&mut sp.pool, "bGetUpFromKnees", false);
+            sp.plain
+                .set_variable_bool(&mut sp.pool, "bGetUpFromProne", false);
         }
         z.init_sprite_parts_zombie(world);
         for t in &mut z.tint {

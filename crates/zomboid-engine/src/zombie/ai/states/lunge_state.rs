@@ -13,11 +13,7 @@ impl IsoZombie {
     /// zombie.ai.states.LungeState.execute: on its feet and shootable, the lunger's walk variant, the lunge timer down by
     /// `getThirtyFPSMultiplier()`, the zombie turned to its target. `Err` for the branch that paths to the last seen
     /// position (not ported).
-    pub(crate) fn lunge_execute(
-        &mut self,
-        world: &ZombieWorld,
-        rd: &SpRead,
-    ) -> Result<(), String> {
+    pub(crate) fn lunge_execute(&mut self, world: &ZombieWorld, rd: &SpRead) -> Result<(), String> {
         self.sp_set_bool("bOnFloor", false)?;
         // setShootable(true): not read by anything modelled
         if self.lunger {

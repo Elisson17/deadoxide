@@ -92,7 +92,8 @@ fn has_floor(
         if let Some(below) = g.get_grid_square(sx, sy, z - 1) {
             if below.get_sloped_surface_direction(alias).is_some() {
                 return Err(
-                    "LineClearCollideMain: the sloped surface of the square below is not ported".into(),
+                    "LineClearCollideMain: the sloped surface of the square below is not ported"
+                        .into(),
                 );
             }
         }
@@ -123,36 +124,50 @@ pub fn can_stand_at_old(
             let square = g.get_grid_square(sx, sy, zi);
             let b_has_floor = has_floor(g, alias, sx, sy, zi, square)?;
             match square {
-                Some(sq) if !sq.has(IsoFlagType::solid) && (!sq.has(IsoFlagType::solidtrans)) && b_has_floor => {
+                Some(sq)
+                    if !sq.has(IsoFlagType::solid)
+                        && (!sq.has(IsoFlagType::solidtrans))
+                        && b_has_floor =>
+                {
                     if sq.has_stairs() || sq.get_sloped_surface_direction(alias).is_some() {
                         return Err(
                             "LineClearCollideMain.canStandAtOld: a stairs or sloped square is not ported".into(),
                         );
                     }
                     if !close_to_walls {
-                        if sq.has(IsoFlagType::collideW) || (!ignore_doors && sq.has_blocked_door(false)) {
+                        if sq.has(IsoFlagType::collideW)
+                            || (!ignore_doors && sq.has_blocked_door(false))
+                        {
                             let closest_x = sx as f32;
                             let closest_y = clamp(y, sy as f32, (sy + 1) as f32);
                             let distance_x = x - closest_x;
                             let distance_y = y - closest_y;
-                            let distance_squared = distance_x * distance_x + distance_y * distance_y;
+                            let distance_squared =
+                                distance_x * distance_x + distance_y * distance_y;
                             if distance_squared < 0.09f32 {
                                 return Ok(false);
                             }
                         }
-                        if sq.has(IsoFlagType::collideN) || (!ignore_doors && sq.has_blocked_door(true)) {
+                        if sq.has(IsoFlagType::collideN)
+                            || (!ignore_doors && sq.has_blocked_door(true))
+                        {
                             let closest_x = clamp(x, sx as f32, (sx + 1) as f32);
                             let closest_y = sy as f32;
                             let distance_x = x - closest_x;
                             let distance_y = y - closest_y;
-                            let distance_squared = distance_x * distance_x + distance_y * distance_y;
+                            let distance_squared =
+                                distance_x * distance_x + distance_y * distance_y;
                             if distance_squared < 0.09f32 {
                                 return Ok(false);
                             }
                         }
                     }
                 }
-                Some(sq) if !sq.has(IsoFlagType::solid) && sq.has(IsoFlagType::solidtrans) && b_has_floor => {
+                Some(sq)
+                    if !sq.has(IsoFlagType::solid)
+                        && sq.has(IsoFlagType::solidtrans)
+                        && b_has_floor =>
+                {
                     return Err(
                         "LineClearCollideMain.canStandAtOld: a solidtrans square (adjacent window or hoppable) is not ported"
                             .into(),
@@ -198,7 +213,9 @@ pub fn is_not_clear_old(
     let close_to_walls = (flags & 2) != 0;
     let check_cost = (flags & 4) != 0;
     if check_cost {
-        return Err("LineClearCollideMain.isNotClearOld: the cost check (flag 4) is not ported".into());
+        return Err(
+            "LineClearCollideMain.isNotClearOld: the cost check (flag 4) is not ported".into(),
+        );
     }
     if !can_stand_at_old(g, alias, to_x, to_y, z as f32, ignore_doors, close_to_walls)? {
         return Ok(true);
@@ -228,8 +245,17 @@ pub fn is_not_clear_old(
     supercover(x0, y0, x1, y1, &mut pts);
     supercover(x2, y2, x3, y3, &mut pts);
     let rect = |left: f32, top: f32, right: f32, bottom: f32| {
-        line_rect_intersect(from_x, from_y, to_x - from_x, to_y - from_y, left, top, right, bottom)
-            .is_some()
+        line_rect_intersect(
+            from_x,
+            from_y,
+            to_x - from_x,
+            to_y - from_y,
+            left,
+            top,
+            right,
+            bottom,
+        )
+        .is_some()
     };
     for &(px, py) in &pts {
         let square = g.get_grid_square(px, py, z);
@@ -271,7 +297,8 @@ pub fn is_not_clear_old(
         } else if let Some(sq) = square {
             if sq.has_stairs() || sq.get_sloped_surface_direction(alias).is_some() {
                 return Err(
-                    "LineClearCollideMain.isNotClearOld: a stairs or sloped square is not ported".into(),
+                    "LineClearCollideMain.isNotClearOld: a stairs or sloped square is not ported"
+                        .into(),
                 );
             }
             if sq.has(IsoFlagType::collideW) || (!ignore_doors && sq.has_blocked_door(false)) {

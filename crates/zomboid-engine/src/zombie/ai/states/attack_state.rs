@@ -44,7 +44,9 @@ impl IsoZombie {
         }
         if self.sp.target
             && outcome != "started"
-            && player_hit_reaction.as_deref().is_some_and(|s| !s.is_empty())
+            && player_hit_reaction
+                .as_deref()
+                .is_some_and(|s| !s.is_empty())
         {
             return Err("AttackState.execute: the target's defence test is not ported".into());
         }
@@ -56,7 +58,9 @@ impl IsoZombie {
             self.sp_set_bool("bOnFloor", false)?;
         }
         if self.sp.target && self.speed_type == 1 && (outcome == "start" || outcome == "success") {
-            return Err("AttackState.execute: a sprinter's slow factor on the target is not ported".into());
+            return Err(
+                "AttackState.execute: a sprinter's slow factor on the target is not ported".into(),
+            );
         }
         // target.setTimeSinceZombieAttack(0), setLastTargettedBy(this): the stand-in's fields, not read
         if !self.crawling {
@@ -108,7 +112,9 @@ impl IsoZombie {
             .to_string();
         }
         if crate::java::equals_ignore_case(name, "AttackCollisionCheck") && self.sp.target {
-            return Err("AttackState.animEvent: AttackCollisionCheck (the bite) is not ported".into());
+            return Err(
+                "AttackState.animEvent: AttackCollisionCheck (the bite) is not ported".into(),
+            );
         }
         if crate::java::equals_ignore_case(name, "EatBody") {
             return Err("AttackState.animEvent: EatBody is not ported".into());

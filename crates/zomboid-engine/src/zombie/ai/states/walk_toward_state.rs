@@ -48,7 +48,8 @@ impl IsoZombie {
                 return Err("WalkTowardState.execute: pathToCharacter is not ported".into());
             } else if self.sp.last_target_seen_x != -1 {
                 return Err(
-                    "WalkTowardState.execute: pathing to the last seen location is not ported".into(),
+                    "WalkTowardState.execute: pathing to the last seen location is not ported"
+                        .into(),
                 );
             }
         }
@@ -92,10 +93,12 @@ impl IsoZombie {
             if !self.crawling && self.sp.walk_toward_ignore_offset == Some(false) {
                 let dist_scale = (dist / 2.0f32).min(4.0f32);
                 // (zomb.getID() + zomb.zombieId) % 20 / 10.0F - 1.0F
-                let x = ((rd.world.zombie_object_id + self.zombie_id) % 20) as f32 / 10.0f32 - 1.0f32;
+                let x =
+                    ((rd.world.zombie_object_id + self.zombie_id) % 20) as f32 / 10.0f32 - 1.0f32;
                 let y = x;
                 let (px, py) = (self.character.moving.x, self.character.moving.y);
-                if distance_to(px, py, target_x + x * dist_scale, target_y + y * dist_scale) < dist {
+                if distance_to(px, py, target_x + x * dist_scale, target_y + y * dist_scale) < dist
+                {
                     temp.x = target_x + x * dist_scale - px;
                     temp.y = target_y + y * dist_scale - py;
                 }
@@ -103,7 +106,9 @@ impl IsoZombie {
             self.running = false;
             temp.normalize();
             if self.crawling {
-                return Err("WalkTowardState.execute: a crawler's turn direction is not ported".into());
+                return Err(
+                    "WalkTowardState.execute: a crawler's turn direction is not ported".into(),
+                );
             }
             // setDir(IsoDirections.fromAngle(temp)), then setForwardDirection(temp)
             self.character.set_forward_direction(temp.x, temp.y)?;

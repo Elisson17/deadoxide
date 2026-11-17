@@ -156,7 +156,11 @@ pub fn get_closest_angle(rads_a: f32, rads_b: f32) -> f32 {
     let angle_a = wrap_range(rads_a, (std::f64::consts::PI * 2.0) as f32);
     let angle_b = wrap_range(rads_b, (std::f64::consts::PI * 2.0) as f32);
     let diff = angle_b - angle_a;
-    wrap(diff, -(std::f64::consts::PI as f32), std::f64::consts::PI as f32)
+    wrap(
+        diff,
+        -(std::f64::consts::PI as f32),
+        std::f64::consts::PI as f32,
+    )
 }
 
 /// zombie.core.math.PZMath.lerp (float src, float dest, float alpha)

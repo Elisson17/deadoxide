@@ -8715,8 +8715,13 @@ pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String
 /// The `zombieai` case: `ZombieAiProbe`'s scenarios `zai:<seed>:<ticks>:<dx>:<dy>:<force|none>`, run by the port.
 pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
     let mut sb = String::new();
+    // the files are read once; every scenario gets its own copies of the mutable parts
+    let survivors = zombie_survivors(root)?;
+    let assets = zombie_anim_assets(root)?;
+    let (chunks, alias) = zombie_chunks_alias(root)?;
+    let alias = std::rc::Rc::new(alias);
     for spec in scenarios {
-        zombie_ai_scenario(&mut sb, root, spec)?;
+        zombie_ai_scenario(&mut sb, spec, &survivors, &assets, &chunks, &alias)?;
     }
     Ok(sb)
 }
@@ -8724,7 +8729,16 @@ pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
 /// ZombieAiProbe.scenario: the zombie of a seed on the square (8280, 11670, 0) and a player stand-in (8280.5 + dx,
 /// 11670.5 + dy) in the single-player world, ticked as the world ticks its objects (`tick_sp`). `force` sets the
 /// zombie's target to the player (and `timeSinceSeenFlesh` to 0) before every tick.
-fn zombie_ai_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), String> {
+fn zombie_ai_scenario(
+    sb: &mut String,
+    spec: &str,
+    survivors: &zomboid_engine::zombie::characters::survivor_factory::SurvivorFactory,
+    assets: &zomboid_engine::zombie::characters::iso_zombie::ZombieAnimAssets,
+    chunks: &[IsoChunk],
+    alias: &std::rc::Rc<
+        zomboid_engine::zombie::core::tile_property_alias_map::TilePropertyAliasMap,
+    >,
+) -> Result<(), String> {
     use zomboid_engine::java::{float_to_string as fl, Random};
     use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
     use zomboid_engine::zombie::characters::iso_zombie_sp::{
@@ -8733,14 +8747,47 @@ fn zombie_ai_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), St
     use zomboid_engine::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 
     const VARS: [&str; 33] = [
-        "bLunge", "bMoving", "bPathfind", "bHasTarget", "bCanSeeTarget", "bAttack", "isFacingTarget", "alerted",
-        "bThump", "bKnockedDown", "bOnFloor", "bStaggerBack", "hashitreaction", "AttackType", "AttackOutcome",
-        "AttackDidDamage", "ZombieBiteDone", "angle", "animAngle", "twist", "targetTwist", "shoulderTwist",
-        "excessTwist", "angleStepDelta", "angleTwistDelta", "isTurning", "isTurning90", "isTurningAround",
-        "previousState", "bStopLunging", "lungeTimer", "distanceToTarget", "stateEventDelayTimer",
+        "bLunge",
+        "bMoving",
+        "bPathfind",
+        "bHasTarget",
+        "bCanSeeTarget",
+        "bAttack",
+        "isFacingTarget",
+        "alerted",
+        "bThump",
+        "bKnockedDown",
+        "bOnFloor",
+        "bStaggerBack",
+        "hashitreaction",
+        "AttackType",
+        "AttackOutcome",
+        "AttackDidDamage",
+        "ZombieBiteDone",
+        "angle",
+        "animAngle",
+        "twist",
+        "targetTwist",
+        "shoulderTwist",
+        "excessTwist",
+        "angleStepDelta",
+        "angleTwistDelta",
+        "isTurning",
+        "isTurning90",
+        "isTurningAround",
+        "previousState",
+        "bStopLunging",
+        "lungeTimer",
+        "distanceToTarget",
+        "stateEventDelayTimer",
     ];
     const RAG: [&str; 7] = [
-        "canRagdoll", "isUpright", "isOnBack", "anyGrappleAnim", "grappleAnim", "numTwistBones",
+        "canRagdoll",
+        "isUpright",
+        "isOnBack",
+        "anyGrappleAnim",
+        "grappleAnim",
+        "numTwistBones",
         "useRagdollVehicleCollision",
     ];
     let p: Vec<&str> = spec.split(':').collect();
@@ -8752,12 +8799,9 @@ fn zombie_ai_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), St
     let dx: f32 = p[3].parse().map_err(|e| format!("{spec}: {e}"))?;
     let dy: f32 = p[4].parse().map_err(|e| format!("{spec}: {e}"))?;
     let force = p[5] == "force";
-    let survivors = zombie_survivors(root)?;
     let sandbox = zombie_sandbox(None)?;
     let lore = Lore::from_sandbox(&sandbox)?;
-    let assets = zombie_anim_assets(root)?;
-    let (chunks, alias) = zombie_chunks_alias(root)?;
-    let grid = ZombieGrid::new(&chunks);
+    let grid = ZombieGrid::new(chunks);
     let spw = SinglePlayerWorld {
         player: PlayerStandIn {
             x: 8280.5f32 + dx,
@@ -8767,7 +8811,7 @@ fn zombie_ai_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), St
             health: 1.0,
         },
         loaded_chunks: vec![(1034, 1458), (1034, 1459), (1035, 1458), (1035, 1459)],
-        alias: std::rc::Rc::new(alias),
+        alias: alias.clone(),
         zombie_object_id: 1,
     };
     let mut outfit_rng = OutfitRng::default();
@@ -8776,11 +8820,11 @@ fn zombie_ai_scenario(sb: &mut String, root: &Path, spec: &str) -> Result<(), St
         rand: RandAbstract::new(Random::new(seed)),
         outfit_rng,
         lore,
-        survivors,
+        survivors: survivors.clone(),
         survivor_id_count: 0,
         multiplier: 0.8,
         raining: false,
-        anim_assets: Some(assets),
+        anim_assets: Some(assets.clone()),
         sp: Some(spw.clone()),
     };
     let _ = writeln!(sb, "SCENARIO {spec}");
