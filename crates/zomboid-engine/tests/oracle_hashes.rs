@@ -494,7 +494,8 @@ fn radio_matches_original() {
     );
 }
 
-/// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
+/// zombie.characters.BodyDamage, Thermoregulator, Nutrition, Stats and Moodles of a headless player over the scenarios of
+/// tests/body_cases.txt.
 #[test]
 fn body_matches_original() {
     // BodyProbe's scenarios: tests/body_cases.txt, shared with the `body` line of tools/oracle.sh
@@ -503,6 +504,7 @@ fn body_matches_original() {
     check("body", &[cases.to_str().expect("utf-8 path")]);
 }
 
+/// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {
     let cases = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/script_parser_cases.txt");

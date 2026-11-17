@@ -1,5 +1,13 @@
 //! zombie.characters.BodyDamage.Thermoregulator: the body temperature simulation of a player: a thermal node per body
 //! part (core, skin, clothing insulation, wetness), the metabolic rate, the set point and what the climate does to them.
+// The conditions are the Java ones, written as they are (`!(a <= b)` differs from `a > b` for NaN; the index loops walk
+// the parallel per-part arrays of the original), so the style lints that would rewrite them are off (the identical branches are the original's too).
+#![allow(
+    clippy::neg_cmp_op_on_partial_ord,
+    clippy::needless_range_loop,
+    clippy::manual_clamp,
+    clippy::if_same_then_else
+)]
 use super::body_part::BodyPart;
 use super::body_part_type;
 use super::metabolics::Metabolics;

@@ -8883,7 +8883,9 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
     use zomboid_engine::zombie::characters::body_damage::body_sim::{BodyWorld, PlayerBody};
     use zomboid_engine::zombie::characters::stats::{CharacterStat, ALL_STATS};
     use zomboid_engine::zombie::game_time::GameTime;
-    use zomboid_engine::zombie::iso::weather::climate_manager::FLOAT_TEMPERATURE;
+    use zomboid_engine::zombie::iso::weather::climate_manager::{
+        FLOAT_HUMIDITY, FLOAT_PRECIPITATION_INTENSITY, FLOAT_TEMPERATURE,
+    };
     use zomboid_engine::zombie::sandbox_options::SandboxOptions;
     use zomboid_engine::zombie::scripting::objects::resource_location::ResourceLocation;
 
@@ -8950,9 +8952,23 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
         let gt = GameTime {
             multiplier: parse_f(&opt("mult", "1.0"))?,
             minutes_per_day: parse_f(&opt("mpd", "30.0"))?,
+            // the booted server's clock stands at 9:00 of night 0
+            time_of_day: parse_f(&opt("tod", "9.0"))?,
+            nights_survived: opt("nights", "0")
+                .parse()
+                .map_err(|e| format!("nights: {e}"))?,
             ..GameTime::default()
         };
         let mut sandbox = SandboxOptions::new();
+        for (name, v) in [
+            ("Nutrition", 1.0),
+            ("MuscleStrainFactor", 0.7),
+            ("WoundInfectionFactor", 1.0),
+        ] {
+            if !sandbox.set_by_name(name, &Object::Number(v)) {
+                return Err(format!("sandbox option {name}"));
+            }
+        }
         for (k, v) in &o {
             if let Some(name) = k.strip_prefix("sb.") {
                 let d: f64 = v.parse().map_err(|e| format!("sandbox {k}: {e}"))?;
@@ -8970,6 +8986,10 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                 "wind" => climate.wind_power = parse_f(v)?,
                 "daylight" => climate.day_light_lagged = parse_f(v)?,
                 "night" => climate.night_lagged = parse_f(v)?,
+                "rain" => {
+                    climate.climate_floats[FLOAT_PRECIPITATION_INTENSITY].final_value = parse_f(v)?
+                }
+                "humidity" => climate.climate_floats[FLOAT_HUMIDITY].final_value = parse_f(v)?,
                 _ => {}
             }
         }
@@ -8981,12 +9001,6 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
             have_roof: false,
             z: 0,
         });
-        pl.ch.max_weight = 8;
-        pl.ch.max_weight_base = 8;
-        pl.ch.max_weight_delta = 1.0;
-        pl.ch.health = 1.0;
-        pl.ch.move_speed = 0.06;
-        pl.ch.allow_sprint = true;
         pl.ch.bed_type = "averageBed".to_string();
         pl.ch.sleep_blocked = true;
         for (k, v) in &o {
@@ -9076,6 +9090,11 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                         sq.in_room = v == "1";
                     }
                 }
+                "roof" => {
+                    if let Some(sq) = pl.ch.current_square.as_mut() {
+                        sq.have_roof = v == "1";
+                    }
+                }
                 "floor" => {
                     if let Some(sq) = pl.ch.current_square.as_mut() {
                         sq.z = v.parse().map_err(|e| format!("floor: {e}"))?;
@@ -9084,7 +9103,17 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
                 k if k.starts_with("sb.")
                     || matches!(
                         k,
-                        "mult" | "mpd" | "temp" | "wind" | "daylight" | "night" | "room"
+                        "mult"
+                            | "mpd"
+                            | "temp"
+                            | "wind"
+                            | "daylight"
+                            | "night"
+                            | "room"
+                            | "rain"
+                            | "humidity"
+                            | "tod"
+                            | "nights"
                     ) => {}
                 _ => return Err(format!("option {k}")),
             }
@@ -9092,17 +9121,41 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
         let gt = &pl.world.game_time;
         let _ = writeln!(
             sb,
-            "ENV mult={} delta={} gwsslu={} mpd={} dmpd={}",
+            "ENV tod={} nights={} mult={} delta={} gwsslu={} mpd={} dmpd={}",
+            hx(gt.time_of_day),
+            gt.nights_survived,
             hx(gt.get_multiplier()),
             hx(gt.get_time_delta()),
             hx(gt.get_game_world_seconds_since_last_update()),
             hx(gt.minutes_per_day),
             hx(gt.get_delta_minutes_per_day())
         );
+        let _ = write!(sb, "SANDBOX");
+        for name in [
+            "Nutrition",
+            "InjurySeverity",
+            "StatsDecrease",
+            "ZombieLore.Mortality",
+            "ZombieLore.Transmission",
+            "MuscleStrainFactor",
+            "WoundInfectionFactor",
+            "DecayingCorpseHealthImpact",
+            "EndRegen",
+            "BoneFracture",
+            "ClothingDegradation",
+        ] {
+            let i = pl
+                .world
+                .sandbox
+                .get_option_by_name(name)
+                .ok_or_else(|| format!("sandbox option {name}"))?;
+            let _ = write!(sb, " {name}={}", pl.world.sandbox.value_as_string(i));
+        }
+        sb.push('\n');
         let sq = pl.ch.current_square;
         let _ = writeln!(
             sb,
-            "FACTS inroom={} z={} hydro={} capw={} maxw={} lastsq={} vehicle={} building={} toxic={} sleepblock={} allasleep={} instance={} heatsources=0 airtemp={} airwind={} windchill={} fitnessperk={} strperk={} hours={:x} corpses={} cdm={} mwbase={} mwdelta={} roof={} health={} allowsprint={} movespeed={}",
+            "FACTS inroom={} z={} hydro={} capw={} maxw={} lastsq={} vehicle={} building={} toxic={} sleepblock={} allasleep={} instance={} heatsources=0 airtemp={} airwind={} windchill={} fitnessperk={} strperk={} hours={:x} corpses={} cdm={} mwbase={} mwdelta={} roof={} health={} allowsprint={} movespeed={} rain={} humidity={}",
             u8::from(sq.is_some_and(|s| s.in_room)),
             sq.map_or(0, |s| s.z),
             u8::from(pl.world.hydro_power_on),
@@ -9128,7 +9181,9 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
             u8::from(sq.is_some_and(|s| s.have_roof)),
             hx(pl.ch.health),
             u8::from(pl.ch.allow_sprint),
-            hx(pl.ch.move_speed)
+            hx(pl.ch.move_speed),
+            hx(pl.world.climate.get_rain_intensity()),
+            hx(pl.world.climate.get_humidity())
         );
         for n in 1..=ticks {
             for r in &run {

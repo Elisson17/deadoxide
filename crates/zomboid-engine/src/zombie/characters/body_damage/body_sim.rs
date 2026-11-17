@@ -275,13 +275,28 @@ impl PlayerBody {
             body: BodyDamage::new(true),
             moodles: Moodles::new(),
             nutrition: Nutrition::new(),
-            ch: CharCtx::default(),
+            ch: CharCtx {
+                // the field initialisers of IsoGameCharacter and IsoPlayer
+                health: 1.0,
+                move_speed: 0.06,
+                max_weight: 8,
+                max_weight_base: 8,
+                max_weight_delta: 1.0,
+                allow_sprint: true,
+                ..CharCtx::default()
+            },
             world,
         }
     }
 
+    /// zombie.characters.IsoGameCharacter.isDead: `health <= 0 || bodyDamage.getHealth() <= 0`, read live.
+    pub fn sync_dead(&mut self) {
+        self.ch.is_dead = self.ch.health <= 0.0 || self.body.overall_body_health <= 0.0;
+    }
+
     /// `IsoPlayer.update`'s `nutrition.update()`, with the thermoregulator's energy multiplier.
     pub fn update_nutrition(&mut self) {
+        self.sync_dead();
         let energy = self
             .body
             .thermoregulator
@@ -292,6 +307,7 @@ impl PlayerBody {
 
     /// `IsoGameCharacter.update`'s `moodles.Update()`.
     pub fn update_moodles(&mut self) -> Result<(), String> {
+        self.sync_dead();
         let mut c = MoodleCtx {
             stats: &self.stats,
             body: &self.body,
@@ -326,6 +342,7 @@ impl PlayerBody {
 
     /// zombie.characters.IsoGameCharacter.calculateStats (the Lua hook "CalculateStats" is taken as unhooked).
     pub fn calculate_stats(&mut self) -> Result<(), String> {
+        self.sync_dead();
         if self.ch.sleep_blocked {
             self.stats.reset(CharacterStat::Fatigue);
         }

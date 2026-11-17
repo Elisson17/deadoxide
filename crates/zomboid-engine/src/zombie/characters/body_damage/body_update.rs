@@ -2,6 +2,14 @@
 //! bookkeeping, `BodyPart.DamageUpdate`, `ClothingWetness.updateWetness` and the thermoregulator update. A path that
 //! needs a world object the port does not have (splatting blood on the floor, a vehicle, worn clothing, Lua events
 //! with listeners) returns `Err("not ported: ...")` instead of a made-up value.
+// The conditions are the Java ones, written as they are (`!(a <= b)` differs from `a > b` for NaN; the index loops walk
+// the parallel per-part arrays of the original), so the style lints that would rewrite them are off (the identical branches are the original's too).
+#![allow(
+    clippy::neg_cmp_op_on_partial_ord,
+    clippy::needless_range_loop,
+    clippy::manual_clamp,
+    clippy::if_same_then_else
+)]
 use super::body_part_type;
 use super::body_sim::PlayerBody;
 use super::metabolics::Metabolics;
@@ -294,9 +302,8 @@ impl PlayerBody {
             4 => reducers += 3,
             _ => {}
         }
-        match self.lvl(MoodleType::Bleeding) {
-            2..=4 => reducers += 1,
-            _ => {}
+        if matches!(self.lvl(MoodleType::Bleeding), 2..=4) {
+            reducers += 1;
         }
         match self.lvl(MoodleType::Injured) {
             2 => reducers += 1,
@@ -583,7 +590,28 @@ impl PlayerBody {
                 }
             }
         } else if self.ch.has_trait("Smoker") {
-            return Err(not_ported("UpdateCold of a smoker (TriggerSneezeCough)"));
+            if self.body.sneeze_cough_time > 0 {
+                self.body.sneeze_cough_time -= 1;
+                if self.body.sneeze_cough_time == 0 {
+                    self.body.sneeze_cough_active = 0;
+                }
+            }
+            if self.body.time_to_sneeze_or_cough >= 0.0 {
+                if !self.ch.speaking {
+                    let g = self
+                        .world
+                        .game_time
+                        .get_game_world_seconds_since_last_update();
+                    self.body.time_to_sneeze_or_cough -= g;
+                    if self.body.time_to_sneeze_or_cough <= 0.0 {
+                        return Err(not_ported("BodyDamage.TriggerSneezeCough (a sound)"));
+                    }
+                }
+            } else {
+                // smokerSneezeTimerMin 43200, smokerSneezeTimerMax 129600
+                self.body.time_to_sneeze_or_cough =
+                    43200.0 + self.world.rand.next(129600 - 43200) as f32;
+            }
         }
         Ok(())
     }
@@ -816,9 +844,8 @@ impl PlayerBody {
             self.reduce_general_health(final_bleed);
             // Rand.NextBool(Rand.AdjustForFramerate(1000)) then IsoGameCharacter.addBlood
             if self.world.rand.next_bool(adjust_for_framerate(1000)) {
-                return Err(not_ported(
-                    "BodyPart.DamageUpdate: IsoGameCharacter.addBlood",
-                ));
+                // IsoGameCharacter.addBlood(part, false, false, true): the blood of the `HumanVisual` and of the worn
+                // clothing (`OutfitRNG`, not `Rand`); nothing the body simulation reads
             }
         }
         if p!().have_bullet {
@@ -1129,8 +1156,27 @@ impl PlayerBody {
         Ok(())
     }
 
+    /// zombie.characters.IsoGameCharacter.splatBloodFloor: the draws of the three splats. `IsoChunk.addBloodSplat` adds a
+    /// floor splat to the chunk's list (and sends it to clients), which nothing in the body simulation reads.
+    fn splat_blood_floor(&mut self) {
+        if self.ch.current_square.is_some() {
+            if (self.ch.health <= 0.0 || self.body.overall_body_health <= 0.0)
+                && self.world.rand.next(10) == 0
+            {
+                self.world.rand.next(20);
+            }
+            if self.world.rand.next(14) == 0 {
+                self.world.rand.next(8);
+            }
+            if self.world.rand.next(50) == 0 {
+                self.world.rand.next(20);
+            }
+        }
+    }
+
     /// zombie.characters.BodyDamage.BodyDamage.Update
     pub fn update_body(&mut self) -> R {
+        self.sync_dead();
         if self.ch.god_mode {
             return Err(not_ported("BodyDamage.Update of a god-mode player"));
         }
@@ -1146,10 +1192,10 @@ impl PlayerBody {
             let bleed_chance =
                 1.0f32 / n as f32 * 200.0 * self.world.game_time.get_inv_multiplier();
             if (self.world.rand.next(bleed_chance as i32) as f32) < bleed_chance * 0.3 {
-                return Err(not_ported("IsoGameCharacter.splatBloodFloor"));
+                self.splat_blood_floor();
             }
             if self.world.rand.next(bleed_chance as i32) == 0 {
-                return Err(not_ported("IsoGameCharacter.splatBloodFloor"));
+                self.splat_blood_floor();
             }
         }
         self.update_thermoregulator()?;

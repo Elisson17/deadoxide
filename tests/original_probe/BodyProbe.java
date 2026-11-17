@@ -203,6 +203,12 @@ public class BodyProbe {
         setField(gt, "minutesPerDay", Float.parseFloat(o.getOrDefault("mpd", "30.0")));
         List<Runnable> restore = new ArrayList<>();
         restore.add(() -> { gt.setMultiplier(oldMult); try { setField(gt, "minutesPerDay", oldMpd); } catch (Exception e) { throw new RuntimeException(e); } });
+        // the game clock: time of day and nights survived (the world age the player's hours survived come from)
+        float oldTod = gt.getTimeOfDay();
+        int oldNights = gt.getNightsSurvived();
+        if (o.containsKey("tod")) setField(gt, "timeOfDay", Float.parseFloat(o.get("tod")));
+        if (o.containsKey("nights")) setField(gt, "nightsSurvived", Integer.parseInt(o.get("nights")));
+        restore.add(() -> { try { setField(gt, "timeOfDay", oldTod); setField(gt, "nightsSurvived", oldNights); } catch (Exception e) { throw new RuntimeException(e); } });
         SandboxOptions so = SandboxOptions.instance;
         for (java.util.Map.Entry<String, String> e : o.entrySet()) {
             if (e.getKey().startsWith("sb.")) {
@@ -214,11 +220,13 @@ public class BodyProbe {
         }
         // the climate: the values the character reads are set directly on the manager (the world's own are restored after)
         ClimateManager clim = ClimateManager.getInstance();
-        for (String cf : new String[] {"temp", "wind", "daylight", "night"}) {
+        for (String cf : new String[] {"temp", "wind", "daylight", "night", "rain", "humidity"}) {
             if (!o.containsKey(cf)) continue;
             float v = Float.parseFloat(o.get(cf));
             switch (cf) {
                 case "temp" -> { Object c = clim.getClimateFloat(ClimateManager.FLOAT_TEMPERATURE); float old = (Float) g(c, "finalValue"); setField(c, "finalValue", v); restore.add(() -> { try { setField(c, "finalValue", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
+                case "rain" -> { Object c = clim.getClimateFloat(ClimateManager.FLOAT_PRECIPITATION_INTENSITY); float old = (Float) g(c, "finalValue"); setField(c, "finalValue", v); restore.add(() -> { try { setField(c, "finalValue", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
+                case "humidity" -> { Object c = clim.getClimateFloat(ClimateManager.FLOAT_HUMIDITY); float old = (Float) g(c, "finalValue"); setField(c, "finalValue", v); restore.add(() -> { try { setField(c, "finalValue", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
                 case "wind" -> { float old = (Float) g(clim, "windPower"); setField(clim, "windPower", v); restore.add(() -> { try { setField(clim, "windPower", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
                 case "daylight" -> { float old = (Float) g(clim, "dayLightLagged"); setField(clim, "dayLightLagged", v); restore.add(() -> { try { setField(clim, "dayLightLagged", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
                 default -> { float old = (Float) g(clim, "nightLagged"); setField(clim, "nightLagged", v); restore.add(() -> { try { setField(clim, "nightLagged", old); } catch (Exception e) { throw new RuntimeException(e); } }); }
@@ -265,8 +273,15 @@ public class BodyProbe {
         }
         set(RandStandard.INSTANCE, RandAbstract.class, "rand", new Random(seed));
         set(RandStandard.INSTANCE, RandAbstract.class, "id", 0);
-        out.println("ENV mult=" + f(gt.getMultiplier()) + " delta=" + f(gt.getTimeDelta()) + " gwsslu=" + f(gt.getGameWorldSecondsSinceLastUpdate())
+        out.println("ENV tod=" + f(gt.getTimeOfDay()) + " nights=" + gt.getNightsSurvived() + " mult=" + f(gt.getMultiplier()) + " delta=" + f(gt.getTimeDelta()) + " gwsslu=" + f(gt.getGameWorldSecondsSinceLastUpdate())
             + " mpd=" + f(gt.getMinutesPerDay()) + " dmpd=" + f(gt.getDeltaMinutesPerDay()));
+        // the sandbox options the body simulation reads, as the server holds them after the scenario's own
+        StringBuilder sbo = new StringBuilder("SANDBOX");
+        for (String sn : new String[] {"Nutrition", "InjurySeverity", "StatsDecrease", "ZombieLore.Mortality", "ZombieLore.Transmission", "MuscleStrainFactor",
+                "WoundInfectionFactor", "DecayingCorpseHealthImpact", "EndRegen", "BoneFracture", "ClothingDegradation"}) {
+            sbo.append(' ').append(sn).append('=').append(so.getOptionByName(sn).asConfigOption().getValueAsString());
+        }
+        out.println(sbo);
         // the facts of the headless player the port takes as inputs: its square, its inventory and the stats it was born with
         out.println("FACTS inroom=" + (sq.isInARoom() ? 1 : 0) + " z=" + sq.getZ() + " hydro=" + (IsoWorld.instance.isHydroPowerOn() ? 1 : 0)
             + " capw=" + f(pl.getInventory().getCapacityWeight()) + " maxw=" + pl.getMaxWeight() + " lastsq=" + (pl.getLastSquare() == null ? "null" : pl.getLastSquare() == sq ? "same" : "other")
@@ -280,7 +295,8 @@ public class BodyProbe {
             + " fitnessperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Fitness) + " strperk=" + pl.getPerkLevel(zombie.characters.skills.PerkFactory.Perks.Strength)
             + " hours=" + d(pl.getHoursSurvived()) + " corpses=" + zombie.iso.CorpseCount.instance.getCorpseCount(pl) + " cdm=" + f(pl.getClothingDiscomfortModifier())
             + " mwbase=" + pl.getMaxWeightBase() + " mwdelta=" + f(pl.getMaxWeightDelta()) + " roof=" + (sq.haveRoof ? 1 : 0) + " health=" + f(pl.getHealth())
-            + " allowsprint=" + (pl.isAllowSprint() ? 1 : 0) + " movespeed=" + f((Float) g(pl, "moveSpeed")));
+            + " allowsprint=" + (pl.isAllowSprint() ? 1 : 0) + " movespeed=" + f((Float) g(pl, "moveSpeed"))
+            + " rain=" + f(clim.getRainIntensity()) + " humidity=" + f(clim.getHumidity()));
         BodyDamage bd = pl.getBodyDamage();
         Method calc = IsoGameCharacter.class.getDeclaredMethod("calculateStats");
         calc.setAccessible(true);

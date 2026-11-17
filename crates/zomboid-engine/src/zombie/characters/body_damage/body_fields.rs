@@ -205,6 +205,13 @@ pub fn char_field<'a>(c: &'a mut CharCtx, name: &str) -> Result<Field<'a>, Strin
         "health" => Field::F32(&mut c.health),
         "maxWeight" => Field::I32(&mut c.max_weight),
         "corpseSicknessRate" => Field::F32(&mut c.corpse_sickness_rate),
+        // fields the probe sets but does not print
+        "currentSpeed" => Field::F32(&mut c.current_speed),
+        "hoursSurvived" => Field::F64(&mut c.hours_survived),
+        "sleepingPillsTaken" => Field::I32(&mut c.sleeping_pills_taken),
+        "betaEffect" => Field::F32(&mut c.beta_effect),
+        "betaDelta" => Field::F32(&mut c.beta_delta),
+        "idleSquareTime" => Field::F32(&mut c.idle_square_time),
         _ => return Err(format!("character field {name}")),
     })
 }

@@ -35,7 +35,45 @@
 # -- the climate the character stands in: the outdoor square field set (sqfield=1) gives wind chill; a room (inroom=1) and floor 1 change the air
 30:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,temp=-5,wind=0.5,daylight=0.3,night=0.2
 31:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,temp=-20,wind=1,daylight=0
-32:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,temp=-5,wind=0.5,daylight=0.3,night=0.2
-33:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,temp=35,wind=0.2,daylight=0.9,night=0.1
+32:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,roof=1,temp=-5,wind=0.5,daylight=0.3,night=0.2
+33:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,roof=1,temp=35,wind=0.2,daylight=0.9,night=0.1
 34:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=2,floor=1,inroom=0,temp=30,daylight=0.6,night=0.4
 35:100:calc+moodles:50:moodles:mult=1,mpd=1,sqfield=1,room=2,floor=1,inroom=0,temp=5,daylight=0.6,night=0.4
+# -- stage 3: BodyDamage.Update on the headless player (the tick order of IsoGameCharacter.update: BodyDamage, calculateStats; then nutrition and moodles)
+100:300:body+calc+nutrition+moodles:100:stats+thermo+parts+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=22,daylight=0.5
+100:2000:body+calc+nutrition+moodles:500:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=5,wind=0.3,humidity=0.4,daylight=0.4
+100:1500:body+calc+nutrition+moodles:250:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=-20,wind=1,stat.Temperature=29,node.6.celcius=29,daylight=0
+100:1500:body+calc+nutrition+moodles:250:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=-25,wind=1,stat.Temperature=21,node.6.celcius=21,daylight=0
+100:1500:body+calc+nutrition+moodles:250:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=40,wind=0,humidity=0.9,stat.Temperature=40.5,node.6.celcius=40.5,daylight=1
+100:1500:body+calc+nutrition+moodles:250:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=45,wind=0,humidity=0.2,stat.Temperature=41.6,node.6.celcius=41.6,daylight=1
+100:600:body+calc+nutrition+moodles:200:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=18,sleep=1,asleep=1,stat.Fatigue=0.8,bed=badBed
+100:600:body+calc+nutrition+moodles:200:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=22,moving=1,running=1,ch.currentSpeed=0.06
+100:600:body+calc+nutrition+moodles:200:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=22,moving=1,sprint=1,ch.currentSpeed=0.06,fitness=3
+100:600:body+calc+nutrition+moodles:200:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=22,moving=1,sneak=1,ch.currentSpeed=0.03
+100:600:body+calc+nutrition+moodles:200:stats+thermo+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=22,moving=1,ch.currentSpeed=0.04,strength=5
+100:900:body+calc+nutrition+moodles:300:stats+thermo+parts+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=12,rain=0.7,humidity=0.95,daylight=0.3
+100:900:body+calc+nutrition+moodles:300:stats+thermo+parts+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,room=1,inroom=1,building=1,roof=1,temp=12,rain=0.7,humidity=0.95,daylight=0.3
+100:900:body+calc+nutrition+moodles:300:stats+thermo+parts+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=2,rain=1,wind=0.6,stat.Wetness=40,humidity=0.9
+# a wound: the part and its times set as a save would hold them
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=1,mpd=1,sqfield=1,temp=22,bp.2.scratched=1,bp.2.scratchTime=9,bp.2.bleeding=1,bp.2.bleedingTime=3
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.4.deepWounded=1,bp.4.deepWoundTime=15,bp.4.bleeding=1,bp.4.bleedingTime=6
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.4.deepWounded=1,bp.4.deepWoundTime=15,bp.4.bandaged=1,bp.4.bandageLife=20,bp.4.bleedingTime=6
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.8.cut=1,bp.8.cutTime=12,bp.8.bleeding=1,bp.8.bleedingTime=5,bp.8.alcoholLevel=3
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.5.cutTime=10,bp.5.cut=1,bp.5.stitched=1,bp.5.stitchTime=10,bp.5.bandaged=1,bp.5.bandageLife=30
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.6.fractureTime=40,bp.6.splint=1,bp.6.splintFactor=0.8,bp.6.burnTime=9,bp.6.additionalPain=8
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,sb.WoundInfectionFactor=2,bp.2.scratched=1,bp.2.scratchTime=9,bp.2.infectedWound=1,bp.2.woundInfectionLevel=1,bp.2.bandaged=1,bp.2.bandageLife=20
+100:900:body+calc+nutrition+moodles:300:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,sb.WoundInfectionFactor=2,bp.2.cut=1,bp.2.cutTime=9,bp.2.alcoholLevel=5,bp.2.infectedWound=1,bp.2.woundInfectionLevel=3,bp.3.garlicFactor=40,bp.3.scratchTime=5,bp.3.infectedWound=1,bp.3.woundInfectionLevel=2
+# a bite: the part bleeds more than the health allows to ignore, the infection starts and the mortality is drawn
+100:600:body+calc+nutrition+moodles:200:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.3.bitten=1,bp.3.biteTime=60,bp.3.bleeding=1,bp.3.bleedingTime=10,bp.3.isInfected=1,bp.3.infectedWound=1,sb.ZombieLore.Mortality=4,tod=9,nights=2
+100:600:body+calc+nutrition+moodles:200:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.3.bitten=1,bp.3.biteTime=60,bp.3.bandaged=1,bp.3.bandageLife=30,bp.3.isInfected=1,bp.3.infectedWound=1,sb.ZombieLore.Mortality=3,trait=resilient
+100:600:body+calc+nutrition+moodles:200:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.3.bitten=1,bp.3.biteTime=60,bp.3.bandaged=1,bp.3.bandageLife=30,bp.3.isInfected=1,sb.ZombieLore.Mortality=1
+100:600:body+calc+nutrition+moodles:200:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bp.3.isInfected=1,sb.ZombieLore.Mortality=7,bp.3.isFakeInfected=1
+100:600:body+calc+nutrition+moodles:200:stats+parts+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,bd.isFakeInfected=1,bp.0.isFakeInfected=1,stat.ZombieFever=30,ch.reduceInfectionPower=20
+# illness, health and the moodle driven damage
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,room=1,inroom=1,building=1,roof=1,temp=20,bd.hasACold=1,bd.coldStrength=40,bd.catchACold=0
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=-8,wind=0.4,rain=0.5,humidity=0.8,stat.Wetness=60,trait=pronetoillness
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,stat.Hunger=1,stat.Thirst=1,stat.Poison=60,stat.FoodSickness=80
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,stat.Sickness=0.6,stat.FoodSickness=90,stat.Poison=30,stat.Intoxication=60
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,zombies=6,trait=cowardly,stat.Panic=10,bd.healthFromFoodTimer=500
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,trait=smoker
+100:900:body+calc+nutrition+moodles:300:stats+bodyst+moodles+draws:mult=4,mpd=1,sqfield=1,temp=22,asleep=1,bed=floor,sleep=1,stat.Fatigue=0.7,stat.Intoxication=40
