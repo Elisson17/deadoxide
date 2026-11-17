@@ -339,6 +339,17 @@ sel xmodels && ai_case xmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last
 sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x anim x media/anims_X
 # zombie.characters.BodyDamage and the stat updates of IsoGameCharacter on a headless IsoPlayer in the booted server
 sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
+# the same for every .fbx of media/models_X and media/textures (2032 files, binary and ASCII): the port of assimp's FBX importer
+# (FBXConverter: meshes, the $AssimpFbx$ chain nodes, skins, materials, animations). fbxscene: the importer alone (+mat also prints every
+# material property: key, semantic, index, type, data); fbxmodelscene/fbxanimscene: after the game's own flags (TriangulateProcess,
+# JoinIdenticalVertices, LimitBoneWeights, OptimizeMeshes, RemoveRedundantMaterials, FindInstances, MakeLeftHanded)
+sel fbxscene && ai_case fbxscene AiSceneProbe none+mat fbx media/models_X media/textures
+sel fbxmodelscene && ai_case fbxmodelscene AiSceneProbe mesh fbx media/models_X media/textures
+sel fbxanimscene && ai_case fbxanimscene AiSceneProbe anim fbx media/models_X media/textures
+# ProcessedAiScene.process over those: the models with the .fbx scale/rotation modifiers (FileTask_LoadMesh.loadFBX) in Normal and
+# StaticMesh mode, by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadFBX)
+sel fbxmodels && ai_case fbxmodels ProcessedSceneProbe Normal:fbx,StaticMesh:fbx,Normal:last+fbx,StaticMesh:all+fbx,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx mesh fbx media/models_X media/textures
+sel fbxanims && ai_case fbxanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim fbx media/models_X media/textures
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

@@ -127,6 +127,7 @@ fn default_material() -> Material {
         semantic: 0,
         index: 0,
         data,
+        ptype: 3,
     });
     m
 }

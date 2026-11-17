@@ -31,7 +31,7 @@ fn at(s: &[u8], i: usize) -> u8 {
 /// `strtoul10_64(in, &out, max_inout)`: the value, the index after the digits and the digit count; `Err` is the
 /// `std::invalid_argument` thrown when `in` does not start with a digit. A digit run that overflows `uint64_t` returns 0
 /// (the library logs a warning) with the index left where the overflow was found.
-fn strtoul10_64(s: &[u8], mut i: usize, max: Option<u32>) -> Result<(u64, usize, u32), String> {
+pub fn strtoul10_64(s: &[u8], mut i: usize, max: Option<u32>) -> Result<(u64, usize, u32), String> {
     if !at(s, i).is_ascii_digit() {
         return Err("The string \"\" cannot be converted into a value.".to_string());
     }
@@ -125,7 +125,9 @@ pub fn fast_atoreal_move(s: &[u8], mut i: usize) -> Result<(f32, usize), String>
         if einv {
             exp = -exp;
         }
-        f *= 10.0f32.powf(exp);
+        // `pow(float, float)` of the reference's libm (x86-64) returns the correctly rounded float for powers of ten;
+        // the host's `powf` (Apple arm64) is one ulp low for some (10^-22), so the power is taken in double.
+        f *= 10.0f64.powf(f64::from(exp)) as f32;
     }
     if inv {
         f = -f;

@@ -8,6 +8,7 @@ pub mod make_left_handed;
 pub mod optimize_meshes;
 pub mod remove_redundant_mats;
 pub mod scene_preprocessor;
+pub mod triangulate;
 
 /// The steps in the order `Importer::ApplyPostProcessing` runs them: the registration order of
 /// `GetPostProcessingStepInstanceList` in the game's `libjassimp` (read from the disassembled function: MakeLeftHanded,
@@ -55,16 +56,7 @@ pub fn apply(scene: &mut crate::native::assimp::scene::Scene, spec: &str) -> Res
             "REMOVE_REDUNDANT_MATERIALS" => remove_redundant_mats::execute(scene),
             "LIMIT_BONE_WEIGHTS" => limit_bone_weights::execute(scene)?,
             "JOIN_IDENTICAL_VERTICES" => join_vertices::execute(scene)?,
-            // TriangulateProcess leaves a mesh whose faces are all triangles alone
-            "TRIANGULATE" => {
-                if scene
-                    .meshes
-                    .iter()
-                    .any(|m| m.faces.iter().any(|f| f.len() != 3))
-                {
-                    return Err("UNPORTED: Triangulate of a polygon".to_string());
-                }
-            }
+            "TRIANGULATE" => triangulate::execute(scene),
             "FIND_INSTANCES" => find_instances::execute(scene)?,
             "OPTIMIZE_MESHES" => optimize_meshes::execute(scene)?,
             _ => {}

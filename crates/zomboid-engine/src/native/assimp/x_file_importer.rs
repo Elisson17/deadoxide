@@ -16,7 +16,7 @@ const TEXTURE_DIFFUSE: u32 = 1;
 const TEXTURE_NORMALS: u32 = 6;
 
 /// `aiMaterial::AddProperty(const aiString*)`: the length, the characters and a terminating NUL.
-fn ai_string(s: &str) -> Vec<u8> {
+pub(crate) fn ai_string(s: &str) -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&(s.len() as u32).to_le_bytes());
     data.extend_from_slice(s.as_bytes());
@@ -34,6 +34,7 @@ fn prop(key: &str, semantic: u32, index: u32, data: Vec<u8>) -> MaterialProperty
         semantic,
         index,
         data,
+        ptype: 0,
     }
 }
 

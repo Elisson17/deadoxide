@@ -110,6 +110,16 @@ impl Quat {
     }
 }
 
+/// `std::sin(float)`: the correctly rounded result (computed in double precision).
+pub fn sinf(a: f32) -> f32 {
+    f64::from(a).sin() as f32
+}
+
+/// `std::cos(float)`: the correctly rounded result (computed in double precision).
+pub fn cosf(a: f32) -> f32 {
+    f64::from(a).cos() as f32
+}
+
 /// aiMatrix4x4 (row-major `a1 a2 a3 a4 / b1 ... / d1 d2 d3 d4`)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mat4 {
@@ -187,6 +197,164 @@ impl Mat4 {
         }
     }
 
+    /// aiMatrix4x4::Translation
+    pub fn translation(v: Vec3) -> Mat4 {
+        Mat4 {
+            a4: v.x,
+            b4: v.y,
+            c4: v.z,
+            ..Mat4::default()
+        }
+    }
+
+    /// aiMatrix4x4::Scaling
+    pub fn scaling(v: Vec3) -> Mat4 {
+        Mat4 {
+            a1: v.x,
+            b2: v.y,
+            c3: v.z,
+            ..Mat4::default()
+        }
+    }
+
+    /// aiMatrix4x4::RotationX (`std::cos(float)` is computed in double precision and rounded)
+    pub fn rotation_x(a: f32) -> Mat4 {
+        let (s, c) = (sinf(a), cosf(a));
+        Mat4 {
+            b2: c,
+            c3: c,
+            b3: -s,
+            c2: s,
+            ..Mat4::default()
+        }
+    }
+
+    /// aiMatrix4x4::RotationY
+    pub fn rotation_y(a: f32) -> Mat4 {
+        let (s, c) = (sinf(a), cosf(a));
+        Mat4 {
+            a1: c,
+            c3: c,
+            c1: -s,
+            a3: s,
+            ..Mat4::default()
+        }
+    }
+
+    /// aiMatrix4x4::RotationZ
+    pub fn rotation_z(a: f32) -> Mat4 {
+        let (s, c) = (sinf(a), cosf(a));
+        Mat4 {
+            a1: c,
+            b2: c,
+            a2: -s,
+            b1: s,
+            ..Mat4::default()
+        }
+    }
+
+    /// aiMatrix4x4::IsIdentity (epsilon 10e-3)
+    pub fn is_identity(&self) -> bool {
+        let e = 10e-3_f64 as f32;
+        let small = |v: f32| v <= e && v >= -e;
+        let one = |v: f32| f64::from(v) <= 1.0 + f64::from(e) && f64::from(v) >= 1.0 - f64::from(e);
+        small(self.a2)
+            && small(self.a3)
+            && small(self.a4)
+            && small(self.b1)
+            && small(self.b3)
+            && small(self.b4)
+            && small(self.c1)
+            && small(self.c2)
+            && small(self.c4)
+            && small(self.d1)
+            && small(self.d2)
+            && small(self.d3)
+            && one(self.a1)
+            && one(self.b2)
+            && one(self.c3)
+            && one(self.d4)
+    }
+
+    /// aiMatrix4x4::Inverse
+    pub fn inverse(&self) -> Mat4 {
+        let det = self.determinant();
+        if det == 0.0 {
+            let n = f32::NAN;
+            return Mat4 {
+                a1: n,
+                a2: n,
+                a3: n,
+                a4: n,
+                b1: n,
+                b2: n,
+                b3: n,
+                b4: n,
+                c1: n,
+                c2: n,
+                c3: n,
+                c4: n,
+                d1: n,
+                d2: n,
+                d3: n,
+                d4: n,
+            };
+        }
+        let invdet = 1.0f32 / det;
+        let Mat4 {
+            a1,
+            a2,
+            a3,
+            a4,
+            b1,
+            b2,
+            b3,
+            b4,
+            c1,
+            c2,
+            c3,
+            c4,
+            d1,
+            d2,
+            d3,
+            d4,
+        } = *self;
+        Mat4 {
+            a1: invdet
+                * (b2 * (c3 * d4 - c4 * d3) + b3 * (c4 * d2 - c2 * d4) + b4 * (c2 * d3 - c3 * d2)),
+            a2: -invdet
+                * (a2 * (c3 * d4 - c4 * d3) + a3 * (c4 * d2 - c2 * d4) + a4 * (c2 * d3 - c3 * d2)),
+            a3: invdet
+                * (a2 * (b3 * d4 - b4 * d3) + a3 * (b4 * d2 - b2 * d4) + a4 * (b2 * d3 - b3 * d2)),
+            a4: -invdet
+                * (a2 * (b3 * c4 - b4 * c3) + a3 * (b4 * c2 - b2 * c4) + a4 * (b2 * c3 - b3 * c2)),
+            b1: -invdet
+                * (b1 * (c3 * d4 - c4 * d3) + b3 * (c4 * d1 - c1 * d4) + b4 * (c1 * d3 - c3 * d1)),
+            b2: invdet
+                * (a1 * (c3 * d4 - c4 * d3) + a3 * (c4 * d1 - c1 * d4) + a4 * (c1 * d3 - c3 * d1)),
+            b3: -invdet
+                * (a1 * (b3 * d4 - b4 * d3) + a3 * (b4 * d1 - b1 * d4) + a4 * (b1 * d3 - b3 * d1)),
+            b4: invdet
+                * (a1 * (b3 * c4 - b4 * c3) + a3 * (b4 * c1 - b1 * c4) + a4 * (b1 * c3 - b3 * c1)),
+            c1: invdet
+                * (b1 * (c2 * d4 - c4 * d2) + b2 * (c4 * d1 - c1 * d4) + b4 * (c1 * d2 - c2 * d1)),
+            c2: -invdet
+                * (a1 * (c2 * d4 - c4 * d2) + a2 * (c4 * d1 - c1 * d4) + a4 * (c1 * d2 - c2 * d1)),
+            c3: invdet
+                * (a1 * (b2 * d4 - b4 * d2) + a2 * (b4 * d1 - b1 * d4) + a4 * (b1 * d2 - b2 * d1)),
+            c4: -invdet
+                * (a1 * (b2 * c4 - b4 * c2) + a2 * (b4 * c1 - b1 * c4) + a4 * (b1 * c2 - b2 * c1)),
+            d1: -invdet
+                * (b1 * (c2 * d3 - c3 * d2) + b2 * (c3 * d1 - c1 * d3) + b3 * (c1 * d2 - c2 * d1)),
+            d2: invdet
+                * (a1 * (c2 * d3 - c3 * d2) + a2 * (c3 * d1 - c1 * d3) + a3 * (c1 * d2 - c2 * d1)),
+            d3: -invdet
+                * (a1 * (b2 * d3 - b3 * d2) + a2 * (b3 * d1 - b1 * d3) + a3 * (b1 * d2 - b2 * d1)),
+            d4: invdet
+                * (a1 * (b2 * c3 - b3 * c2) + a2 * (b3 * c1 - b1 * c3) + a3 * (b1 * c2 - b2 * c1)),
+        }
+    }
+
     /// aiMatrix4x4::Determinant
     pub fn determinant(&self) -> f32 {
         self.a1 * self.b2 * self.c3 * self.d4 - self.a1 * self.b2 * self.c4 * self.d3
@@ -214,7 +382,9 @@ impl Mat4 {
             + self.a4 * self.b3 * self.c2 * self.d1
     }
 
-    /// aiMatrix4x4::Decompose(scaling, rotation, position)
+    /// aiMatrix4x4::Decompose(scaling, rotation, position), with the arithmetic of the compiled library: the column
+    /// lengths add the squares as x, y, z (measured against the original on 3000 random rotation keys, the other sum
+    /// orders differ in the last bit) and the columns are normalized by multiplying with `1 / scale`.
     pub fn decompose(&self) -> (Vec3, Quat, Vec3) {
         let pos = Vec3::new(self.a4, self.b4, self.c4);
         let mut cols = [
@@ -222,30 +392,17 @@ impl Mat4 {
             Vec3::new(self.a2, self.b2, self.c2),
             Vec3::new(self.a3, self.b3, self.c3),
         ];
-        let mut scaling = Vec3::new(cols[0].length(), cols[1].length(), cols[2].length());
-        if self.determinant() < 0.0 {
+        let len = |v: &Vec3| (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+        let mut scaling = Vec3::new(len(&cols[0]), len(&cols[1]), len(&cols[2]));
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        if !(0.0 <= self.determinant()) {
             scaling = Vec3::new(-scaling.x, -scaling.y, -scaling.z);
         }
-        if scaling.x != 0.0 {
-            cols[0] = Vec3::new(
-                cols[0].x / scaling.x,
-                cols[0].y / scaling.x,
-                cols[0].z / scaling.x,
-            );
-        }
-        if scaling.y != 0.0 {
-            cols[1] = Vec3::new(
-                cols[1].x / scaling.y,
-                cols[1].y / scaling.y,
-                cols[1].z / scaling.y,
-            );
-        }
-        if scaling.z != 0.0 {
-            cols[2] = Vec3::new(
-                cols[2].x / scaling.z,
-                cols[2].y / scaling.z,
-                cols[2].z / scaling.z,
-            );
+        for (col, s) in cols.iter_mut().zip([scaling.x, scaling.y, scaling.z]) {
+            if s != 0.0 {
+                let inv = 1.0f32 / s;
+                *col = Vec3::new(col.x * inv, col.y * inv, col.z * inv);
+            }
         }
         let m = Mat3 {
             a1: cols[0].x,
@@ -307,6 +464,8 @@ pub struct MaterialProperty {
     pub semantic: u32,
     pub index: u32,
     pub data: Vec<u8>,
+    /// aiPropertyTypeInfo (1 float, 2 double, 3 string, 4 integer, 5 buffer)
+    pub ptype: u32,
 }
 
 /// aiMaterial
@@ -349,6 +508,15 @@ pub struct NodeAnim {
     pub post_state: i32,
 }
 
+impl NodeAnim {
+    /// whether any of the three key arrays is non-empty (the library drops a channel with none)
+    pub fn has_keys(&self) -> bool {
+        !self.position_keys.is_empty()
+            || !self.rotation_keys.is_empty()
+            || !self.scaling_keys.is_empty()
+    }
+}
+
 /// aiAnimation
 #[derive(Clone, Debug, PartialEq)]
 pub struct Animation {
@@ -365,4 +533,6 @@ pub struct Scene {
     pub materials: Vec<Material>,
     pub animations: Vec<Animation>,
     pub root_node: Option<Node>,
+    pub num_cameras: u32,
+    pub num_lights: u32,
 }
