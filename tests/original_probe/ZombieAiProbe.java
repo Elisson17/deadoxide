@@ -28,8 +28,12 @@ import zombie.SandboxOptions;
 public class ZombieAiProbe {
     static final String[] VARS = {
         "bLunge", "bMoving", "bPathfind", "bHasTarget", "bCanSeeTarget", "bAttack", "isFacingTarget", "alerted", "bThump",
-        "bKnockedDown", "bOnFloor", "bStaggerBack", "hashitreaction", "AttackType", "AttackOutcome", "AttackDidDamage", "ZombieBiteDone"
+        "bKnockedDown", "bOnFloor", "bStaggerBack", "hashitreaction", "AttackType", "AttackOutcome", "AttackDidDamage", "ZombieBiteDone",
+        "angle", "animAngle", "twist", "targetTwist", "shoulderTwist", "excessTwist", "angleStepDelta", "angleTwistDelta", "isTurning",
+        "isTurning90", "isTurningAround", "previousState", "bStopLunging", "lungeTimer", "distanceToTarget", "stateEventDelayTimer"
     };
+
+    static final java.util.Set<String> NO_READ = new java.util.HashSet<>(java.util.Arrays.asList("useragdollvehiclecollision", "isonback", "isupright", "canragdoll", "anygrappleanim", "numtwistbones", "grappleanim"));
 
     static String vars(IsoZombie z) {
         StringBuilder sb = new StringBuilder();
@@ -104,6 +108,17 @@ public class ZombieAiProbe {
         OutfitRNG.setSeed(seed);
         IsoZombie z = new IsoZombie(cell);
         out.println("ZOMBIE draws=" + ActionContextProbe.g(RandStandard.INSTANCE, "id") + " vars=" + ActionContextProbe.gameVars(z));
+        // the zombie's variables at construction: name, slot type and value (the port's table of the registered callbacks)
+        java.util.List<String> varLines = new java.util.ArrayList<>();
+        for (var slot : z.getGameVariables()) {
+            // the getters of NO_READ make the animation player (getAnimationPlayer()), which the first animation frame does in
+            // the game: they are not read here
+            String v = NO_READ.contains(slot.getKey().toLowerCase()) ? "?" : slot.getValueString();
+            if (z.hasAnimationPlayer()) { System.err.println("PLAYER MADE BY " + slot.getKey()); }
+            varLines.add("VAR " + slot.getKey().toLowerCase() + " " + slot.getType() + " " + v);
+        }
+        java.util.Collections.sort(varLines);
+        for (String l : varLines) out.println(l);
         IsoGridSquare sq = cell.getGridSquare(8280, 11670, 0);
         z.setCurrent(sq);
         z.setMovingSquareNow();

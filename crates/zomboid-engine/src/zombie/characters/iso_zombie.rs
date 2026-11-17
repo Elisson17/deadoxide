@@ -23,10 +23,12 @@ use crate::zombie::core::skinnedmodel::advancedanimation::animation_variable_sou
 };
 use crate::zombie::core::skinnedmodel::advancedanimation::i_animation_variable_source::IAnimationVariableSource;
 use crate::zombie::core::skinnedmodel::animation::animation_clip::AnimationClips;
+use crate::zombie::core::skinnedmodel::animation::animation_player::AnimationPlayer;
 use crate::zombie::core::skinnedmodel::animation::animation_track::AnimationTrack;
 use crate::zombie::core::skinnedmodel::population::outfit_rng::OutfitRng;
 use crate::zombie::iso::iso_directions::IsoDirections;
 use crate::zombie::iso::iso_grid_square::GetSquare;
+use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::iso::sprite_details::iso_flag_type::IsoFlagType;
 use crate::zombie::pathfind::path_find_behavior2::PathFindBehavior2;
 use crate::zombie::sandbox_options::SandboxOptions;
@@ -85,6 +87,9 @@ pub struct ZombieWorld {
     pub raining: bool,
     /// The game's own animation data a zombie that ticks is built over; a zombie made without it cannot tick.
     pub anim_assets: Option<ZombieAnimAssets>,
+    /// `Some` for the single-player game (`GameServer.server` false): the player the zombie can target and the loaded
+    /// chunks. `None` is the dedicated server's world, where the zombie has no variables and no target.
+    pub sp: Option<super::iso_zombie_sp::SinglePlayerWorld>,
 }
 
 /// What `ActionGroup.getActionGroup("zombie")`, `AnimationSet.GetAnimationSet("zombie")` and the skeleton's animation
@@ -238,6 +243,12 @@ impl ZombieWorld {
 pub enum ZombieState {
     /// zombie.ai.states.ZombieIdleState
     Idle,
+    /// zombie.ai.states.PathFindState
+    PathFind,
+    /// zombie.ai.states.LungeState
+    Lunge,
+    /// zombie.ai.states.AttackState
+    Attack,
 }
 
 impl ZombieState {
@@ -245,6 +256,9 @@ impl ZombieState {
     pub fn name(self) -> &'static str {
         match self {
             ZombieState::Idle => "ZombieIdleState",
+            ZombieState::PathFind => "PathFindState",
+            ZombieState::Lunge => "LungeState",
+            ZombieState::Attack => "AttackState",
         }
     }
 }
@@ -289,6 +303,75 @@ pub struct IsoZombie {
     pub path: PathFindBehavior2,
     /// The action system and animator; `None` for a zombie made without the animation assets (it cannot tick).
     pub anim: Option<ZombieAnim>,
+    /// The single-player zombie's state (`GameServer.server` false when it was built): see `iso_zombie_sp`.
+    pub sp: SpState,
+}
+
+/// What the single-player zombie keeps besides the dedicated server's: its target, its variables (the 164
+/// `registerVariableCallbacks` registers and the plain ones states set), the animation player's angles, the movement and
+/// turning flags and the state parameters.
+pub struct SpState {
+    /// `GameServer.server` was false when the zombie was built (its variable callbacks exist)
+    pub enabled: bool,
+    /// `target` is the player stand-in
+    pub target: bool,
+    /// `vectorToTarget`
+    pub vector_to_target: Vector2,
+    /// variables set by `setVariable` that are not one of the registered callbacks, by lower-case name
+    pub plain_vars: std::collections::HashMap<String, AnimationVariableSlot>,
+    /// `animPlayer`, made by the first `getAnimationPlayer()` (the first animation update frame)
+    pub anim_player: Option<AnimationPlayer>,
+    /// `isMoving`
+    pub is_moving: bool,
+    pub is_turning: bool,
+    pub is_turning90: bool,
+    pub is_turning_around: bool,
+    /// `maxTwist` (degrees, 15) and `moveDelta`
+    pub max_twist: f32,
+    pub move_delta: f32,
+    /// `knockedDown`
+    pub knocked_down: bool,
+    /// `canSeeTarget`
+    pub can_see_target: bool,
+    pub alerted: bool,
+    pub lunge_timer: f32,
+    pub target_seen_time: f32,
+    /// `lastTargetSeenX` (-1: none)
+    pub last_target_seen_x: i32,
+    /// `attackOutcome`, `attackDidDamage`
+    pub attack_outcome: String,
+    pub attack_did_damage: bool,
+    /// the AI states' TICK_COUNT params
+    pub path_find_tick_count: i64,
+    pub lunge_tick_count: i64,
+}
+
+impl Default for SpState {
+    fn default() -> Self {
+        SpState {
+            enabled: false,
+            target: false,
+            vector_to_target: Vector2::default(),
+            plain_vars: std::collections::HashMap::new(),
+            anim_player: None,
+            is_moving: false,
+            is_turning: false,
+            is_turning90: false,
+            is_turning_around: false,
+            max_twist: 15.0,
+            move_delta: 1.0,
+            knocked_down: false,
+            can_see_target: false,
+            alerted: false,
+            lunge_timer: 0.0,
+            target_seen_time: 0.0,
+            last_target_seen_x: -1,
+            attack_outcome: String::new(),
+            attack_did_damage: false,
+            path_find_tick_count: 0,
+            lunge_tick_count: 0,
+        }
+    }
 }
 
 impl IsoZombie {
@@ -361,6 +444,10 @@ impl IsoZombie {
             on_floor: false,
             path: PathFindBehavior2::default(),
             anim: None,
+            sp: SpState {
+                enabled: world.sp.is_some(),
+                ..SpState::default()
+            },
         };
         z.init_sprite_parts_zombie(world);
         for t in &mut z.tint {

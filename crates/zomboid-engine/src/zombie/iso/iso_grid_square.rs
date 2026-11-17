@@ -1050,7 +1050,7 @@ impl IsoGridSquare {
         self.objects.iter().any(|o| matches!(&o.kind, ObjectKind::IsoWindow(w) if w.north == north && !w.smashed && !w.open))
     }
     /// zombie.iso.IsoGridSquare.hasBlockedDoor: a closed door on that edge.
-    fn has_blocked_door(&self, north: bool) -> bool {
+    pub fn has_blocked_door(&self, north: bool) -> bool {
         self.objects
             .iter()
             .any(|o| matches!(&o.kind, ObjectKind::IsoDoor(d) if d.north == north && !d.open))
@@ -1649,6 +1649,23 @@ impl IsoGridSquare {
     /// zombie.iso.IsoGridSquare.isWindowTo
     pub fn is_window_to<G: GetSquare>(&self, other: &IsoGridSquare, g: &G) -> bool {
         self.is_edge_element_to(other, g, &|s, ns| s.is_window_facing(ns))
+    }
+
+    /// zombie.iso.IsoGridSquare.isDoorTo: `isEdgeElementTo(other, IsoGridSquare::isDoor)`, a door on the edge
+    /// (`doorN`/`doorW` of the square the edge belongs to).
+    pub fn is_door_to<G: GetSquare>(&self, other: &IsoGridSquare, g: &G) -> bool {
+        self.is_edge_element_to(other, g, &|s, north| {
+            if north {
+                s.has(F::doorN)
+            } else {
+                s.has(F::doorW)
+            }
+        })
+    }
+
+    /// zombie.iso.IsoGridSquare.isSomethingTo: a wall, a window or a door between the squares.
+    pub fn is_something_to<G: GetSquare>(&self, other: &IsoGridSquare, g: &G) -> bool {
+        self.is_wall_to(other, g) || self.is_window_to(other, g) || self.is_door_to(other, g)
     }
 
     /// zombie.iso.IsoGridSquare.isWindowBlockedTo
