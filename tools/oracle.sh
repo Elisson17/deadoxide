@@ -251,6 +251,12 @@ sel xscene && ai_case xscene AiSceneProbe none x media/models_X media/anims_X
 # FIND_INSTANCES, MAKE_LEFT_HANDED, LIMIT_BONE_WEIGHTS, TRIANGULATE, OPTIMIZE_MESHES, REMOVE_REDUNDANT_MATERIALS, JOIN_IDENTICAL_VERTICES)
 sel animscene && ai_case animscene AiSceneProbe anim x media/anims_X
 sel xmodelscene && ai_case xmodelscene AiSceneProbe mesh x media/models_X
+# what the game's own Java does with those scenes (ProcessedAiScene.process: ImportedSkeleton, ImportedSkinnedMesh,
+# ImportedStaticMesh): the models in Normal and StaticMesh mode, by mesh name, all meshes, and skinned to another skeleton;
+# the animations as AnimationOnly, with the .fbx scale/rotation modifiers, and skinned to a skeleton. Skeleton (bone indices,
+# hierarchy, bind/inverse/skin matrices), every clip's keyframes, vertex arrays, elements, bounds and transforms, section digests
+sel xmodels && ai_case xmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x mesh x media/models_X
+sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x anim x media/anims_X
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

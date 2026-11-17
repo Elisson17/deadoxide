@@ -96,6 +96,19 @@ impl Quaternion {
         )
     }
 
+    /// Quaternion.mulInverse(left, right, dest): `left * right^-1`, the inverse taken as `conjugate / lengthSquared`
+    /// (a zero length leaves the factor at zero).
+    pub fn mul_inverse(left: &Quaternion, right: &Quaternion) -> Quaternion {
+        let mut n = right.length_squared();
+        n = if n == 0.0 { n } else { 1.0f32 / n };
+        Quaternion::of(
+            (left.x * right.w - left.w * right.x - left.y * right.z + left.z * right.y) * n,
+            (left.y * right.w - left.w * right.y - left.z * right.x + left.x * right.z) * n,
+            (left.z * right.w - left.w * right.z - left.x * right.y + left.y * right.x) * n,
+            (left.w * right.w + left.x * right.x + left.y * right.y + left.z * right.z) * n,
+        )
+    }
+
     /// Quaternion.setFromAxisAngle(Vector4f)
     pub fn set_from_axis_angle(&mut self, a1: &Vector4f) {
         self.x = a1.x;
@@ -163,5 +176,31 @@ impl Quaternion {
                 self.w = (m10 - m01) * s;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mul_inverse_of_a_rotation_undoes_it() {
+        let mut r = Quaternion::new();
+        r.set_from_axis_angle(&Vector4f::of(1.0, 0.0, 0.0, -1.5707964));
+        let inv = Quaternion::mul_inverse(&Quaternion::new(), &r);
+        let id = Quaternion::mul(&inv, &r);
+        assert!(
+            (id.w - 1.0).abs() < 1e-6
+                && id.x.abs() < 1e-6
+                && id.y.abs() < 1e-6
+                && id.z.abs() < 1e-6
+        );
+    }
+
+    #[test]
+    fn mul_inverse_of_zero_is_zero() {
+        let z = Quaternion::of(0.0, 0.0, 0.0, 0.0);
+        let q = Quaternion::mul_inverse(&Quaternion::new(), &z);
+        assert_eq!((q.x, q.y, q.z, q.w), (0.0, 0.0, 0.0, 0.0));
     }
 }
