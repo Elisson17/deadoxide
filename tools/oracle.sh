@@ -183,10 +183,18 @@ sel zombie && server_case zombie ZombieProbe \
   "12345:1:9000" "1:1:12000" "2:1:9000:Speed=1" "3:1:9000:Speed=3" "4:1:6000:Speed=4" "5:1:15000" "6:1:9000" "7:1:9000" "8:1:9000"
 # zombie.characters.action.ActionContext: the real context of an action group on a scripted owner, a seeded random walk
 # over the variables and events its conditions test (state, child states, previous state, peekNextState, callbacks,
-# canTransitionToState); then the zombie with the real context and animator (see ActionContextProbe)
+# canTransitionToState); the clip table of the human skeleton (clips); the real AdvancedAnimator (AnimLayer, LiveAnimNode,
+# node selection, transitions, blends, track events) of an animation set on a scripted character, a seeded random walk over
+# the variables its conditions read and the states (anim:<set>:<seed>:<ticks>[:state,..]), and the real zombie ticked alone
+# with its ActionContext and animator (zanim:<seed>:<ticks>); see ActionContextProbe
 sel actioncontext && server_case actioncontext ActionContextProbe \
   "ctx:zombie:11:4000" "ctx:zombie:12:4000" "ctx:zombie-crawler:13:3000" "ctx:player:14:6000" "ctx:player:15:6000" \
-  "ctx:player-vehicle:16:3000" "ctx:rabbit:17:2000"
+  "ctx:player-vehicle:16:3000" "ctx:rabbit:17:2000" "clips" \
+  "zanim:12345:1200" "zanim:7:600" \
+  "anim:zombie:51:1500" "anim:zombie:52:1500:idle,lunge,staggerback,staggerback-knockeddown,getup,getup-fromonback,getup-fromonfront,getup-fromsitting,walktoward,attack,hitreaction" \
+  "anim:zombie-crawler:61:1200" \
+  "anim:player:41:1500:idle,aim,aim-strafe,run,sprint,strafe,movement,melee,ext" "anim:player:43:1500" \
+  "anim:player:45:1500:idle,movement,run,sprint,strafe,melee,actions,aim,aim-strafe,ext,sneak" "anim:player-vehicle:62:1200"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

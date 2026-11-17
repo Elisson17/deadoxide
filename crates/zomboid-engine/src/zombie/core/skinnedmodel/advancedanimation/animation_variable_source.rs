@@ -119,7 +119,7 @@ impl AnimationVariableSlot {
 
     /// setValue(String) of each slot class (ignored when read-only): `StringUtils.tryParseBoolean`, the string,
     /// `PZMath.tryParseFloat(val, 0)`.
-    fn set_string(&mut self, val: &str) {
+    pub fn set_string(&mut self, val: &str) {
         if self.read_only {
             return;
         }
@@ -137,7 +137,7 @@ impl AnimationVariableSlot {
     }
 
     /// setValue(boolean) of each slot class (ignored when read-only).
-    fn set_bool(&mut self, val: bool) {
+    pub fn set_bool(&mut self, val: bool) {
         if self.read_only {
             return;
         }
@@ -151,7 +151,7 @@ impl AnimationVariableSlot {
     }
 
     /// setValue(float) of each slot class (ignored when read-only).
-    fn set_float(&mut self, val: f32) {
+    pub fn set_float(&mut self, val: f32) {
         if self.read_only {
             return;
         }
@@ -239,6 +239,18 @@ impl AnimationVariableSource {
         let key = java::trim(key);
         self.slots
             .iter()
+            .flatten()
+            .find(|s| java::equals_ignore_case(&s.key, key))
+    }
+
+    /// As `get_variable`, to change the slot (`slot.setValue(..)`).
+    pub fn get_variable_mut(&mut self, key: &str) -> Option<&mut AnimationVariableSlot> {
+        if string_utils::is_null_or_whitespace(Some(key)) {
+            return None;
+        }
+        let key = java::trim(key);
+        self.slots
+            .iter_mut()
             .flatten()
             .find(|s| java::equals_ignore_case(&s.key, key))
     }

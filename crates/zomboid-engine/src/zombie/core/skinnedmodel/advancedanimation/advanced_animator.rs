@@ -999,6 +999,13 @@ impl AdvancedAnimator {
         event: TrackEvent,
         env: &mut Env,
     ) -> Result<(), String> {
+        // A track keeps the layer that started it as a listener even when the layer was released since (a transition
+        // track outlives the sub layer of the node it blends out of). AnimLayer.onReleased clears `parentAnimator`, so
+        // `invokeAnimEvent` does nothing. (UNKNOWN: the original pools its layers, so a released layer that was
+        // allocated again for another slot would receive these events; that depends on the global pool's content.)
+        if self.li(layer).is_err() {
+            return Ok(());
+        }
         match event {
             TrackEvent::AnimStarted => Ok(()),
             TrackEvent::LoopedAnim => self.layer_invoke_local_event(
