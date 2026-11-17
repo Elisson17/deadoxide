@@ -318,6 +318,8 @@ pub struct LootRoller<'a> {
     /// (`this.actualWeight = moveable.getActualWeight()`), which the next `tryAddItemToContainer` reads. The
     /// original's scripts keep that for the whole process, so a caller running several scenarios hands the set on.
     pub moveables_instanced: HashSet<usize>,
+    /// The `GameTime` the rolls read the world age from (the standalone one: 9:00, no night survived).
+    pub game_time: crate::zombie::game_time::GameTime,
 }
 
 impl<'a> LootRoller<'a> {
@@ -337,6 +339,7 @@ impl<'a> LootRoller<'a> {
             buildings: Vec::new(),
             reload_difficulty: 2,
             moveables_instanced: HashSet::new(),
+            game_time: crate::zombie::game_time::GameTime::default(),
         }
     }
 
@@ -875,8 +878,8 @@ impl<'a> LootRoller<'a> {
         Ok((base_chance * 100.0f32 * loot_modifier + zombie_density) * over_time)
     }
 
-    /// SandboxOptions.getCurrentDiminishedLootPercentage(square). The world age is the standalone `GameTime`'s (9:00,
-    /// no night survived); a square's region is "General" (no zones headless), which is not null, so `RuralLooted`
+    /// SandboxOptions.getCurrentDiminishedLootPercentage(square). The world age is the roller's `GameTime`'s (the
+    /// standalone one: 9:00, no night survived); a square's region is "General" (no zones headless), which is not null, so `RuralLooted`
     /// does not apply.
     fn diminished_loot_percentage(&self) -> Result<i32, String> {
         let get = |n: &str| {
@@ -892,8 +895,8 @@ impl<'a> LootRoller<'a> {
         if days_until_max <= 0 {
             return Ok(max_looted);
         }
-        let age_days = crate::zombie::game_time::GameTime::default().get_world_age_hours() / 24.0
-            + ((get("TimeSinceApo")? - 1) * 30) as f64;
+        let age_days =
+            self.game_time.get_world_age_hours() / 24.0 + ((get("TimeSinceApo")? - 1) * 30) as f64;
         let mut days = age_days as i32;
         if days <= 0 {
             days = 1;
@@ -2170,7 +2173,7 @@ impl<'a> LootRoller<'a> {
             if let Some(f) = &i.food {
                 let _ = write!(
                     out,
-                    " fd age={:x} off={}/{} ck={}{} ct={:x} hung={:x} thirst={:x} end={:x} bore={:x} unh={:x} str={:x} fat={:x} flu={} sick={} pain={:x} kcal={:x} carb={:x} prot={:x} lip={:x} pois={}",
+                    " fd age={:x} off={}/{} ck={}{} ct={:x} hung={:x} thirst={:x} end={:x} bore={:x} unh={:x} str={:x} fat={:x} flu={} sick={} pain={:x} kcal={:x} carb={:x} prot={:x} lip={:x} pois={} frz={:x} fr={}",
                     f.age.to_bits(),
                     f.off_age,
                     f.off_age_max,
@@ -2191,7 +2194,9 @@ impl<'a> LootRoller<'a> {
                     f.carbohydrates.to_bits(),
                     f.proteins.to_bits(),
                     f.lipids.to_bits(),
-                    f.poison_power
+                    f.poison_power,
+                    f.freezing_time.to_bits(),
+                    u8::from(f.frozen)
                 );
             }
             if let Some(inner) = &i.inner {

@@ -8453,8 +8453,9 @@ pub fn loot(root: &Path, cache_dir: &str, scenarios: &[String]) -> Result<String
     Ok(out)
 }
 
-/// One scenario `seed:room:container:times[:capacity[:same|fresh[:building rooms joined by +]]]` (see LootProbe.java):
-/// `times` containers filled one after another from one seeded generator.
+/// One scenario `seed:room:container:times[:capacity[:same|fresh[:building rooms joined by +[:world]]]]` (see
+/// LootProbe.java): `times` containers filled one after another from one seeded generator. `world` is a comma
+/// separated list of `name=value`: `nights` (GameTime.nightsSurvived), `tod` (GameTime.timeOfDay) or a sandbox option.
 fn loot_scenario(
     out: &mut String,
     spec: &str,
@@ -8481,6 +8482,29 @@ fn loot_scenario(
     let same = p.get(5) == Some(&"same");
     let bld: Vec<&str> = p.get(6).map_or(vec![room], |b| b.split('+').collect());
     let _ = writeln!(out, "SCENARIO {spec}");
+    let mut world_sandbox = sandbox.clone();
+    let mut game_time = zomboid_engine::zombie::game_time::GameTime::default();
+    for kv in p.get(7).map_or(Vec::new(), |w| w.split(',').collect()) {
+        let (k, v) = kv
+            .split_once('=')
+            .ok_or_else(|| format!("world setting {kv} of {spec}"))?;
+        let num: f64 = v
+            .parse()
+            .map_err(|_| format!("world value {kv} of {spec}"))?;
+        match k {
+            "nights" => game_time.nights_survived = num as i32,
+            "tod" => game_time.time_of_day = num as f32,
+            _ => {
+                if !world_sandbox.set_by_name(
+                    k,
+                    &zomboid_engine::se::krka::kahlua::vm::object::Object::Number(num),
+                ) {
+                    return Err(format!("unknown sandbox option {k} in {spec}"));
+                }
+            }
+        }
+    }
+    let sandbox = &world_sandbox;
     let mut roller = LootRoller::new(
         startup,
         picker,
@@ -8489,6 +8513,7 @@ fn loot_scenario(
         RandAbstract::new(java::Random::new(seed)),
     );
     roller.moveables_instanced = std::mem::take(moveables);
+    roller.game_time = game_time;
     let mut square: Option<LootSquare> = None;
     for t in 0..times {
         let mut c;

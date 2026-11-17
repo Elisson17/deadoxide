@@ -19,6 +19,9 @@ pub struct FoodState {
     pub minutes_to_burn: f32,
     pub is_cookable: bool,
     pub can_be_frozen: bool,
+    /// `Food.freezingTime` and `frozen` (`setFreezingTime`).
+    pub freezing_time: f32,
+    pub frozen: bool,
     pub dangerous_uncooked: bool,
     pub hung_change: f32,
     pub base_hunger: f32,
@@ -54,6 +57,8 @@ impl FoodState {
             minutes_to_burn: script_int(script, "minutesToBurn") as f32,
             is_cookable: script_bool(script, "isCookable"),
             can_be_frozen: !script_bool(script, "cantBeFrozen"),
+            freezing_time: 0.0,
+            frozen: false,
             dangerous_uncooked: script_bool(script, "dangerousUncooked"),
             hung_change: script_float(script, "hungerChange") / 100.0f32,
             base_hunger: script_float(script, "hungerChange") / 100.0f32,
@@ -72,6 +77,18 @@ impl FoodState {
             lipids: script_float(script, "lipids"),
             poison_power: script_int(script, "poisonPower"),
         }
+    }
+
+    /// `Food.setFreezingTime`: 100 or more freezes it (and caps the time), 0 or less thaws it.
+    fn set_freezing_time(&mut self, mut freezing_time: f32) {
+        if freezing_time >= 100.0f32 {
+            self.frozen = true;
+            freezing_time = 100.0f32;
+        } else if freezing_time <= 0.0f32 {
+            freezing_time = 0.0f32;
+            self.frozen = false;
+        }
+        self.freezing_time = freezing_time;
     }
 
     /// `InventoryItem.setCooked(true)`: the cooking time reaches `minutesToCook`.
@@ -231,16 +248,13 @@ impl LootRoller<'_> {
         })
     }
 
-    /// `GameTime.getWorldAgeDaysSinceBegin` of the standalone `GameTime`.
+    /// `GameTime.getWorldAgeDaysSinceBegin` of the roller's `GameTime`.
     pub(super) fn world_age_days(&self) -> Result<f64, String> {
         let since_apo = self
             .sandbox
             .get_int("TimeSinceApo")
             .ok_or_else(|| unported("sandbox option TimeSinceApo"))?;
-        Ok(
-            crate::zombie::game_time::GameTime::default().get_world_age_hours() / 24.0
-                + ((since_apo - 1) * 30) as f64,
-        )
+        Ok(self.game_time.get_world_age_hours() / 24.0 + ((since_apo - 1) * 30) as f64)
     }
 
     /// `InventoryItem.setAutoAge` for an item whose outermost container has the type `outermost` (only a `Food`
@@ -266,14 +280,25 @@ impl LootRoller<'_> {
             if elec > -1 {
                 let days_with_electricity = (elec as f32).min(world_age_days);
                 if !in_fridge && food.can_be_frozen {
-                    let days_frozen = days_with_electricity;
+                    let mut days_frozen = days_with_electricity;
+                    let mut freezing_time = 100.0f32;
                     if world_age_days > days_with_electricity {
-                        return Err(unported(
-                            "Food.setAutoAge in a freezer after the electricity shut off",
-                        ));
+                        let elapsed_hours = (world_age_days - days_with_electricity) * 24.0f32;
+                        let turn_to_hour =
+                            1440.0f32 / self.game_time.minutes_per_day * 60.0f32 * 5.0f32;
+                        let heating_modifier = 0.0095999995f32;
+                        freezing_time -= heating_modifier * turn_to_hour * elapsed_hours;
+                        if freezing_time > 0.0f32 {
+                            days_frozen = days_with_electricity + elapsed_hours / 24.0f32;
+                        } else {
+                            let thaw_hours = 100.0f32 / (heating_modifier * turn_to_hour);
+                            days_frozen = days_with_electricity + thaw_hours / 24.0f32;
+                            freezing_time = 0.0f32;
+                        }
                     }
                     age_increase = world_age_days - days_frozen;
                     age_increase += days_frozen * 0.0f32;
+                    food.set_freezing_time(freezing_time);
                 } else {
                     age_increase = world_age_days - days_with_electricity;
                     age_increase += days_with_electricity * self.fridge_factor()?;

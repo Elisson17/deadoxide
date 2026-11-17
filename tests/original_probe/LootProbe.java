@@ -200,7 +200,7 @@ public class LootProbe {
                         + " bore=" + fbits(f.getBoredomChangeUnmodified()) + " unh=" + fbits(f.getUnhappyChangeUnmodified()) + " str=" + fbits(f.getStressChangeUnmodified())
                         + " fat=" + fbits(f.getFatigueChange()) + " flu=" + f.getFluReduction() + " sick=" + f.getFoodSicknessChange() + " pain=" + fbits(f.getPainReduction())
                         + " kcal=" + fbits(f.getCalories()) + " carb=" + fbits(f.getCarbohydrates()) + " prot=" + fbits(f.getProteins()) + " lip=" + fbits(f.getLipids())
-                        + " pois=" + f.getPoisonPower());
+                        + " pois=" + f.getPoisonPower() + " frz=" + fbits(f.getFreezingTime()) + " fr=" + (f.isFrozen() ? 1 : 0));
             }
             if (i instanceof zombie.inventory.types.InventoryContainer ic) {
                 b.append(" cap=" + ic.getCapacity() + " icap=" + ic.getItemContainer().getCapacity() + " red=" + ic.getWeightReduction()
@@ -228,6 +228,23 @@ public class LootProbe {
         boolean same = p.length > 5 && p[5].equals("same");
         String[] bld = p.length > 6 ? p[6].split("\\+") : new String[]{room};
         out.println("SCENARIO " + spec);
+        // the optional 8th field: `name=value,...` of `nights`, `tod` or a sandbox option, put back after the scenario
+        java.util.List<Runnable> restore = new java.util.ArrayList<>();
+        if (p.length > 7) {
+            for (String kv : p[7].split(",")) {
+                String k = kv.substring(0, kv.indexOf('='));
+                double v = Double.parseDouble(kv.substring(kv.indexOf('=') + 1));
+                zombie.GameTime gt = zombie.GameTime.getInstance();
+                if (k.equals("nights")) { int old = gt.getNightsSurvived(); gt.setNightsSurvived((int) v); restore.add(() -> gt.setNightsSurvived(old)); }
+                else if (k.equals("tod")) { float old = gt.getTimeOfDay(); gt.setTimeOfDay((float) v); restore.add(() -> gt.setTimeOfDay(old)); }
+                else {
+                    zombie.SandboxOptions so = zombie.SandboxOptions.instance;
+                    Object old = so.getOptionByName(k).asConfigOption().getValueAsObject();
+                    so.set(k, Double.valueOf(v));
+                    restore.add(() -> so.set(k, old));
+                }
+            }
+        }
         swapRand(seed);
         zombie.iso.RoomDef def = null;
         zombie.iso.areas.IsoRoom isoRoom = null;
@@ -281,6 +298,7 @@ public class LootProbe {
             itemLines("", c);
         }
         out.println("END " + spec + " rand=" + draws());
+        for (Runnable r : restore) r.run();
     }
 
     public static void main(String[] a) throws Exception {
