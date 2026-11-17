@@ -326,13 +326,15 @@ fn walk(n: &Node, depth: usize, lines: &mut Vec<String>) {
 }
 
 /// `AiSceneProbe.dumpScene`.
-fn dump_scene(out: &mut String, full: bool, sc: &Scene) {
+fn dump_scene(out: &mut String, full: bool, sc: &Scene) -> Result<(), String> {
     let _ = writeln!(
         out,
-        "scene meshes={} materials={} animations={} cameras=0 lights=0",
+        "scene meshes={} materials={} animations={} cameras={} lights={}",
         sc.meshes.len(),
         sc.materials.len(),
-        sc.animations.len()
+        sc.animations.len(),
+        sc.num_cameras,
+        sc.num_lights
     );
     for (i, m) in sc.meshes.iter().enumerate() {
         let mut ptypes = Vec::new();
@@ -441,6 +443,13 @@ fn dump_scene(out: &mut String, full: bool, sc: &Scene) {
         section(out, full, "faces", &l);
         let mut l = Vec::new();
         for b in &m.bones {
+            if b.weights.is_empty() {
+                // jassimp sets no offset matrix on a bone without weights; the probe's `mat(null)` throws
+                return Err(
+                    "java.lang.NullPointerException: Cannot invoke \"jassimp.AiMatrix4f.get(int, int)\" because \"<parameter1>\" is null"
+                        .to_string(),
+                );
+            }
             l.push(format!(
                 "bone {} weights={} offset={}",
                 b.name,
@@ -510,6 +519,7 @@ fn dump_scene(out: &mut String, full: bool, sc: &Scene) {
         }
         section(out, full, "channels", &l);
     }
+    Ok(())
 }
 
 /// `AiSceneProbe.collect`: the files under `dir` with one of the extensions (case-insensitive), names in order,
@@ -548,7 +558,11 @@ fn scene_one(out: &mut String, full: bool, root: &Path, rel: &str, spec: &str) {
                 .map_err(|e| format!("java.io.IOException: {e}"))
         });
     match result {
-        Ok(sc) => dump_scene(out, full, &sc),
+        Ok(sc) => {
+            if let Err(e) = dump_scene(out, full, &sc) {
+                let _ = writeln!(out, "error {e}");
+            }
+        }
         Err(e) => {
             let _ = writeln!(out, "error {e}");
         }

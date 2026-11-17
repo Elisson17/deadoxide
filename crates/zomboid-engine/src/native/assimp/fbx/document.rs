@@ -170,6 +170,7 @@ pub enum Kind {
     Mesh(MeshGeometry),
     Material(Material),
     Texture(Texture),
+    LayeredTexture,
     Video(Video),
     Skin(Skin),
     Cluster(Cluster),
@@ -738,7 +739,10 @@ impl Document {
                 Kind::Texture(_) => {
                     textures.insert(con.prop.clone(), ob);
                 }
-                _ => return Err("UNPORTED: material linked to a non-texture object".to_string()),
+                Kind::LayeredTexture => {
+                    return Err("UNPORTED: LayeredTexture".to_string());
+                }
+                _ => {}
             }
         }
         Ok(Material {
@@ -930,7 +934,7 @@ impl Document {
                 continue;
             };
             if matches!(ob.kind, Kind::AnimCurve(_)) {
-                curves.insert(con.prop.clone(), ob);
+                curves.entry(con.prop.clone()).or_insert(ob);
             }
         }
         curves
@@ -1196,12 +1200,11 @@ fn read_materials(g: &MeshGeometry, source: &Scope, mapping: &str, reference: &s
         if out.len() > 1 {
             out.clear();
         }
-        let first = *out.first().unwrap_or(&0);
-        // materials_out.assign(m_faces.size(), materials_out.at(0))
-        if out.is_empty() {
+        // materials_out.assign(m_vertices.size(), materials_out.at(0)); `at(0)` of the cleared vector throws
+        let Some(&first) = out.first() else {
             return Err("vector::at".to_string());
-        }
-        return Ok(vec![first; face_count]);
+        };
+        return Ok(vec![first; g.vertices.len()]);
     } else if mapping == "ByPolygon" && reference == "IndexToDirect" {
         out.resize(face_count, 0);
         return Ok(out);
@@ -1278,10 +1281,12 @@ fn resolve<T: Clone + Default>(
         }
         out.resize(vertex_count, T::default());
         for (i, &ix) in idx.iter().enumerate() {
-            if ix < 0 || ix as usize >= temp.len() {
-                return Err("index out of range".to_string());
+            if ix != -1 {
+                if ix < 0 || ix as usize >= temp.len() {
+                    return Err("index out of range".to_string());
+                }
+                out[i] = temp[ix as usize].clone();
             }
-            out[i] = temp[ix as usize].clone();
         }
     }
     Ok(out)

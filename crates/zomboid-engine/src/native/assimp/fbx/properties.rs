@@ -27,7 +27,7 @@ fn read_typed_property(el: &Element) -> R<Option<Prop>> {
     Ok(match s.as_str() {
         "KString" => Some(Prop::Str(parse_token_as_string(&tok[4])?)),
         "bool" | "Bool" => Some(Prop::Bool(parse_token_as_int(&tok[4])? != 0)),
-        "int" | "Int" | "enum" | "Enum" => Some(Prop::Int(parse_token_as_int(&tok[4])?)),
+        "int" | "enum" | "Enum" | "Integer" => Some(Prop::Int(parse_token_as_int(&tok[4])?)),
         "ULongLong" => Some(Prop::ULong(parse_token_as_id(&tok[4])?)),
         "KTime" => Some(Prop::Int64(parse_token_as_int64(&tok[4])?)),
         "Vector3D" | "ColorRGB" | "Vector" | "Color" | "Lcl Translation" | "Lcl Rotation"
@@ -37,7 +37,7 @@ fn read_typed_property(el: &Element) -> R<Option<Prop>> {
             let z = parse_token_as_float(tok.get(6).ok_or("missing token")?)?;
             Some(Prop::Vec3(Vec3::new(x, y, z)))
         }
-        "double" | "Number" | "Float" | "FieldOfView" | "UnitScaleFactor" => {
+        "double" | "Number" | "float" | "Float" | "FieldOfView" | "UnitScaleFactor" => {
             Some(Prop::Float(parse_token_as_float(&tok[4])?))
         }
         _ => None,
@@ -101,6 +101,35 @@ impl PropertyTable {
                 None => Ok(None),
             },
         }
+    }
+
+    /// `PropertyGet<aiVector3D>(props, name, ok, useTemplate)`
+    pub fn opt_vec3(&self, name: &str, use_template: bool) -> R<Option<Vec3>> {
+        Ok(match self.get_with_template(name, use_template)? {
+            Some(Prop::Vec3(v)) => Some(v),
+            _ => None,
+        })
+    }
+    /// `PropertyGet<float>(props, name, ok, useTemplate)`
+    pub fn opt_float(&self, name: &str, use_template: bool) -> R<Option<f32>> {
+        Ok(match self.get_with_template(name, use_template)? {
+            Some(Prop::Float(v)) => Some(v),
+            _ => None,
+        })
+    }
+    /// `PropertyGet<std::string>(props, name, ok, useTemplate)`
+    pub fn opt_string(&self, name: &str, use_template: bool) -> R<Option<String>> {
+        Ok(match self.get_with_template(name, use_template)? {
+            Some(Prop::Str(v)) => Some(v),
+            _ => None,
+        })
+    }
+    /// `PropertyGet<int64_t>(props, name, ok, useTemplate)`
+    pub fn opt_int64(&self, name: &str, use_template: bool) -> R<Option<i64>> {
+        Ok(match self.get_with_template(name, use_template)? {
+            Some(Prop::Int64(v)) => Some(v),
+            _ => None,
+        })
     }
 
     /// `PropertyGet<T>(props, name, defaultValue)` for each T.

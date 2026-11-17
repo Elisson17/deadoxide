@@ -27,6 +27,10 @@ pub fn import_file(path: &str, bytes: &[u8], spec: &str) -> Result<scene::Scene,
     let lower = path.to_lowercase();
     let mut scene = if lower.ends_with(".x") {
         x_file_importer::import(bytes)?
+    } else if lower.ends_with(".fbx") {
+        let mut scene = fbx::import(bytes)?;
+        post_process::scene_preprocessor::process_scene(&mut scene);
+        scene
     } else {
         return Err(format!(
             "No suitable reader found for the file format of file \"{path}\"."

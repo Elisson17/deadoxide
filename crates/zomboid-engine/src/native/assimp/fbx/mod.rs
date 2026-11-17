@@ -1,9 +1,16 @@
 //! assimp's FBX importer (`code/AssetLib/FBX`): `FBXTokenizer`, `FBXParser`, `FBXDocument` and the DOM classes,
 //! `FBXConverter` and `FBXImporter`.
+pub mod converter;
 pub mod document;
 pub mod inflate;
 pub mod parser;
 pub mod properties;
+
+/// `FBXImporter::InternReadFile`: the scene of an FBX file (before the post-processing steps).
+pub fn import(bytes: &[u8]) -> Result<crate::native::assimp::scene::Scene, String> {
+    let doc = read_document(bytes)?;
+    converter::convert(&doc)
+}
 
 /// The first half of `FBXImporter::InternReadFile`: tokenize (text or binary, by the header), parse and build the
 /// document of the file.

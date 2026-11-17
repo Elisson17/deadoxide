@@ -125,7 +125,9 @@ pub fn fast_atoreal_move(s: &[u8], mut i: usize) -> Result<(f32, usize), String>
         if einv {
             exp = -exp;
         }
-        f *= 10.0f32.powf(exp);
+        // `pow(float, float)` of the reference's libm (x86-64) returns the correctly rounded float for powers of ten;
+        // the host's `powf` (Apple arm64) is one ulp low for some (10^-22), so the power is taken in double.
+        f *= 10.0f64.powf(f64::from(exp)) as f32;
     }
     if inv {
         f = -f;
