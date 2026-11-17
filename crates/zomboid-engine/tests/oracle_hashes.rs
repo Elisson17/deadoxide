@@ -459,6 +459,67 @@ fn animclips_matches_original() {
     );
 }
 
+/// assimp's FBX importer (E63) over every `.fbx` of `media/models_X` and `media/textures` (2032 files, binary and ASCII), no
+/// post-processing step; `+mat` also dumps every material property.
+#[test]
+fn fbxscene_matches_original() {
+    check(
+        "fbxscene",
+        &["none+mat", "fbx", "media/models_X", "media/textures"],
+    );
+}
+
+/// The same files with the mesh flags of `FileTask_LoadMesh` (TriangulateProcess, JoinIdenticalVertices, LimitBoneWeights,
+/// OptimizeMeshes, RemoveRedundantMaterials, FindInstances, MakeLeftHanded) (E63).
+#[test]
+fn fbxmodelscene_matches_original() {
+    check(
+        "fbxmodelscene",
+        &["mesh", "fbx", "media/models_X", "media/textures"],
+    );
+}
+
+/// The same files with the animation flags of `FileTask_LoadAnimation` (E63).
+#[test]
+fn fbxanimscene_matches_original() {
+    check(
+        "fbxanimscene",
+        &["anim", "fbx", "media/models_X", "media/textures"],
+    );
+}
+
+/// `ProcessedAiScene.process` (E63) on the scenes of every `.fbx` model, with the `.fbx` scale/rotation modifiers: Normal and
+/// StaticMesh mode, by mesh name, all meshes, and skinned to another skeleton.
+#[test]
+fn fbxmodels_matches_original() {
+    check(
+        "fbxmodels",
+        &[
+            "Normal:fbx,StaticMesh:fbx,Normal:last+fbx,StaticMesh:all+fbx,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx",
+            "mesh",
+            "fbx",
+            "media/models_X",
+            "media/textures",
+        ],
+    );
+}
+
+/// `ProcessedAiScene.process` (E63) on every `.fbx` as an animation (`FileTask_LoadAnimation.loadFBX`): the clips with their
+/// keyframes, and skinned to another skeleton.
+#[test]
+fn fbxanims_matches_original() {
+    check(
+        "fbxanims",
+        &[
+            "AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx",
+            "anim",
+            "fbx",
+            "media/models_X",
+            "media/textures",
+        ],
+    );
+}
+
 /// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
 /// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
 #[test]

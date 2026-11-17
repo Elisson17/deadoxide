@@ -187,7 +187,7 @@ public class ProcessedSceneProbe {
             (ArrayList<Integer>) get(sk, "skeletonHierarchy"), (HashMap<String, Integer>) get(sk, "boneIndices"));
     }
 
-    /** One pass: `Mode[:variant]`; variants: `last` (meshName = the name of the last mesh), `all` (allMeshes), `fbx` (the
+    /** One pass: `Mode[:variant[+variant...]]`; variants: `last` (meshName = the name of the last mesh), `all` (allMeshes), `fbx` (the
      * scale 0.01 and the -90 degree rotation about x that FileTask_LoadMesh/LoadAnimation give an .fbx), `skin=<file>`
      * (skinnedTo = the skeleton of that file). */
     static void one(String rel, String passSpec, String flagSpec) {
@@ -198,15 +198,17 @@ public class ProcessedSceneProbe {
             ProcessedAiSceneParams p = ProcessedAiSceneParams.create();
             p.scene = sc;
             p.mode = JAssImpImporter.LoadMode.valueOf(parts[0]);
-            String variant = parts.length > 1 ? parts[1] : "";
-            if (variant.equals("last") && sc.getNumMeshes() > 0) p.meshName = sc.getMeshes().get(sc.getNumMeshes() - 1).getName();
-            if (variant.equals("all")) p.allMeshes = true;
-            if (variant.startsWith("skin=")) p.skinnedTo = skinOf(variant.substring(5));
-            if (variant.equals("fbx")) {
-                org.lwjgl.util.vector.Quaternion rotateModifier = new org.lwjgl.util.vector.Quaternion();
-                rotateModifier.setFromAxisAngle(new org.lwjgl.util.vector.Vector4f(1.0F, 0.0F, 0.0F, (float) (-Math.PI / 2)));
-                p.animBonesScaleModifier = 0.01F;
-                p.animBonesRotateModifier = rotateModifier;
+            String variantSpec = parts.length > 1 ? parts[1] : "";
+            for (String variant : variantSpec.split("\\+")) {
+                if (variant.equals("last") && sc.getNumMeshes() > 0) p.meshName = sc.getMeshes().get(sc.getNumMeshes() - 1).getName();
+                if (variant.equals("all")) p.allMeshes = true;
+                if (variant.startsWith("skin=")) p.skinnedTo = skinOf(variant.substring(5));
+                if (variant.equals("fbx")) {
+                    org.lwjgl.util.vector.Quaternion rotateModifier = new org.lwjgl.util.vector.Quaternion();
+                    rotateModifier.setFromAxisAngle(new org.lwjgl.util.vector.Vector4f(1.0F, 0.0F, 0.0F, (float) (-Math.PI / 2)));
+                    p.animBonesScaleModifier = 0.01F;
+                    p.animBonesRotateModifier = rotateModifier;
+                }
             }
             ProcessedAiScene ps = ProcessedAiScene.process(p);
             dumpProcessed(ps);

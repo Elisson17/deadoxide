@@ -14,31 +14,68 @@ pub enum Prop {
     ULong(u64),
     Int64(i64),
     Vec3(Vec3),
+    /// `TypedProperty<aiColor4D>` (`ColorAndAlpha`)
+    Vec4([f32; 4]),
     Float(f32),
 }
 
 /// `ReadTypedProperty(element)`: `Ok(None)` for a property of a type the library does not interpret.
 fn read_typed_property(el: &Element) -> R<Option<Prop>> {
     let tok = &el.tokens;
-    if tok.len() < 5 {
+    // fewer than two tokens: no type to look at
+    if tok.len() < 2 {
         return Ok(None);
     }
+    // `checkTokenCount(tokens, n)`
+    let count = |n: usize| -> R<()> {
+        if tok.len() < n {
+            Err(format!("not enough tokens, expected at least {n}"))
+        } else {
+            Ok(())
+        }
+    };
     let s = parse_token_as_string(&tok[1])?;
     Ok(match s.as_str() {
-        "KString" => Some(Prop::Str(parse_token_as_string(&tok[4])?)),
-        "bool" | "Bool" => Some(Prop::Bool(parse_token_as_int(&tok[4])? != 0)),
-        "int" | "enum" | "Enum" | "Integer" => Some(Prop::Int(parse_token_as_int(&tok[4])?)),
-        "ULongLong" => Some(Prop::ULong(parse_token_as_id(&tok[4])?)),
-        "KTime" => Some(Prop::Int64(parse_token_as_int64(&tok[4])?)),
+        "KString" => {
+            count(5)?;
+            Some(Prop::Str(parse_token_as_string(&tok[4])?))
+        }
+        "bool" | "Bool" => {
+            count(5)?;
+            Some(Prop::Bool(parse_token_as_int(&tok[4])? != 0))
+        }
+        "int" | "Int" | "enum" | "Enum" | "Integer" => {
+            count(5)?;
+            Some(Prop::Int(parse_token_as_int(&tok[4])?))
+        }
+        "ULongLong" => {
+            count(5)?;
+            Some(Prop::ULong(parse_token_as_id(&tok[4])?))
+        }
+        "KTime" => {
+            count(5)?;
+            Some(Prop::Int64(parse_token_as_int64(&tok[4])?))
+        }
         "Vector3D" | "ColorRGB" | "Vector" | "Color" | "Lcl Translation" | "Lcl Rotation"
         | "Lcl Scaling" => {
+            count(7)?;
             let x = parse_token_as_float(&tok[4])?;
-            let y = parse_token_as_float(tok.get(5).ok_or("missing token")?)?;
-            let z = parse_token_as_float(tok.get(6).ok_or("missing token")?)?;
+            let y = parse_token_as_float(&tok[5])?;
+            let z = parse_token_as_float(&tok[6])?;
             Some(Prop::Vec3(Vec3::new(x, y, z)))
         }
         "double" | "Number" | "float" | "Float" | "FieldOfView" | "UnitScaleFactor" => {
+            count(5)?;
             Some(Prop::Float(parse_token_as_float(&tok[4])?))
+        }
+        "ColorAndAlpha" => {
+            count(8)?;
+            Some(Prop::Vec4([
+                parse_token_as_float(&tok[4])?,
+                parse_token_as_float(&tok[5])?,
+                parse_token_as_float(&tok[6])?,
+                parse_token_as_float(&tok[7])?,
+            ]))
         }
         _ => None,
     })

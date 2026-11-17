@@ -28,6 +28,8 @@ import zombie.core.skinnedmodel.model.jassimp.JAssImpImporter;
 public class AiSceneProbe {
     static final PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), false, StandardCharsets.UTF_8);
     static boolean full = false;
+    /** a flag spec ending in `+mat` also prints every material's properties (key, semantic, index, type, data) */
+    static boolean mats = false;
 
     static String fnv(String text) {
         long h = 0xcbf29ce484222325L;
@@ -67,6 +69,16 @@ public class AiSceneProbe {
         StringBuilder sb = new StringBuilder();
         for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) sb.append(r + c == 0 ? "" : " ").append(m.get(r, c));
         return sb.toString();
+    }
+
+    static String data(Object d) {
+        if (d instanceof float[] fa) { StringBuilder sb = new StringBuilder("floats"); for (float x : fa) sb.append(' ').append(x); return sb.toString(); }
+        if (d instanceof int[] ia) { StringBuilder sb = new StringBuilder("ints"); for (int x : ia) sb.append(' ').append(x); return sb.toString(); }
+        if (d instanceof Float || d instanceof Integer) return d.getClass().getSimpleName() + " " + d;
+        if (d instanceof String str) return "string " + str;
+        if (d instanceof java.nio.ByteBuffer bb) { StringBuilder sb = new StringBuilder("buffer"); for (int i = 0; i < bb.limit(); i++) sb.append(String.format(" %02x", bb.get(i))); return sb.toString(); }
+        if (d instanceof byte[] ba) { StringBuilder sb = new StringBuilder("bytes"); for (byte x : ba) sb.append(String.format(" %02x", x)); return sb.toString(); }
+        return d == null ? "null" : d.getClass().getName() + " " + d;
     }
 
     static void dumpScene(AiScene sc) {
@@ -123,6 +135,16 @@ public class AiSceneProbe {
             }
             section("bones", l);
         }
+        if (mats) {
+            List<String> l = new ArrayList<>();
+            for (int i = 0; i < sc.getNumMaterials(); i++) {
+                AiMaterial mt = sc.getMaterials().get(i);
+                l.add("material " + i + " properties=" + mt.getProperties().size());
+                for (AiMaterial.Property p : mt.getProperties())
+                    l.add(p.getKey() + " " + p.getSemantic() + " " + p.getIndex() + " " + p.getType() + " " + data(p.getData()));
+            }
+            section("materials", l);
+        }
         List<String> nodes = new ArrayList<>();
         walk(sc.getSceneRoot(wp), 0, nodes);
         section("nodes", nodes);
@@ -155,7 +177,8 @@ public class AiSceneProbe {
     static void one(String rel, String flagSpec) {
         out.println("file " + rel + " flags=" + flagSpec);
         try {
-            AiScene sc = Jassimp.importFile(rel, flags(flagSpec));
+            mats = flagSpec.endsWith("+mat");
+            AiScene sc = Jassimp.importFile(rel, flags(mats ? flagSpec.substring(0, flagSpec.length() - 4) : flagSpec));
             dumpScene(sc);
         } catch (Throwable t) {
             out.println("error " + t.getClass().getName() + ": " + t.getMessage());

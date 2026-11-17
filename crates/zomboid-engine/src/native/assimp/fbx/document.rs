@@ -717,8 +717,9 @@ impl Document {
         if let Some(m) = sc.get("MultiLayer") {
             multilayer = parse_token_as_int(get_required_token(m, 0)?)? != 0;
         }
+        // the shading model is lower-cased ("Phong" in the files)
         let shading = match sc.get("ShadingModel") {
-            Some(s) => parse_token_as_string(get_required_token(s, 0)?)?,
+            Some(s) => parse_token_as_string(get_required_token(s, 0)?)?.to_ascii_lowercase(),
             None => "phong".to_string(),
         };
         let template = match shading.as_str() {

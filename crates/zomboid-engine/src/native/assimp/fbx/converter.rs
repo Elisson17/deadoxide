@@ -187,7 +187,8 @@ fn mul_in_library_order(a: &Mat4, b: &Mat4) -> Mat4 {
     let mut r = [[0.0f32; 4]; 4];
     for i in 0..4 {
         for j in 0..4 {
-            r[i][j] = ((x[i][3] * t[3][j] + x[i][2] * t[2][j]) + x[i][0] * t[0][j]) + x[i][1] * t[1][j];
+            r[i][j] =
+                ((x[i][3] * t[3][j] + x[i][2] * t[2][j]) + x[i][0] * t[0][j]) + x[i][1] * t[1][j];
         }
     }
     Mat4 {
@@ -959,13 +960,7 @@ impl<'a> Conv<'a> {
                     }
                 }
             }
-            self.convert_cluster(
-                &mut bones,
-                cluster,
-                &out_indices,
-                &index_out,
-                &count_out,
-            );
+            self.convert_cluster(&mut bones, cluster, &out_indices, &index_out, &count_out);
         }
         self.bone_map.clear();
         self.meshes[out_idx].bones = bones;
@@ -1234,7 +1229,16 @@ impl<'a> Conv<'a> {
                 Prop::Vec3(v) => add_property(out, &key, 0, 0, PT_FLOAT, f32s(&[v.x, v.y, v.z])),
                 Prop::Float(f) => add_property(out, &key, 0, 0, PT_FLOAT, f32s(&[f])),
                 Prop::Int(i) => add_property(out, &key, 0, 0, PT_INTEGER, i.to_le_bytes().to_vec()),
-                Prop::Bool(b) => add_property(out, &key, 0, 0, PT_BUFFER, vec![u8::from(b)]),
+                Prop::Vec4(v) => add_property(out, &key, 0, 0, PT_FLOAT, f32s(&v)),
+                // a bool is added as the 4 bytes of an unsigned int holding the byte
+                Prop::Bool(b) => add_property(
+                    out,
+                    &key,
+                    0,
+                    0,
+                    PT_INTEGER,
+                    u32::from(b).to_le_bytes().to_vec(),
+                ),
                 Prop::Str(s) => add_property(out, &key, 0, 0, PT_STRING, ai_string(&s)),
                 Prop::ULong(_) | Prop::Int64(_) => {}
             }
@@ -1273,18 +1277,63 @@ impl<'a> Conv<'a> {
         Ok(())
     }
 
-    /// SetTextureProperties
+    /// `TrySetTextureProperties`: the texture connected as `name`, as the `$tex.*` properties of semantic `target`.
+    fn try_set_texture_properties(
+        out: &mut Material,
+        textures: &BTreeMap<String, Rc<Object>>,
+        name: &str,
+        target: u32,
+        mesh: Option<&MeshGeometry>,
+    ) -> R<()> {
+        let Some(tex_obj) = textures.get(name) else {
+            return Ok(());
+        };
+        let Kind::Texture(tex) = &tex_obj.kind else {
+            return Ok(());
+        };
+        let (path, uvtrafo, uv_index) = Self::texture_values(tex, mesh)?;
+        add_property(out, "$tex.file", target, 0, PT_STRING, ai_string(&path));
+        add_property(out, "$tex.uvtrafo", target, 0, PT_FLOAT, f32s(&uvtrafo));
+        add_property(
+            out,
+            "$tex.uvwsrc",
+            target,
+            0,
+            PT_INTEGER,
+            uv_index.to_le_bytes().to_vec(),
+        );
+        Ok(())
+    }
+
+    /// `aiGetMaterialIntegerArray(mat, key, 0, 0, &value, nullptr)`: the first int of an integer or buffer property
+    /// (a float property is cast, a string parsed)
+    fn material_integer(mat: &Material, key: &str) -> Option<i32> {
+        let p = mat
+            .properties
+            .iter()
+            .find(|p| p.key == key && p.semantic == 0 && p.index == 0)?;
+        let d = &p.data;
+        match p.ptype {
+            PT_INTEGER | PT_BUFFER if d.len() >= 4 => {
+                Some(i32::from_le_bytes([d[0], d[1], d[2], d[3]]))
+            }
+            PT_FLOAT if d.len() >= 4 => Some(f32::from_le_bytes([d[0], d[1], d[2], d[3]]) as i32),
+            _ => None,
+        }
+    }
+
+    /// SetTextureProperties: the table of `FBXConverter::SetTextureProperties` of the 5.3 line, in its order
     fn set_texture_properties(
         out: &mut Material,
         textures: &BTreeMap<String, Rc<Object>>,
         mesh: Option<&MeshGeometry>,
     ) -> R<()> {
-        const MAP: [(&str, u32); 30] = [
+        const MAP: [(&str, u32); 40] = [
             ("DiffuseColor", TT_DIFFUSE),
             ("AmbientColor", TT_AMBIENT),
             ("EmissiveColor", TT_EMISSIVE),
             ("SpecularColor", TT_SPECULAR),
-            ("SpecularFactor", TT_SHININESS),
+            ("SpecularFactor", TT_SPECULAR),
             ("TransparentColor", TT_OPACITY),
             ("ReflectionColor", TT_REFLECTION),
             ("DisplacementColor", TT_DISPLACEMENT),
@@ -1293,6 +1342,7 @@ impl<'a> Conv<'a> {
             ("ShininessExponent", TT_SHININESS),
             ("TransparencyFactor", TT_OPACITY),
             ("EmissiveFactor", TT_EMISSIVE),
+            ("ReflectionFactor", TT_METALNESS),
             ("Maya|DiffuseTexture", TT_DIFFUSE),
             ("Maya|NormalTexture", TT_NORMALS),
             ("Maya|SpecularTexture", TT_SPECULAR),
@@ -1309,29 +1359,70 @@ impl<'a> Conv<'a> {
             ("Maya|TEX_metallic_map", TT_METALNESS),
             ("Maya|TEX_roughness_map", TT_DIFFUSE_ROUGHNESS),
             ("Maya|TEX_ao_map", TT_AMBIENT_OCCLUSION),
-            ("", 0),
+            ("3dsMax|Parameters|base_color_map", TT_BASE_COLOR),
+            ("3dsMax|Parameters|bump_map", TT_NORMAL_CAMERA),
+            ("3dsMax|Parameters|emission_map", TT_EMISSION_COLOR),
+            ("3dsMax|Parameters|metalness_map", TT_METALNESS),
+            ("3dsMax|Parameters|roughness_map", TT_DIFFUSE_ROUGHNESS),
+            ("3dsMax|main|base_color_map", TT_BASE_COLOR),
+            ("3dsMax|main|norm_map", TT_NORMAL_CAMERA),
+            ("3dsMax|main|emit_color_map", TT_EMISSION_COLOR),
+            ("3dsMax|main|ao_map", TT_AMBIENT_OCCLUSION),
+            ("3dsMax|main|opacity_map", TT_OPACITY),
         ];
-        for (prop, target) in MAP {
-            if prop.is_empty() {
-                continue;
+        for (name, target) in MAP {
+            Self::try_set_texture_properties(out, textures, name, target, mesh)?;
+        }
+        Self::try_set_texture_properties(
+            out,
+            textures,
+            "3dsMax|main|metalness_map",
+            TT_METALNESS,
+            mesh,
+        )?;
+        Self::try_set_texture_properties(
+            out,
+            textures,
+            "3dsMax|main|specular_map",
+            TT_SPECULAR,
+            mesh,
+        )?;
+        // roughness and glossiness maps of a 3dsMax PBR material depend on its useGlossiness value
+        // (2: a roughness workflow, 1: the maps are shininess; anything else only logs a warning)
+        match Self::material_integer(out, "$raw.3dsMax|main|useGlossiness") {
+            Some(2) => {
+                Self::try_set_texture_properties(
+                    out,
+                    textures,
+                    "3dsMax|main|roughness_map",
+                    TT_DIFFUSE_ROUGHNESS,
+                    mesh,
+                )?;
+                Self::try_set_texture_properties(
+                    out,
+                    textures,
+                    "3dsMax|main|glossiness_map",
+                    TT_DIFFUSE_ROUGHNESS,
+                    mesh,
+                )?;
             }
-            let Some(tex_obj) = textures.get(prop) else {
-                continue;
-            };
-            let Kind::Texture(tex) = &tex_obj.kind else {
-                continue;
-            };
-            let (path, uvtrafo, uv_index) = Self::texture_values(tex, mesh)?;
-            add_property(out, "$tex.file", target, 0, PT_STRING, ai_string(&path));
-            add_property(out, "$tex.uvtrafo", target, 0, PT_FLOAT, f32s(&uvtrafo));
-            add_property(
-                out,
-                "$tex.uvwsrc",
-                target,
-                0,
-                PT_INTEGER,
-                uv_index.to_le_bytes().to_vec(),
-            );
+            Some(1) => {
+                Self::try_set_texture_properties(
+                    out,
+                    textures,
+                    "3dsMax|main|roughness_map",
+                    TT_SHININESS,
+                    mesh,
+                )?;
+                Self::try_set_texture_properties(
+                    out,
+                    textures,
+                    "3dsMax|main|glossiness_map",
+                    TT_SHININESS,
+                    mesh,
+                )?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -1823,7 +1914,8 @@ impl<'a> Conv<'a> {
                         if n + 1 < count {
                             tp = tc;
                             vp = vc;
-                            let (Some(&nk), Some(&nv)) = (c.keys.get(n + 1), c.values.get(n + 1)) else {
+                            let (Some(&nk), Some(&nv)) = (c.keys.get(n + 1), c.values.get(n + 1))
+                            else {
                                 return Err("vector::at".to_string());
                             };
                             tc = nk;
@@ -1984,7 +2076,9 @@ impl<'a> Conv<'a> {
         let mut out_translation: Vec<VectorKey> = Vec::new();
         if !times.is_empty() {
             if !rotation.is_empty() {
-                out_quat = self.interpolate_rotation_keys(&times, &rotation, def_rot, max_time, min_time, order);
+                out_quat = self.interpolate_rotation_keys(
+                    &times, &rotation, def_rot, max_time, min_time, order,
+                );
             } else {
                 for &t in &times {
                     out_quat.push(QuatKey {

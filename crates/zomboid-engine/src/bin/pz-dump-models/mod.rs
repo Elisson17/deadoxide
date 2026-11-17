@@ -326,7 +326,60 @@ fn walk(n: &Node, depth: usize, lines: &mut Vec<String>) {
 }
 
 /// `AiSceneProbe.dumpScene`.
-fn dump_scene(out: &mut String, full: bool, sc: &Scene) -> Result<(), String> {
+
+/// `jassimp.AiMaterial.PropertyType` of the raw aiPropertyTypeInfo
+fn property_type(t: u32) -> &'static str {
+    match t {
+        1 => "FLOAT",
+        3 => "STRING",
+        4 => "INTEGER",
+        _ => "BUFFER",
+    }
+}
+
+/// How `AiSceneProbe.data` prints what jassimp builds from a property: a string, an `Integer`, a `Float`, an
+/// `AiColor` for the float arrays of the `$clr.*` keys, a byte buffer for everything else.
+fn property_data(p: &zomboid_engine::native::assimp::scene::MaterialProperty) -> String {
+    let hex = |d: &[u8]| {
+        let mut s = String::from("buffer");
+        for b in d {
+            let _ = write!(s, " {b:02x}");
+        }
+        s
+    };
+    let fl = |d: &[u8]| -> Vec<f32> {
+        d.chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    };
+    match p.ptype {
+        3 => {
+            let n = u32::from_le_bytes([p.data[0], p.data[1], p.data[2], p.data[3]]) as usize;
+            format!(
+                "string {}",
+                String::from_utf8_lossy(&p.data[4..(4 + n).min(p.data.len())])
+            )
+        }
+        4 if p.data.len() == 4 => format!(
+            "Integer {}",
+            i32::from_le_bytes([p.data[0], p.data[1], p.data[2], p.data[3]])
+        ),
+        1 if p.data.len() == 4 => format!("Float {}", f(fl(&p.data)[0])),
+        1 if p.key.starts_with("$clr.") && (p.data.len() == 12 || p.data.len() == 16) => {
+            let mut c = fl(&p.data);
+            if c.len() == 3 {
+                c.push(1.0);
+            }
+            format!(
+                "jassimp.AiColor [{}]",
+                c.iter().map(|v| f(*v)).collect::<Vec<_>>().join(", ")
+            )
+        }
+        _ => hex(&p.data),
+    }
+}
+
+fn dump_scene(out: &mut String, full: bool, mats: bool, sc: &Scene) -> Result<(), String> {
     let _ = writeln!(
         out,
         "scene meshes={} materials={} animations={} cameras={} lights={}",
@@ -462,6 +515,23 @@ fn dump_scene(out: &mut String, full: bool, sc: &Scene) -> Result<(), String> {
         }
         section(out, full, "bones", &l);
     }
+    if mats {
+        let mut l = Vec::new();
+        for (i, mt) in sc.materials.iter().enumerate() {
+            l.push(format!("material {i} properties={}", mt.properties.len()));
+            for p in &mt.properties {
+                l.push(format!(
+                    "{} {} {} {} {}",
+                    p.key,
+                    p.semantic,
+                    p.index,
+                    property_type(p.ptype),
+                    property_data(p)
+                ));
+            }
+        }
+        section(out, full, "materials", &l);
+    }
     let mut nodes = Vec::new();
     if let Some(root) = &sc.root_node {
         walk(root, 0, &mut nodes);
@@ -551,15 +621,20 @@ fn collect(root: &Path, rel: &str, exts: &[&str], acc: &mut Vec<String>) -> Resu
 /// `AiSceneProbe.one`: the post-process steps of `spec` are applied by `native::assimp::post_process`.
 fn scene_one(out: &mut String, full: bool, root: &Path, rel: &str, spec: &str) {
     let _ = writeln!(out, "file {rel} flags={spec}");
+    // a spec ending in `+mat` also prints the materials
+    let (flags, mats) = match spec.strip_suffix("+mat") {
+        Some(f) => (f, true),
+        None => (spec, false),
+    };
     let result = std::fs::read(root.join(rel))
         .map_err(|e| format!("java.io.IOException: {e}"))
         .and_then(|bytes| {
-            zomboid_engine::native::assimp::import_file(rel, &bytes, spec)
+            zomboid_engine::native::assimp::import_file(rel, &bytes, flags)
                 .map_err(|e| format!("java.io.IOException: {e}"))
         });
     match result {
         Ok(sc) => {
-            if let Err(e) = dump_scene(out, full, &sc) {
+            if let Err(e) = dump_scene(out, full, mats, &sc) {
                 let _ = writeln!(out, "error {e}");
             }
         }
@@ -667,7 +742,8 @@ fn processed_one(out: &mut String, full: bool, root: &Path, rel: &str, pass: &st
         let scene = zomboid_engine::native::assimp::import_file(rel, &bytes, flags)
             .map_err(|_| "java.io.IOException".to_string())?;
         let (mode, variant) = pass.split_once(':').unwrap_or((pass, ""));
-        let skin = match variant.strip_prefix("skin=") {
+        let variants: Vec<&str> = variant.split('+').collect();
+        let skin = match variants.iter().find_map(|v| v.strip_prefix("skin=")) {
             Some(reference) => Some(skin_of(root, reference)?),
             None => None,
         };
@@ -679,15 +755,15 @@ fn processed_one(out: &mut String, full: bool, root: &Path, rel: &str, pass: &st
             "AnimationOnly" => LoadMode::AnimationOnly,
             _ => return Err(format!("unknown mode {mode}")),
         };
-        if variant == "last" {
+        if variants.contains(&"last") {
             if let Some(m) = scene.meshes.last() {
                 p.mesh_name = Some(m.name.clone());
             }
         }
-        if variant == "all" {
+        if variants.contains(&"all") {
             p.all_meshes = true;
         }
-        if variant == "fbx" {
+        if variants.contains(&"fbx") {
             let mut rotate_modifier = Quaternion::new();
             rotate_modifier.set_from_axis_angle(&Vector4f::of(
                 1.0,
