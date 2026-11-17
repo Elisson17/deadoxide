@@ -6,6 +6,7 @@
 //! is parsed but never claimed: the docs table in COMPATIBILITY.md says which is which.
 pub mod bank;
 pub mod events;
+pub mod fsb;
 pub mod riff;
 pub mod strings;
 pub mod studio;

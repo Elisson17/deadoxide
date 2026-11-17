@@ -30,6 +30,8 @@ pub struct ProjList {
 #[derive(Clone, Debug)]
 pub struct Bank {
     pub name: String,
+    /// the file the bank was read from
+    pub path: std::path::PathBuf,
     pub len: u64,
     pub riff_size: u32,
     pub form: [u8; 4],
@@ -153,6 +155,7 @@ impl Bank {
         }
         Ok(Bank {
             name,
+            path: path.to_path_buf(),
             len,
             riff_size,
             form,

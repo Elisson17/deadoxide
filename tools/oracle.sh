@@ -339,6 +339,9 @@ sel fmodstrings && { ./target/release/pz-dump fmodcandidates "$ROOT" >target/ora
 # the event and parameter records: per event the sustain flag, length (ms) and parameters (name, id, flags) the API reports, the global
 # parameter list and FMODManager's parameter table (globalIndex); the id of a parameter no event uses is UNKNOWN on both sides
 sel fmodevents && game_case fmodevents FmodBanksProbe events
+# the sample data: the FSB5 inside the SND chunk of each data bank: header numbers and names read by the probe, stream count, frequency, channels,
+# length (PCM and ms) and format of every stream from FMOD core opening the same head (sparse file in the scratch dir); the Vorbis decoder is not ported
+sel fmodsamples && game_case fmodsamples FmodBanksProbe samples
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

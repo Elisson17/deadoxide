@@ -178,6 +178,51 @@ fn events(root: &Path) -> Result<String, String> {
     Ok(o)
 }
 
+/// `FmodBanksProbe samples`: the FSB5 of the four data banks (never loaded whole): the header numbers, the stream count,
+/// every stream's frequency, channels, PCM length, millisecond length and decoded format, then the stream names.
+fn samples(root: &Path) -> Result<String, String> {
+    use zomboid_engine::native::fmod::fsb::{
+        Fsb5, CODEC_VORBIS, SOUND_FORMAT_PCMFLOAT, SOUND_TYPE_FSB,
+    };
+    let mut o = String::new();
+    for n in ["ZomboidMusic", "ZomboidSound", "ZomboidSoundMP", "radio"] {
+        let bank = Bank::open(&root.join(BANK_DIR).join(format!("{n}.bank")))?;
+        let f = Fsb5::open(&bank)?.ok_or_else(|| format!("{n}: no FSB5 in the SND chunk"))?;
+        if f.mode != CODEC_VORBIS {
+            return Err(format!(
+                "{n}: FSB5 codec {} (decoded format UNKNOWN)",
+                f.mode
+            ));
+        }
+        let _ = writeln!(
+            o,
+            "FSB {n} offset={} version={} samples={} headers={} names={} data={} mode={}",
+            f.offset,
+            f.version,
+            f.num_samples,
+            f.sample_headers_size,
+            f.name_table_size,
+            f.data_size,
+            f.mode
+        );
+        let _ = writeln!(o, "SUBS {n} {}", f.streams.len());
+        for (i, s) in f.streams.iter().enumerate() {
+            let _ = writeln!(
+                o,
+                "SUB {n} {i} freq={} ch={} pcm={} ms={} type={SOUND_TYPE_FSB} fmt={SOUND_FORMAT_PCMFLOAT} bits=32",
+                s.frequency,
+                s.channels,
+                s.samples,
+                f.length_ms(i)
+            );
+        }
+        for (i, s) in f.streams.iter().enumerate() {
+            let _ = writeln!(o, "NAME {n} {i} {}", s.name);
+        }
+    }
+    Ok(o)
+}
+
 /// The names of the `parameter:/` strings (a parameter path is `parameter:/<folders>/<name>`; the game and the API use
 /// the last component), in Java `String` order.
 fn parameter_names(
@@ -231,6 +276,7 @@ pub fn dump(root: &Path, mode: &str, rest: &[String]) -> Result<String, String> 
         ("banks", []) => banks(root),
         ("strings", [cand]) => strings(root, Path::new(cand)),
         ("events", []) => events(root),
+        ("samples", []) => samples(root),
         _ => Err(format!("fmod: unknown mode {mode}")),
     }
 }

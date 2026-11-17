@@ -622,6 +622,12 @@ fn fmodevents_matches_original() {
     check("fmodevents", &["-", "events"]);
 }
 
+/// The FSB5 sample banks: header numbers, stream count, frequency, channels and lengths of every stream, names.
+#[test]
+fn fmodsamples_matches_original() {
+    check("fmodsamples", &["-", "samples"]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {
