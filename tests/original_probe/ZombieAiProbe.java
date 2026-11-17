@@ -59,7 +59,10 @@ public class ZombieAiProbe {
         int ticks = Integer.parseInt(p[2]);
         float dx = Float.parseFloat(p[3]);
         float dy = Float.parseFloat(p[4]);
-        boolean force = p[5].equals("force");
+        boolean force = p[5].equals("force") || p[5].startsWith("hit");
+        // `hit<N>`: like force, and at tick N the player stand-in hits the zombie with a baseball bat (exploration of the
+        // states a hit leads to; the port does not run it)
+        int hitTick = p[5].startsWith("hit") ? Integer.parseInt(p[5].substring(3)) : -1;
         if (!ActionContextProbe.chunksLoaded) {
             ActionContextProbe.loadChunks(cell);
             ActionContextProbe.chunksLoaded = true;
@@ -142,6 +145,16 @@ public class ZombieAiProbe {
             if (force) {
                 z.setTarget(pl);
                 ZombieProbe.set(z, IsoZombie.class, "timeSinceSeenFlesh", 0.0f);
+            }
+            if (n == hitTick) {
+                try {
+                    zombie.inventory.types.HandWeapon bat = (zombie.inventory.types.HandWeapon) zombie.inventory.InventoryItemFactory.CreateItem("Base.BaseballBat");
+                    float dmg = z.Hit(bat, pl, 1.0f, false, 1.0f, false);
+                    out.println("HIT damage=" + dmg + " hp=" + z.getHealth() + " dead=" + z.isDead() + " knockedDown=" + z.isKnockedDown() + " staggerBack=" + z.isStaggerBack() + " hitReaction=" + z.getHitReaction());
+                } catch (Throwable t) {
+                    out.println("HIT-ERR " + t);
+                    t.printStackTrace(System.err);
+                }
             }
             z.preupdate();
             z.update();
