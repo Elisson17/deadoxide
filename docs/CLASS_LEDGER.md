@@ -4,12 +4,12 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 468 of 3432 classes touched, 1885 of 46318 method names cited (4.1%), 965313 decompiled lines.**
+**Total: 468 of 3432 classes touched, 1900 of 46318 method names cited (4.1%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 79 | 7277 | 431 (5.9%) | 144530 |
+| zombie.iso | 346 | 79 | 7277 | 446 (6.1%) | 144530 |
 | zombie.core | 450 | 95 | 5920 | 231 (3.9%) | 93574 |
 | zombie.characters | 200 | 51 | 5028 | 192 (3.8%) | 77144 |
 | zombie.network | 436 | 4 | 3229 | 4 (0.1%) | 60679 |
@@ -366,7 +366,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.IsoChunk | 12 / 185 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_chunk.rs |
 | zombie.iso.IsoDirections | 17 / 19 | crates/zomboid-engine/src/zombie/iso/iso_directions.rs |
 | zombie.iso.IsoFloorBloodSplat | 0 / 3 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs |
-| zombie.iso.IsoGridSquare | 51 / 581 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/server_map.rs, crates/zomboid-scene/src/scene.rs, crates/zomboid-scene/src/sim.rs |
+| zombie.iso.IsoGridSquare | 66 / 581 | crates/zomboid-engine/src/zombie/iso/chunk_save.rs, crates/zomboid-engine/src/zombie/iso/iso_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_grid_square.rs, crates/zomboid-engine/src/zombie/iso/server_map.rs, crates/zomboid-engine/src/zombie/pathfind/square_edges.rs, crates/zomboid-scene/src/scene.rs, crates/zomboid-scene/src/sim.rs |
 | zombie.iso.IsoLot | 4 / 9 | crates/zomboid-engine/src/zombie/iso/iso_lot.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaCell | 7 / 28 | crates/zomboid-engine/src/zombie/iso/iso_meta_cell.rs, crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.IsoMetaChunk | 11 / 27 | crates/zomboid-engine/src/zombie/iso/iso_meta_chunk.rs |
