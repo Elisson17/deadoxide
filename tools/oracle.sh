@@ -231,7 +231,9 @@ sel zombieai && server_case zombieai ZombieAiProbe \
   "zai:1:2269:3.0:0:none" "zai:9:1774:3.0:0:none" "zsq" \
   "zai:12345:200:2.0:0:force" "zai:1:200:0:2.0:force" "zai:2:200:-2.0:0:force" "zai:3:200:0:-2.0:force" \
   "zai:4:300:3.0:3.0:force" "zai:5:300:-3.0:1.0:force" "zai:12345:400:5.0:5.0:force" \
-  "zai:3:3000:3.0:0:none" "zai:1:3000:3.0:0:none" "zai:9:3000:3.0:0:none"
+  "zai:3:3000:3.0:0:none" "zai:1:3000:3.0:0:none" "zai:9:3000:3.0:0:none" \
+  "zai:6:300:-0.7:0:force" "zai:7:300:0.45:0.2:force" "zai:10:400:1.0:1.0:force" "zai:13:400:4.0:-3.0:force" \
+  "zai:10:300:0.3:0.3:force" "zai:2:3000:3.0:0:none"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

@@ -8350,7 +8350,7 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
                     *ctx.rand = RandAbstract::new(java::Random::new(12345));
                     let mut ch = IsoChunk::new(wx, wy);
                     cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut Vec::new());
-                    ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid, &*ctx.alias);
+                    ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid, ctx.alias);
                     map.add_chunk(ch);
                     keys.push((wx, wy));
                 }
@@ -9418,7 +9418,7 @@ fn zombie_chunks_alias(
                 cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut Vec::new());
                 // ActionContextProbe.loadChunks: `ch.loadInWorldStreamerThread()` (the chunk is registered in the
                 // ServerMap only afterwards, so no square sees a neighbouring chunk's squares)
-                ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid, &*ctx.alias);
+                ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid, ctx.alias);
                 chunks.push(ch);
             }
         }

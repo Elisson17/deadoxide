@@ -195,6 +195,8 @@ impl IsoZombie {
 
     /// IsoMovingObject.setZ: clamped to -32..31, `lz` follows.
     fn set_z(&mut self, z: f32) {
+        // Math.min(31.0F, Math.max(-32.0F, z)): the original's operand order (NaN semantics) is kept
+        #[allow(clippy::manual_clamp)]
         let z = f32::min(31.0, f32::max(-32.0, z));
         self.character.moving.z = z;
         self.sp.last_z = z;
@@ -540,6 +542,8 @@ impl IsoZombie {
         // checkHitWall: only an IsoPlayer reacts
         let mut dx = self.sp.next_x - self.character.moving.x;
         let mut dy = self.sp.next_y - self.character.moving.y;
+        // `!(Math.abs(dx) > 0.0F) && !(Math.abs(dy) > 0.0F)` as written (a NaN counts as no movement)
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         let movement_mod = if !(dx.abs() > 0.0) && !(dy.abs() > 0.0) {
             0.0
         } else {
@@ -667,7 +671,9 @@ impl IsoZombie {
         let Some(player_sq) = Self::move_square(rd, psq) else {
             return Ok(());
         };
-        if psq != pos_of(cur) && !(in_nav && !cur.is_blocked_to(player_sq, &Sq(rd.squares))) {
+        let reachable =
+            psq == pos_of(cur) || (in_nav && !cur.is_blocked_to(player_sq, &Sq(rd.squares)));
+        if !reachable {
             return Ok(());
         }
         // the stand-in is solid (`IsoPlayer.isSolidForSeparate`), on the same level (`|dz| <= 0.3`)

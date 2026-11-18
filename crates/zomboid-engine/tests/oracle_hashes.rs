@@ -364,6 +364,12 @@ fn zombieai_matches_original() {
             "zai:3:3000:3.0:0:none",
             "zai:1:3000:3.0:0:none",
             "zai:9:3000:3.0:0:none",
+            "zai:6:300:-0.7:0:force",
+            "zai:7:300:0.45:0.2:force",
+            "zai:10:400:1.0:1.0:force",
+            "zai:13:400:4.0:-3.0:force",
+            "zai:10:300:0.3:0.3:force",
+            "zai:2:3000:3.0:0:none",
         ],
     );
 }
