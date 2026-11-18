@@ -358,6 +358,18 @@ fn zombieai_matches_original() {
 }
 
 #[test]
+fn pathfind_matches_original() {
+    // PathProbe's scenarios; keep in step with the `pathfind` line of tools/oracle.sh
+    check(
+        "pathfind",
+        &[
+            "lcc:1033:1457:1038:1462:4000:7",
+            "lcc:1008:1448:1015:1455:4000:11",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");
