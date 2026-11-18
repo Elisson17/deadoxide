@@ -95,6 +95,15 @@ impl<'a> World<'a> {
     /// `InstanceItem` would give a class, component, `OnCreate` or ammo type this port does not model is an `Err`.
     pub fn create_item(&mut self, item_type: &str) -> Result<Option<ItemId>, String> {
         let Some(si) = self.scripts.find_item(item_type) else {
+            // createItemInternal: a type ending in "Empty" is looked up again without it; the script found that way is
+            // used only when it has a fluid container or a durability component (not modelled), else the result is null
+            if let Some(stripped) = item_type.strip_suffix("Empty") {
+                if let Some(s2) = self.scripts.find_item(stripped) {
+                    if self.scripts.item(s2).has_components() {
+                        return Err(unported(format!("component ({stripped})")));
+                    }
+                }
+            }
             return Ok(None);
         };
         let script = self.scripts.item(si);

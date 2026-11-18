@@ -10,6 +10,7 @@
 pub mod container;
 pub mod food;
 pub mod item;
+pub mod update;
 pub mod world;
 
 pub use container::{Container, Pred};

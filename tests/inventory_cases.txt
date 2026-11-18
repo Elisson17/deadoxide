@@ -314,3 +314,197 @@ put cold a
 show a
 items cold
 items hot
+
+# Time: wet items, rotting, cooking, drainables, use (the tick command moves the clock then calls update())
+# wet items dry out: WetCooldown counts down by the time multiplier per update, then the dry item replaces it
+reset 31 tod=9,nights=0
+container box Base.Box 50
+add box t Base.BathTowelWet
+show t
+tick t 100 0
+tick t 12399 0
+tick t 1 0
+items box
+tick t 1 0
+items box
+show t
+add box d Base.DishClothWet
+set d wetcd 2
+tick d 2 0.01
+tick d 1 0.01
+items box
+reset 32 tod=9,nights=0,mult=2
+container box Base.Box 50
+add box t Base.BathTowelWet
+tick t 100 0.01
+set t wetcd 1
+tick t 1 0
+
+# Food rotting: replaceOnRotten, removal of rotten food
+reset 33 tod=9,nights=0
+container box Base.Box 50
+add box ice Base.Icecream
+set ice lastaged 2
+show ice
+tick ice 1 0
+items box
+clock nights=1
+tick ice 1 0
+items box
+pick m box 0
+show m
+clock nights=3
+tick ice 1 0
+items box
+tick m 1 0
+items box
+show m
+
+reset 34 tod=9,nights=0,sb.DaysForRottenFoodRemoval=1
+container box Base.Box 50
+add box a Base.Apple
+set a lastaged 2
+tick a 1 0
+clock nights=5
+tick a 1 0
+show a
+clock nights=9
+tick a 1 0
+items box
+show a
+clock nights=11
+tick a 1 0
+items box
+show a
+add box b Base.Bread
+set b lastaged 100
+tick b 1 0
+show b
+
+# cooking: a food heats towards the container, cooks and burns by the minute; replaceOnCooked, microwave, tainted
+reset 41 tod=9,nights=0
+container oven Base.Oven 50 temp=2.5
+add oven st Base.Steak
+set st heat 2
+tick st 5 0.02
+tick st 40 0.02
+tick st 200 0.02
+tick st 400 0.02
+show st
+add oven bs Base.BreadSlices
+set bs heat 2
+tick bs 100 0.02
+tick bs 1000 0.02
+items oven
+add oven dough Base.BreadDough
+show dough
+set dough heat 2.5
+tick dough 50 0.02
+tick dough 100 0.02
+tick dough 100 0.02
+show dough
+add oven bag Base.BaguetteDough
+set bag heat 2.5
+tick bag 800 0.02
+items oven
+
+reset 42 tod=9,nights=0
+container mw microwave 50 temp=2.5
+container cool Base.Box 50
+add mw pot Base.SugarBeetPulpPot
+set pot heat 2.5
+tick pot 300 0.02
+tick pot 300 0.02
+show pot
+add cool st Base.Steak
+set st heat 2.5
+tick st 100 0.02
+show st
+set st heat 1
+add cool ap Base.Apple
+set ap taint true
+set ap heat 2
+tick ap 20 0.02
+set ap heat 2.5
+tick ap 20 0.02
+show ap
+
+# drainables: use, depletion, replaceOnDeplete, UseWhileUnequipped ticks
+reset 43 tod=9,nights=0
+container pack Base.Bag 20
+add pack bat Base.Battery
+use bat
+use bat
+set bat uses 2
+use bat
+use bat
+items pack
+add pack tw Base.BathTowel
+set tw uses 1
+use tw
+items pack
+add pack tw2 Base.BathTowel
+set tw2 uses 0
+tick tw2 1 0
+items pack
+add pack tw3 Base.BathTowel
+show tw3
+useitem tw3
+useitem tw3 true
+set tw3 uses 1
+useitem tw3
+items pack
+add pack c Base.CandleLit
+show c
+tick c 50 0.01
+tick c 500 0.01
+set c uses 3
+tick c 120 0.01
+show c
+items pack
+tick c 10 0.01
+
+# InventoryItem.Use and ItemUser.UseItem on foods and plain items
+reset 44 tod=9,nights=0
+container box Base.Box 50
+add box beans Base.TinnedBeans
+show beans
+use beans
+use beans
+set beans uses 1
+use beans
+items box
+add box b Base.Bandage
+use b
+items box
+add box a Base.Apple
+useitem a
+useitem a false false 5
+show a
+useitem a false false 100
+items box
+add box b2 Base.Bandage
+useitem b2 false true 1 true
+show b2
+useitem b2 false false 1 false true
+items box
+add box bb Base.3030Bullets
+show bb
+useitem bb
+items box
+
+# items outside any container: heat settles to 1, a Literature does nothing
+reset 45 tod=9,nights=0
+new bat Base.Battery
+set bat dheat 2
+tick bat 100 0
+tick bat 1100 0
+new a Base.Apple
+set a heat 2
+tick a 19 0
+tick a 1 0
+tick a 40 0
+new book Base.BookAiming1
+tick book 10 0.1
+new b Base.Bandage
+tick b 10 0.1

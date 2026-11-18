@@ -22,14 +22,14 @@ pub fn check_hours(hours: f32, world_age_hours: f32) -> f32 {
 
 impl World<'_> {
     /// The Food data of an item; a programming error when the item is another class.
-    fn food(&self, id: ItemId) -> &FoodData {
+    pub(super) fn food(&self, id: ItemId) -> &FoodData {
         match &self.items[id].kind {
             Kind::Food(f) => f,
             _ => panic!("item {id} is not a Food"),
         }
     }
 
-    fn food_mut(&mut self, id: ItemId) -> &mut FoodData {
+    pub(super) fn food_mut(&mut self, id: ItemId) -> &mut FoodData {
         match &mut self.items[id].kind {
             Kind::Food(f) => f,
             _ => panic!("item {id} is not a Food"),

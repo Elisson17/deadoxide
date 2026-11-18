@@ -223,11 +223,17 @@ impl<'a> Scenario<'a> {
             it.off_age,
             it.off_age_max
         );
+        let _ = write!(
+            b,
+            " wet={} wetCd={}",
+            u8::from(it.is_wet),
+            f(it.wet_cooldown)
+        );
         match &it.kind {
             Kind::Food(fd) => {
                 let _ = write!(
                     b,
-                    " heat={} hung={} hunger={} base={} thirst={} unhappy={} boredom={} stress={} endur={} rotten={} fresh={} frozen={} freezing={} lastFrozen={} lastCook={} tempAccum={} cal={} poison={}",
+                    " heat={} hung={} hunger={} base={} thirst={} unhappy={} boredom={} stress={} endur={} rotten={} fresh={} frozen={} freezing={} lastFrozen={} lastCook={} tempAccum={} cal={} poison={} tainted={}",
                     f(fd.heat),
                     f(fd.hung_change),
                     f(w.food_hunger_change(id)),
@@ -245,17 +251,20 @@ impl<'a> Scenario<'a> {
                     fd.last_cook_minute,
                     f(fd.temperature_time_accum),
                     f(fd.calories),
-                    fd.poison_power
+                    fd.poison_power,
+                    u8::from(fd.is_tainted)
                 );
             }
             Kind::Drainable(d) => {
                 let _ = write!(
                     b,
-                    " useDelta={} ticks={} heat={} weightEmpty={}",
+                    " useDelta={} ticks={} heat={} weightEmpty={} lastUpd={} lastCook={}",
                     f(d.use_delta),
                     f(d.ticks),
                     f(d.heat),
-                    f(d.weight_empty)
+                    f(d.weight_empty),
+                    d.last_update_minutes,
+                    d.last_cook_minute
                 );
             }
             Kind::Literature(l) => {
@@ -364,6 +373,19 @@ impl<'a> Scenario<'a> {
         Ok(())
     }
 
+    /// InventoryProbe.advance: the clock moves `dtod` hours, a day over at 24.
+    fn advance(&mut self, dtod: f32) {
+        let gt = &mut self.world.game_time;
+        let mut t = gt.time_of_day + dtod;
+        let mut nights = gt.nights_survived;
+        while t >= 24.0f32 {
+            t -= 24.0f32;
+            nights += 1;
+        }
+        gt.time_of_day = t;
+        gt.nights_survived = nights;
+    }
+
     /// InventoryProbe.set
     fn set(&mut self, p: &[&str]) -> Result<(), String> {
         let id = self.item(p[1])?;
@@ -385,6 +407,25 @@ impl<'a> Scenario<'a> {
             "hung" if is_food => {
                 if let Kind::Food(fd) = &mut w.items[id].kind {
                     fd.hung_change = float(v)?;
+                }
+            }
+            "taint" if is_food => {
+                if let Kind::Food(fd) = &mut w.items[id].kind {
+                    fd.is_tainted = java::equals_ignore_case(v, "true");
+                }
+            }
+            "lastcook" if is_food => {
+                if let Kind::Food(fd) = &mut w.items[id].kind {
+                    fd.last_cook_minute = int(v)?;
+                }
+            }
+            "wet" => w.items[id].is_wet = java::equals_ignore_case(v, "true"),
+            "wetcd" => w.items[id].wet_cooldown = float(v)?,
+            "dheat" => {
+                if let Kind::Drainable(d) = &mut w.items[id].kind {
+                    d.heat = float(v)?;
+                } else {
+                    return Err("ClassCastException: not a DrainableComboItem".to_string());
                 }
             }
             "off" => w.items[id].off_age = int(v)?,
@@ -512,6 +553,72 @@ impl<'a> Scenario<'a> {
                     p[1],
                     f(gt.time_of_day),
                     gt.nights_survived
+                );
+            }
+            "pick" => {
+                let c = self.cont(p[2])?;
+                let n = usize::try_from(int(p[3])?)
+                    .map_err(|_| "IndexOutOfBoundsException".to_string())?;
+                let i = *self.world.containers[c]
+                    .items
+                    .get(n)
+                    .ok_or("IndexOutOfBoundsException")?;
+                self.put_var(p[1], i);
+                let _ = writeln!(out, "PICK {} {}", p[1], self.refer(Some(i)));
+            }
+            "use" => {
+                let id = self.item(p[1])?;
+                self.world.use_item(id)?;
+                let _ = writeln!(
+                    out,
+                    "USE {} -> {} draws={}",
+                    p[1],
+                    self.show(id),
+                    self.world.rand.id()
+                );
+            }
+            "useitem" => {
+                let id = self.item(p[1])?;
+                let flag = |n: usize| -> bool {
+                    p.get(n)
+                        .is_some_and(|v| java::equals_ignore_case(v, "true"))
+                };
+                let consumes = match p.get(4) {
+                    Some(v) => int(v)?,
+                    None => 1,
+                };
+                let consumed = self.world.item_user_use_item(
+                    id,
+                    flag(2),
+                    flag(3),
+                    consumes,
+                    flag(5),
+                    flag(6),
+                )?;
+                let _ = writeln!(
+                    out,
+                    "USEITEM {} = {consumed} -> {} draws={}",
+                    p.join(" "),
+                    self.show(id),
+                    self.world.rand.id()
+                );
+            }
+            "tick" => {
+                let id = self.item(p[1])?;
+                let n = int(p[2])?;
+                let dtod = float(p[3])?;
+                for _ in 0..n {
+                    self.advance(dtod);
+                    self.world.update_item(id)?;
+                }
+                let _ = writeln!(
+                    out,
+                    "TICK {} -> {} tod={} tm={} draws={}",
+                    p.join(" "),
+                    self.show(id),
+                    f(self.world.game_time.time_of_day),
+                    f(self.world.items[id].time_multiplier),
+                    self.world.rand.id()
                 );
             }
             "ageupdate" => {

@@ -13,6 +13,7 @@ import zombie.SandboxOptions;
 import zombie.inventory.InventoryItem;
 import zombie.inventory.InventoryItemFactory;
 import zombie.inventory.ItemContainer;
+import zombie.inventory.ItemUser;
 import zombie.inventory.types.DrainableComboItem;
 import zombie.inventory.types.Food;
 import zombie.inventory.types.Literature;
@@ -43,6 +44,9 @@ import zombie.scripting.objects.ResourceLocation;
 //   removeall <container> <type> [count] | removeone <container> <type> | removetype <container> <type>
 //   tick <var> <n> <dtod>        n times: the clock advances dtod hours, then the item's update()
 //   ageupdate <var>              Food.updateAge(false)
+//   pick <var> <container> <index>   the item at that place of the container, by a name
+//   use <var>                    InventoryItem.Use() (DrainableComboItem.Use() for a drainable)
+//   useitem <var> [crafting inContainer consumes keep destroy]   ItemUser.UseItem
 // The server flag is cleared while the probe runs, so that the items' update() reads the game clock and not the wall
 // clock (InventoryItem.calculateTimeMultiplier).
 public class InventoryProbe {
@@ -152,6 +156,7 @@ public class InventoryProbe {
         b.append(" customW=").append(it.isCustomWeight() ? 1 : 0);
         b.append(" cook=").append(f(it.getCookingTime())).append(it.isCooked() ? " cooked" : "").append(it.isBurnt() ? " burnt" : "");
         b.append(" off=").append(it.getOffAge()).append('/').append(it.getOffAgeMax());
+        b.append(" wet=").append(it.isWet() ? 1 : 0).append(" wetCd=").append(f(it.getWetCooldown()));
         if (it instanceof Food fd) {
             b.append(" heat=").append(f(fd.getHeat()));
             b.append(" hung=").append(f(fd.getHungChange())).append(" hunger=").append(f(fd.getHungerChange())).append(" base=").append(f(fd.getBaseHunger()));
@@ -160,10 +165,11 @@ public class InventoryProbe {
             b.append(" rotten=").append(fd.isRotten() ? 1 : 0).append(" fresh=").append(fd.isFresh() ? 1 : 0);
             b.append(" frozen=").append(fd.isFrozen() ? 1 : 0).append(" freezing=").append(f(fd.getFreezingTime())).append(" lastFrozen=").append(f(getFloat(fd, Food.class, "lastFrozenUpdate")));
             b.append(" lastCook=").append(fd.getLastCookMinute()).append(" tempAccum=").append(f(getFloat(fd, Food.class, "temperatureTimeAccum")));
-            b.append(" cal=").append(f(fd.getCalories())).append(" poison=").append(fd.getPoisonPower());
+            b.append(" cal=").append(f(fd.getCalories())).append(" poison=").append(fd.getPoisonPower()).append(" tainted=").append(fd.isTainted() ? 1 : 0);
         } else if (it instanceof DrainableComboItem dr) {
             b.append(" useDelta=").append(f(dr.getUseDelta())).append(" ticks=").append(f(dr.getTicks())).append(" heat=").append(f(dr.getHeat()));
             b.append(" weightEmpty=").append(f(dr.getWeightEmpty()));
+            b.append(" lastUpd=").append(getInt(dr, DrainableComboItem.class, "lastUpdateMinutes")).append(" lastCook=").append(getInt(dr, DrainableComboItem.class, "lastCookMinute"));
         } else if (it instanceof Literature li) {
             b.append(" pages=").append(li.getNumberOfPages());
         }
@@ -173,6 +179,14 @@ public class InventoryProbe {
     static float getFloat(Object o, Class<?> c, String name) {
         try {
             return (Float) getField(o, c, name);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static int getInt(Object o, Class<?> c, String name) {
+        try {
+            return (Integer) getField(o, c, name);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -287,6 +301,11 @@ public class InventoryProbe {
             case "hung" -> ((Food) it).setHungChange(Float.parseFloat(v));
             case "off" -> it.setOffAge(Integer.parseInt(v));
             case "offmax" -> it.setOffAgeMax(Integer.parseInt(v));
+            case "taint" -> ((Food) it).setTainted(Boolean.parseBoolean(v));
+            case "lastcook" -> ((Food) it).setLastCookMinute(Integer.parseInt(v));
+            case "wet" -> it.setWet(Boolean.parseBoolean(v));
+            case "wetcd" -> it.setWetCooldown(Float.parseFloat(v));
+            case "dheat" -> ((DrainableComboItem) it).setHeat(Float.parseFloat(v));
             default -> throw new IllegalArgumentException("field " + p[2]);
         }
     }
@@ -361,7 +380,23 @@ public class InventoryProbe {
                     advance(dtod);
                     it.update();
                 }
-                out.println("TICK " + String.join(" ", p) + " -> " + show(it) + " tod=" + f(GameTime.instance.getTimeOfDay()) + " in=" + name(it.getContainer()) + " draws=" + draws());
+                out.println("TICK " + String.join(" ", p) + " -> " + show(it) + " tod=" + f(GameTime.instance.getTimeOfDay()) + " tm=" + f(getFloat(it, InventoryItem.class, "timeMultiplier")) + " draws=" + draws());
+            }
+            case "pick" -> {
+                InventoryItem i = cont(p[2]).getItems().get(Integer.parseInt(p[3]));
+                vars.put(p[1], i);
+                out.println("PICK " + p[1] + " " + ref(i));
+            }
+            case "use" -> {
+                InventoryItem it = item(p[1]);
+                it.Use();
+                out.println("USE " + p[1] + " -> " + show(it) + " draws=" + draws());
+            }
+            case "useitem" -> {
+                InventoryItem it = item(p[1]);
+                int consumed = ItemUser.UseItem(it, p.length > 2 && Boolean.parseBoolean(p[2]), p.length > 3 && Boolean.parseBoolean(p[3]),
+                    p.length > 4 ? Integer.parseInt(p[4]) : 1, p.length > 5 && Boolean.parseBoolean(p[5]), p.length > 6 && Boolean.parseBoolean(p[6]));
+                out.println("USEITEM " + String.join(" ", p) + " = " + consumed + " -> " + show(it) + " draws=" + draws());
             }
             case "ageupdate" -> {
                 ((Food) item(p[1])).updateAge(false);

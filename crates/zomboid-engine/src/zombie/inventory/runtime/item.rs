@@ -163,6 +163,8 @@ pub struct LiveItem {
     pub item_heat: f32,
     pub is_wet: bool,
     pub wet_cooldown: f32,
+    /// `itemWhenDry`
+    pub item_when_dry: Option<String>,
     pub registry_id: i16,
     pub key_id: i32,
     pub favorite: bool,
@@ -250,6 +252,7 @@ impl LiveItem {
             item_heat: 1.0,
             is_wet: false,
             wet_cooldown: -1.0,
+            item_when_dry: None,
             registry_id: -1,
             key_id: -1,
             favorite: false,
@@ -393,6 +396,7 @@ impl LiveItem {
         it.max_ammo = script_int(item, "maxAmmo");
         it.is_wet = script_bool(item, "isWet");
         it.wet_cooldown = script_float(item, "wetCooldown");
+        it.item_when_dry = text(item, "itemWhenDry");
         Ok(it)
     }
 
