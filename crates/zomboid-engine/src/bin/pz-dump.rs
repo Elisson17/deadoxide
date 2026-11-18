@@ -15,6 +15,8 @@
 //!   pz-dump fmodbanks <game root> <scratch, unused> banks   (pairs with FmodBanksProbe.java)
 #[path = "pz-dump-fmod/mod.rs"]
 mod fmod_dump;
+#[path = "pz-dump-inventory/mod.rs"]
+mod inventory_dump;
 #[path = "pz-dump-models/mod.rs"]
 mod models;
 #[path = "pz-dump-path/mod.rs"]
@@ -105,6 +107,9 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
+        Some("inventory") if a.len() == 4 => {
+            inventory_dump::inventory(Path::new(&a[2]), Path::new(&a[3]))
+        }
         Some("zombieai") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
         Some("pathfind") if a.len() >= 4 => path_dump::pathfind(Path::new(&a[2]), &a[3..]),
         Some("fmodbanks" | "fmodstrings" | "fmodevents" | "fmodsamples") if a.len() >= 5 => {

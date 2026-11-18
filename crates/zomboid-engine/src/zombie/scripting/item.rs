@@ -294,6 +294,16 @@ impl Item {
         self.components.iter().any(|c| c == id)
     }
 
+    /// zombie.scripting.entity.GameEntityScript.hasComponents: a `component` block, or an attribute parameter (`Sharpness`,
+    /// `HeadCondition`, ...), which `DoParam` routes to `LoadAttribute` and so to an Attributes component script.
+    pub fn has_components(&self) -> bool {
+        !self.components.is_empty()
+            || self
+                .unported
+                .iter()
+                .any(|(k, _)| ATTRIBUTES.contains(&k.as_str()))
+    }
+
     /// `module.name`, the original's `moduleDotType`.
     pub fn full_name(&self) -> String {
         format!("{}.{}", self.module, self.name)
