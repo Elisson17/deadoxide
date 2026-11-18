@@ -1,7 +1,8 @@
 //! What item and container operations read from the rest of the game, and the arenas that hold them.
 use std::collections::HashMap;
 
-use super::item::{ContainerId, ItemId, Kind, LiveItem};
+use super::container::Container;
+use super::item::{ItemId, Kind, LiveItem};
 use crate::java::Random;
 use crate::zombie::core::random::rand_abstract::RandAbstract;
 use crate::zombie::game_time::GameTime;
@@ -53,10 +54,11 @@ pub struct World<'a> {
     /// `Rand` (`RandStandard.INSTANCE`): a seeded `java.util.Random` here.
     pub rand: RandAbstract<Random>,
     pub game_time: GameTime,
-    pub sandbox: &'a SandboxOptions,
+    pub sandbox: SandboxOptions,
     /// `(float)ZomboidGlobals.equippedOrWornEncumbranceMultiplier`
     pub equipped_multiplier: f32,
     pub items: Vec<LiveItem>,
+    pub containers: Vec<Container>,
     /// `IsoWorld.instance.currentCell.processItems`
     pub process_items: Vec<ItemId>,
     /// `IsoWorld.instance.currentCell.processItemsRemove`
@@ -66,7 +68,7 @@ pub struct World<'a> {
 impl<'a> World<'a> {
     pub fn new(
         scripts: &'a Scripts<'a>,
-        sandbox: &'a SandboxOptions,
+        sandbox: SandboxOptions,
         equipped_multiplier: f64,
         seed: i64,
     ) -> Self {
@@ -77,6 +79,7 @@ impl<'a> World<'a> {
             sandbox,
             equipped_multiplier: equipped_multiplier as f32,
             items: Vec::new(),
+            containers: Vec::new(),
             process_items: Vec::new(),
             process_items_remove: Vec::new(),
         }
@@ -293,7 +296,4 @@ impl<'a> World<'a> {
     pub fn equipped_weight(&self, id: ItemId) -> f32 {
         (self.actual_weight(id) + self.contents_weight(id)) * self.equipped_multiplier
     }
-
-    #[allow(dead_code)]
-    fn container_unused(_: ContainerId) {}
 }

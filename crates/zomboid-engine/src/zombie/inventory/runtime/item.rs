@@ -166,6 +166,8 @@ pub struct LiveItem {
     pub registry_id: i16,
     pub key_id: i32,
     pub favorite: bool,
+    /// `broken` (`setBroken(condition <= 0)`)
+    pub broken: bool,
     /// `modelIndex` (-1 until `synchWithVisual` picks one)
     pub model_index: i32,
     /// `ammoType.getItemKey()` of the script's `AmmoType` (the item type of the rounds it holds)
@@ -251,6 +253,7 @@ impl LiveItem {
             registry_id: -1,
             key_id: -1,
             favorite: false,
+            broken: false,
             model_index: -1,
             ammo_item: None,
             max_ammo: 0,
@@ -264,7 +267,12 @@ impl LiveItem {
             ItemType::Food => {
                 // the Food constructor, then the class branch of Item.InstanceItem
                 let hunger = script_float(item, "hungerChange");
-                let replace_on_cooked = None;
+                let replace_on_cooked = script_complex(item, "replaceoncooked").map(|v| {
+                    crate::java::split_char(crate::java::trim(v), ';')
+                        .into_iter()
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                });
                 it.kind = Kind::Food(Box::new(FoodData {
                     bad_cold: script_bool(item, "badCold"),
                     good_hot: script_bool(item, "goodHot"),
@@ -346,7 +354,12 @@ impl LiveItem {
                     ticks: 0.0,
                     replace_on_deplete: replace,
                     replace_on_deplete_full_type: full,
-                    replace_on_cooked: None,
+                    replace_on_cooked: script_complex(item, "replaceoncooked").map(|v| {
+                        crate::java::split_char(crate::java::trim(v), ';')
+                            .into_iter()
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    }),
                     on_cooked: text(item, "onCooked"),
                     can_consolidate: !script_bool(item, "cantBeConsolided"),
                     weight_empty: script_float(item, "weightEmpty"),
@@ -394,6 +407,7 @@ impl LiveItem {
     pub fn set_condition_no_sound(&mut self, condition: i32) {
         let condition = condition.max(0).min(self.condition_max);
         self.condition = condition;
+        self.broken = condition <= 0;
     }
 
     /// InventoryItem.setWeight
@@ -408,6 +422,11 @@ impl LiveItem {
         } else {
             actual_weight
         };
+    }
+
+    /// `instanceof Clothing`: none of the classes modelled here.
+    pub fn is_clothing(&self) -> bool {
+        false
     }
 
     /// InventoryItem.getCategory (`mainCategory` is never set by a script) and the overrides of the classes.

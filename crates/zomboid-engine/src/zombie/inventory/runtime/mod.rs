@@ -7,8 +7,11 @@
 //! the rest of the game is a field of `World` (the scripts, the generator, the clock, the sandbox options, the
 //! processing list of the cell). Whatever an operation would reach beyond that (a character, a world object, the UI, a
 //! sound, the network) is not modelled: an operation that needs it returns `Err("not ported: ...")` instead of a value.
+pub mod container;
+pub mod food;
 pub mod item;
 pub mod world;
 
-pub use item::{ItemId, LiveItem};
+pub use container::{Container, Pred};
+pub use item::{ContainerId, ItemId, LiveItem};
 pub use world::{Scripts, World};
