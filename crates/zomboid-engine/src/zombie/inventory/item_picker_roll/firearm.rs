@@ -14,7 +14,7 @@ pub struct WeaponState {
 
 /// `AmmoType.getItemKey()` of the ammunition types the scripts name (`AmmoType` registers each with its
 /// `ItemKey.Normal` constant: `"Base." + id`).
-pub(super) fn ammo_item_key(ammo_type: &str) -> Option<&'static str> {
+pub(crate) fn ammo_item_key(ammo_type: &str) -> Option<&'static str> {
     Some(match ammo_type {
         "base:bullets_3030" => "Base.3030Bullets",
         "base:bullets_308" => "Base.308Bullets",

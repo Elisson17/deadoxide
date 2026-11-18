@@ -681,6 +681,15 @@ fn body_matches_original() {
     check("body", &[cases.to_str().expect("utf-8 path")]);
 }
 
+/// zombie.inventory item classes and containers (InventoryProbe in the booted server) over the cases of
+/// tests/inventory_cases.txt.
+#[test]
+fn inventory_matches_original() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = root.join("tests/inventory_cases.txt");
+    check("inventory", &[cases.to_str().expect("utf-8 path")]);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

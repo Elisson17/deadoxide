@@ -66,6 +66,28 @@ impl ItemType {
         })
     }
 
+    /// `ItemType.toString()`: the registry location of the base type, `base:<name>` in lower case.
+    pub fn location(self) -> &'static str {
+        match self {
+            ItemType::AlarmClock => "base:alarmclock",
+            ItemType::AlarmClockClothing => "base:alarmclockclothing",
+            ItemType::Animal => "base:animal",
+            ItemType::Clothing => "base:clothing",
+            ItemType::Container => "base:container",
+            ItemType::Drainable => "base:drainable",
+            ItemType::Food => "base:food",
+            ItemType::Key => "base:key",
+            ItemType::KeyRing => "base:keyring",
+            ItemType::Literature => "base:literature",
+            ItemType::Map => "base:map",
+            ItemType::Moveable => "base:moveable",
+            ItemType::Normal => "base:normal",
+            ItemType::Radio => "base:radio",
+            ItemType::Weapon => "base:weapon",
+            ItemType::WeaponPart => "base:weaponpart",
+        }
+    }
+
     /// The simple name of the class zombie.scripting.objects.Item.InstanceItem creates for this type (`None`: no
     /// branch, as for KeyRing).
     pub fn class_name(self) -> Option<&'static str> {

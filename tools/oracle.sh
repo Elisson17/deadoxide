@@ -339,6 +339,8 @@ sel xmodels && ai_case xmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last
 sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x anim x media/anims_X
 # zombie.characters.BodyDamage and the stat updates of IsoGameCharacter on a headless IsoPlayer in the booted server
 sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
+# zombie.inventory item classes and containers (E67): InventoryItemFactory.CreateItem and what the item and container classes report, in the booted server
+sel inventory && server_case inventory InventoryProbe "$HERE/tests/inventory_cases.txt"
 # the same for every .fbx of media/models_X and media/textures (2032 files, binary and ASCII): the port of assimp's FBX importer
 # (FBXConverter: meshes, the $AssimpFbx$ chain nodes, skins, materials, animations). fbxscene: the importer alone (+mat also prints every
 # material property: key, semantic, index, type, data); fbxmodelscene/fbxanimscene: after the game's own flags (TriangulateProcess,

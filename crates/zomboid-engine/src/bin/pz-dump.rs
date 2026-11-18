@@ -12,6 +12,8 @@
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 //!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
 //!   pz-dump sounds <game root> [<command file> <scratch dir>]   (pairs with SoundsProbe.java)
+#[path = "pz-dump-inventory/mod.rs"]
+mod inventory_dump;
 #[path = "pz-dump-models/mod.rs"]
 mod models;
 
@@ -101,6 +103,9 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
+        Some("inventory") if a.len() == 4 => {
+            inventory_dump::inventory(Path::new(&a[2]), Path::new(&a[3]))
+        }
         Some("zombieai") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),

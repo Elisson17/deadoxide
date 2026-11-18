@@ -1,0 +1,2 @@
+# inventory scenarios: see tests/original_probe/InventoryProbe.java
+create
