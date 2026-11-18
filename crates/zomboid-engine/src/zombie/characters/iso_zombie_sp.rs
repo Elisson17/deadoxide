@@ -830,10 +830,11 @@ impl IsoZombie {
             .map_or(0.0, |p| to_degrees(p.target_twist_angle))
     }
 
-    /// IsoGameCharacter.isBehaviourMoving: `currentState.isMoving(this)` (LungeState true, PathFindState `isMoving()`).
+    /// IsoGameCharacter.isBehaviourMoving: `currentState.isMoving(this)` (LungeState and WalkTowardState true,
+    /// PathFindState `isMoving()`).
     fn is_behaviour_moving(&self) -> bool {
         match self.current_state {
-            Some(ZombieState::Lunge) => true,
+            Some(ZombieState::Lunge) | Some(ZombieState::WalkToward) => true,
             Some(ZombieState::PathFind) => self.sp.is_moving,
             _ => false,
         }

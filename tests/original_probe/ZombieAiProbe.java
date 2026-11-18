@@ -11,6 +11,7 @@ import zombie.iso.IsoCell;
 import zombie.iso.IsoChunk;
 import zombie.iso.IsoChunkMap;
 import zombie.iso.IsoGridSquare;
+import zombie.iso.IsoObject;
 import zombie.network.GameServer;
 import zombie.network.ServerLOS;
 import zombie.network.ServerMap;
@@ -188,10 +189,39 @@ public class ZombieAiProbe {
                 + " goal=" + ActionContextProbe.g(pfb, "goal")
                 + " " + vars(z));
             prev = draws;
+            // PZ_DBG=<from>:<to>: the movement internals of those ticks on stderr (debug aid, not part of the oracle)
+            String dbg = System.getenv("PZ_DBG");
+            if (dbg != null) {
+                String[] r = dbg.split(":");
+                if (n >= Integer.parseInt(r[0]) && n <= Integer.parseInt(r[1])) {
+                    System.err.println("DBG " + n + " x=" + z.getX() + " y=" + z.getY() + " nx=" + z.getNextX() + " ny=" + z.getNextY()
+                        + " lx=" + z.getLastX() + " ly=" + z.getLastY() + " tx=" + ActionContextProbe.g(pfb, "targetX") + " ty=" + ActionContextProbe.g(pfb, "targetY")
+                        + " updating=" + z.isAnimationUpdatingThisFrame() + " path2=" + (z.getPath2() != null)
+                        + " impulse=" + z.getImpulsex() + "," + z.getImpulsey());
+                }
+            }
         }
         out.println("END " + spec + " draws=" + ActionContextProbe.g(RandStandard.INSTANCE, "id"));
         cell.getObjectList().remove(z);
+        // leave no trace for the next scenario of this JVM: the zombie is in the moving-object list of every square it
+        // stood on or moved from, and a rustled bush keeps its `objectRenderEffects` (the headless world never updates it)
         sq.getMovingObjects().remove(z);
+        for (IsoGridSquare s2 : new IsoGridSquare[] {z.getCurrentSquare(), z.getLastSquare(), z.getMovingSquare()}) {
+            if (s2 != null) s2.getMovingObjects().remove(z);
+        }
+        for (int cx = 8272; cx < 8288; cx++) {
+            for (int cy = 11664; cy < 11680; cy++) {
+                for (int cz = 0; cz < 8; cz++) {
+                    IsoGridSquare s3 = cell.getGridSquare(cx, cy, cz);
+                    if (s3 == null) continue;
+                    s3.getMovingObjects().remove(z);
+                    for (int oi = 0; oi < s3.getObjects().size(); oi++) {
+                        IsoObject o3 = s3.getObjects().get(oi);
+                        if (o3.getObjectRenderEffects() != null) ZombieProbe.set(o3, IsoObject.class, "objectRenderEffects", null);
+                    }
+                }
+            }
+        }
         cell.getObjectList().remove(pl);
         psq.getMovingObjects().remove(pl);
         IsoPlayer.players[0] = null;
