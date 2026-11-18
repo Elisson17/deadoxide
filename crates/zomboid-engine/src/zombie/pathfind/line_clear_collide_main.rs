@@ -393,23 +393,21 @@ pub fn is_not_clear_old(
             }
         } else if let Some(sq) = square {
             if sq.has_stairs() {
-                if sq.has_stairs_north() {
-                    if test_collision_vertical(from, to, pxf, pyf, false, true)
+                if sq.has_stairs_north()
+                    && (test_collision_vertical(from, to, pxf, pyf, false, true)
                         || test_collision_vertical(from, to, pxf + 1.0, pyf, true, false)
                         || (sq.has_type(IsoObjectType::stairsTN)
-                            && test_collision_horizontal(from, to, pxf, pyf, false, true))
-                    {
-                        return Ok(true);
-                    }
+                            && test_collision_horizontal(from, to, pxf, pyf, false, true)))
+                {
+                    return Ok(true);
                 }
-                if sq.has_stairs_west() {
-                    if test_collision_horizontal(from, to, pxf, pyf, false, true)
+                if sq.has_stairs_west()
+                    && (test_collision_horizontal(from, to, pxf, pyf, false, true)
                         || test_collision_horizontal(from, to, pxf, pyf + 1.0, true, false)
                         || (sq.has_type(IsoObjectType::stairsTW)
-                            && test_collision_vertical(from, to, pxf, pyf, false, true))
-                    {
-                        return Ok(true);
-                    }
+                            && test_collision_vertical(from, to, pxf, pyf, false, true)))
+                {
+                    return Ok(true);
                 }
             } else if sq.has_sloped_surface(alias) {
                 let adj = |d: IsoDirections| g.get_grid_square(px + d.dx(), py + d.dy(), z);
