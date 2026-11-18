@@ -363,6 +363,17 @@ sel fmodevents && game_case fmodevents FmodBanksProbe events
 # the sample data: the FSB5 inside the SND chunk of each data bank: header numbers and names read by the probe, stream count, frequency, channels,
 # length (PCM and ms) and format of every stream from FMOD core opening the same head (sparse file in the scratch dir); the Vorbis decoder is not ported
 sel fmodsamples && game_case fmodsamples FmodBanksProbe samples
+# the same for every .glb of media/models_X (59 files, glTF 2.0 binary): the port of assimp's glTF2 importer (the accessors with the
+# vertex remapping table, skins, materials, animations in libc++ unordered_map order). glbscene: the importer alone (+mat also prints
+# every material property); glbmodelscene/glbanimscene: after the flags of FileTask_LoadMesh.loadGLTF / FileTask_LoadAnimation.loadGLTF
+sel glbscene && ai_case glbscene AiSceneProbe none+mat glb media/models_X
+sel glbmodelscene && ai_case glbmodelscene AiSceneProbe mesh glb media/models_X
+sel glbanimscene && ai_case glbanimscene AiSceneProbe anim glb media/models_X
+# ProcessedAiScene.process over those: the models (scale 1.0, no rotation: FileTask_LoadMesh.loadGLTF) in Normal and StaticMesh mode,
+# by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadGLTF: the same scale 0.01 and
+# -90 degree rotation as an .fbx) alone and skinned to a skeleton
+sel glbmodels && ai_case glbmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x mesh glb media/models_X
+sel glbanims && ai_case glbanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim glb media/models_X
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

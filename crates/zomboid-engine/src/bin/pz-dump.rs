@@ -70,14 +70,13 @@ fn main() {
         Some("txtmodels") if a.len() >= 3 => models::txtmodels(Path::new(&a[2]), &a[3..]),
         Some(
             "aiscene" | "xscene" | "xmodelscene" | "animscene" | "fbxscene" | "fbxmodelscene"
-            | "fbxanimscene" | "glbscene",
+            | "fbxanimscene" | "glbscene" | "glbmodelscene" | "glbanimscene",
         ) if a.len() >= 3 => models::aiscene(Path::new(&a[2]), &a[3..]),
         Some("fbxdoc") if a.len() >= 3 => models::fbxdoc(Path::new(&a[2]), &a[3..]),
-        Some("xmodels" | "animclips" | "fbxmodels" | "fbxanims" | "processedscene")
-            if a.len() >= 3 =>
-        {
-            models::processed(Path::new(&a[2]), &a[3..])
-        }
+        Some(
+            "xmodels" | "animclips" | "fbxmodels" | "fbxanims" | "glbmodels" | "glbanims"
+            | "processedscene",
+        ) if a.len() >= 3 => models::processed(Path::new(&a[2]), &a[3..]),
         Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
