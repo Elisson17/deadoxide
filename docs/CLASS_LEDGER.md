@@ -4,7 +4,7 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 465 of 3432 classes touched, 1885 of 46318 method names cited (4.1%), 965313 decompiled lines.**
+**Total: 468 of 3432 classes touched, 1885 of 46318 method names cited (4.1%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
@@ -29,7 +29,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.gameStates | 19 | 2 | 429 | 12 (2.8%) | 9502 |
 | zombie.debug | 67 | 0 | 473 | 0 (0.0%) | 9106 |
 | zombie.util | 70 | 8 | 520 | 22 (4.2%) | 8496 |
-| fmod | 102 | 0 | 652 | 0 (0.0%) | 7709 |
+| fmod | 102 | 3 | 652 | 0 (0.0%) | 7709 |
 | zombie.audio | 106 | 4 | 486 | 16 (3.3%) | 7002 |
 | zombie.radio | 27 | 15 | 445 | 9 (2.0%) | 6029 |
 | zombie.commands | 77 | 0 | 170 | 0 (0.0%) | 4689 |
@@ -75,6 +75,9 @@ Method counts are distinct method names per top-level file (overloads and inner 
 
 | Class | Cited / method names | Rust |
 |---|---:|---|
+| fmod.fmod.FMODManager | 0 / 28 | crates/zomboid-engine/src/fmod/fmod/fmod_manager.rs |
+| fmod.fmod.FMOD_STUDIO_EVENT_DESCRIPTION | 0 / 2 | crates/zomboid-engine/src/fmod/fmod/fmod_manager.rs |
+| fmod.fmod.FMOD_STUDIO_PARAMETER_DESCRIPTION | 0 / 2 | crates/zomboid-engine/src/fmod/fmod/fmod_manager.rs |
 | org.luaj.kahluafork.compiler.BlockCnt | 0 / 0 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/func_state.rs |
 | org.luaj.kahluafork.compiler.ConsControl | 0 / 0 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/func_state.rs |
 | org.luaj.kahluafork.compiler.ExpDesc | 6 / 6 | crates/zomboid-engine/src/org/luaj/kahluafork/compiler/exp_desc.rs |
