@@ -370,6 +370,32 @@ fn pathfind_matches_original() {
 }
 
 #[test]
+fn pathgraph_matches_original() {
+    // keep in step with the `pathgraph` line of tools/oracle.sh
+    check(
+        "pathgraph",
+        &["pgraph:1033:1457:1038:1462", "pgraph:1008:1448:1015:1455"],
+    );
+}
+
+#[test]
+fn pathsearch_matches_original() {
+    // keep in step with the `pathsearch` line of tools/oracle.sh
+    check(
+        "pathsearch",
+        &[
+            "psearch:1033:1457:1038:1462:100:7:zombie",
+            "psearch:1033:1457:1038:1462:100:8:player",
+            "psearch:1033:1457:1038:1462:150:21:zombie:sq",
+            "psearch:1033:1457:1038:1462:150:22:player:sq",
+            "psearch:1033:1457:1038:1462:100:23:crawler:sq",
+            "psearch:1008:1448:1015:1455:150:24:player:sq",
+            "psearch:1008:1448:1015:1455:150:25:zombie:sq",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");

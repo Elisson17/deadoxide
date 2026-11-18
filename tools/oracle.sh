@@ -232,6 +232,19 @@ sel zombieai && server_case zombieai ZombieAiProbe \
 # rectangles plus a one-chunk ring; floors 0..2, the four collision flags, short/long/anywhere targets, centred or not)
 sel pathfind && server_case pathfind PathProbe \
   "lcc:1033:1457:1038:1462:4000:7" "lcc:1008:1448:1015:1455:4000:11"
+# the pathfinder's own cache in JAVA mode (PathfindNative.useNativeCode = false): zombie.pathfind.Square bits/cost/sloped
+# surface of every square of two chunk rectangles (SquareUpdateTask.getBits via ChunkUpdateTask), and the high-level data
+# (HLChunkLevel regions with their edge masks, staircases, sloped surfaces) of every chunk level
+sel pathgraph && server_case pathgraph PathProbe \
+  "pgraph:1033:1457:1038:1462" "pgraph:1008:1448:1015:1455"
+# seeded path requests answered by the ORIGINAL Java PolygonalMap2 (HLAStar over chunk regions and staircases, VGAStar over
+# squares, cleanPath, smoothPath for players, fixPathZ): zombie, crawler and player movers, random points and walkable squares
+# (:sq) up to 24 squares and 2 levels apart; every node as Float.toString plus its flags
+sel pathsearch && server_case pathsearch PathProbe \
+  "psearch:1033:1457:1038:1462:100:7:zombie" "psearch:1033:1457:1038:1462:100:8:player" \
+  "psearch:1033:1457:1038:1462:150:21:zombie:sq" "psearch:1033:1457:1038:1462:150:22:player:sq" \
+  "psearch:1033:1457:1038:1462:100:23:crawler:sq" "psearch:1008:1448:1015:1455:150:24:player:sq" \
+  "psearch:1008:1448:1015:1455:150:25:zombie:sq"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin
