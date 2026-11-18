@@ -8350,7 +8350,7 @@ pub fn erosion(root: &Path, scenarios: &[String]) -> Result<String, String> {
                     *ctx.rand = RandAbstract::new(java::Random::new(12345));
                     let mut ch = IsoChunk::new(wx, wy);
                     cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut Vec::new());
-                    ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid);
+                    ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid, &*ctx.alias);
                     map.add_chunk(ch);
                     keys.push((wx, wy));
                 }
@@ -9369,7 +9369,7 @@ pub fn body(root: &Path, cases: &Path) -> Result<String, String> {
 
 /// The chunks 1034..=1035 x 1458..=1459 of the real map as ZombieProbe loads them, with their squares' properties.
 fn zombie_chunks(root: &Path) -> Result<Vec<IsoChunk>, String> {
-    zombie_chunks_alias(root).map(|(chunks, _)| chunks)
+    zombie_chunks_alias(root).map(|(chunks, _, _)| chunks)
 }
 
 /// `zombie_chunks` with the world's tile property aliases (the squares' floor and slope tests need them).
@@ -9379,6 +9379,7 @@ fn zombie_chunks_alias(
     (
         Vec<IsoChunk>,
         zomboid_engine::zombie::core::tile_property_alias_map::TilePropertyAliasMap,
+        zomboid_engine::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager,
     ),
     String,
 > {
@@ -9415,20 +9416,15 @@ fn zombie_chunks_alias(
                 *ctx.rand = RandAbstract::new(java::Random::new(12345));
                 let mut ch = IsoChunk::new(wx, wy);
                 cell_loader::load_cell_binary_chunk(&mut ctx, wx, wy, &mut ch, &mut Vec::new());
+                // ActionContextProbe.loadChunks: `ch.loadInWorldStreamerThread()` (the chunk is registered in the
+                // ServerMap only afterwards, so no square sees a neighbouring chunk's squares)
+                ch.load_in_world_streamer_thread(&*ctx.sprites, &*ctx.meta_grid, &*ctx.alias);
                 chunks.push(ch);
             }
         }
     }
-    for ch in &mut chunks {
-        for z in ch.get_min_level()..=ch.get_max_level() {
-            for i in 0..64 {
-                if let Some(sq) = ch.get_grid_square_mut(i % 8, i / 8, z) {
-                    sq.recalc_properties(&world.sprites);
-                }
-            }
-        }
-    }
-    Ok((chunks, std::mem::take(&mut world.alias)))
+    let IsoWorld { sprites, alias, .. } = world;
+    Ok((chunks, alias, sprites))
 }
 
 struct ZombieGrid<'a>(std::collections::HashMap<(i32, i32, i32), &'a IsoGridSquare>);
@@ -10776,16 +10772,52 @@ pub fn actioncontext(root: &Path, scenarios: &[String]) -> Result<String, String
     Ok(sb)
 }
 
+/// `ZombieAiProbe.squareMatrices`: the matrices the chunk loading left on every square of the four chunks.
+fn zombie_square_matrices(sb: &mut String, chunks: &[IsoChunk]) {
+    let _ = writeln!(sb, "SCENARIO zsq");
+    for ch in chunks {
+        let _ = writeln!(
+            sb,
+            "CHUNK {} {} levels={}..{}",
+            ch.wx,
+            ch.wy,
+            ch.get_min_level(),
+            ch.get_max_level()
+        );
+        for z in ch.get_min_level()..=ch.get_max_level() {
+            for y in 0..8 {
+                for x in 0..8 {
+                    if let Some(sq) = ch.get_grid_square(x, y, z) {
+                        let _ = writeln!(
+                            sb,
+                            "SQ {},{},{} c={:x} p={:x} v={:x}",
+                            sq.x, sq.y, sq.z, sq.collide_matrix, sq.path_matrix, sq.vision_matrix
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let _ = writeln!(sb, "END zsq");
+}
+
 /// The `zombieai` case: `ZombieAiProbe`'s scenarios `zai:<seed>:<ticks>:<dx>:<dy>:<force|none>`, run by the port.
 pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
     let mut sb = String::new();
     // the files are read once; every scenario gets its own copies of the mutable parts
     let survivors = zombie_survivors(root)?;
     let assets = zombie_anim_assets(root, true)?;
-    let (chunks, alias) = zombie_chunks_alias(root)?;
+    let (chunks, alias, sprites) = zombie_chunks_alias(root)?;
     let alias = std::rc::Rc::new(alias);
+    let sprites = std::rc::Rc::new(sprites);
     for spec in scenarios {
-        zombie_ai_scenario(&mut sb, spec, &survivors, &assets, &chunks, &alias)?;
+        if spec == "zsq" {
+            zombie_square_matrices(&mut sb, &chunks);
+        } else {
+            zombie_ai_scenario(
+                &mut sb, spec, &survivors, &assets, &chunks, &alias, &sprites,
+            )?;
+        }
     }
     Ok(sb)
 }
@@ -10801,6 +10833,9 @@ fn zombie_ai_scenario(
     chunks: &[IsoChunk],
     alias: &std::rc::Rc<
         zomboid_engine::zombie::core::tile_property_alias_map::TilePropertyAliasMap,
+    >,
+    sprites: &std::rc::Rc<
+        zomboid_engine::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager,
     >,
 ) -> Result<(), String> {
     use zomboid_engine::java::{float_to_string as fl, Random};
@@ -10876,6 +10911,7 @@ fn zombie_ai_scenario(
         },
         loaded_chunks: vec![(1034, 1458), (1034, 1459), (1035, 1458), (1035, 1459)],
         alias: alias.clone(),
+        sprites: sprites.clone(),
         zombie_object_id: 1,
     };
     let mut outfit_rng = OutfitRng::default();

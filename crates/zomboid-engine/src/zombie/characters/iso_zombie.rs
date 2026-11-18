@@ -383,6 +383,9 @@ pub struct SpState {
     pub collided_e: bool,
     pub collided_this_frame: bool,
     pub alt_collide: bool,
+    /// The tile objects (square x, y, z and index in its object list) whose `IsoObject.objectRenderEffects` is set: the
+    /// zombie's walk made them rustle and the headless world never updates them, so the effect stays.
+    pub render_effects: Vec<(i32, i32, i32, usize)>,
     pub time_since_zombie_attack: i32,
     /// IsoGameCharacter `deferredMovementEnabled` (true until a state turns it off)
     pub deferred_movement_enabled: bool,
@@ -432,6 +435,7 @@ impl Default for SpState {
             collided_e: false,
             collided_this_frame: false,
             alt_collide: false,
+            render_effects: Vec::new(),
             time_since_zombie_attack: 1_000_000,
             deferred_movement_enabled: true,
         }

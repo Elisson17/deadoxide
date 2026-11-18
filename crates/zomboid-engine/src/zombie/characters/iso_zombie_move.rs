@@ -89,10 +89,10 @@ impl IsoZombie {
             .map(pos_of)
     }
 
-    /// IsoGridSquare.testCollideAdjacent(zombie, x, y, z) for a zombie (no `IsoPlayer`, not a server or a client): the
-    /// special objects (doors, windows) of the squares, then the square's collide matrix. `Err` for a special object
-    /// (`collideWith`, a Lua event, and `setCollidedObject`) and for a square without its neighbour in the chunk map's
-    /// world.
+    /// IsoGridSquare.testCollideAdjacent(zombie, x, y, z) for a zombie (no `IsoPlayer`, not a server or a client): a
+    /// square with `collideMatrix == -1` collides with everything, an offset beyond one square collides, then the
+    /// special objects (doors, windows) of the squares, then the square's stored collide matrix (`useSlowCollision` is
+    /// false). `Err` for a special object (`collideWith` raises a Lua event and `setCollidedObject` remembers it).
     fn test_collide_adjacent(
         &self,
         rd: &SpRead,
@@ -104,10 +104,13 @@ impl IsoZombie {
         let Some(from_sq) = Self::move_square(rd, from) else {
             return Err("IsoGridSquare.testCollideAdjacent: the square is not loaded".into());
         };
+        if from_sq.collide_matrix == -1 {
+            return Ok(true);
+        }
         if !((-1..=1).contains(&x) && (-1..=1).contains(&y) && (-1..=1).contains(&z)) {
             return Ok(true);
         }
-        // IsoMetaGrid.isValidChunk: inside the map (Muldraugh's cells are far from the edge of the world)
+        // IsoMetaGrid.isValidChunk((x + dx) / 8, (y + dy) / 8): inside the map (Muldraugh's cells are far from its edge)
         let target = rd
             .squares
             .get_grid_square(from_sq.x + x, from_sq.y + y, from_sq.z + z);
@@ -124,9 +127,7 @@ impl IsoZombie {
                 );
             }
         }
-        let g = Sq(rd.squares);
-        let (collide, _, _) = from_sq.calculate_matrices(&rd.world.alias, &g);
-        Ok(collide & (1 << ((x + 1) + (y + 1) * 3 + (z + 1) * 9)) != 0)
+        Ok(from_sq.collide_matrix & (1 << ((x + 1) + (y + 1) * 3 + (z + 1) * 9)) != 0)
     }
 
     /// IsoZombie.shouldSlideHeadAwayFromWalls
@@ -274,12 +275,68 @@ impl IsoZombie {
         Ok(())
     }
 
+    /// postupdate's `if (collidedN || collidedS) { setNextY(getLastY()); DoCollideNorS(); }` and the same for W/E:
+    /// whether either happened.
+    fn undo_collided_axes(&mut self) -> bool {
+        let mut did = false;
+        if self.sp.collided_n || self.sp.collided_s {
+            self.sp.next_y = self.sp.last_y;
+            did = true;
+        }
+        if self.sp.collided_w || self.sp.collided_e {
+            self.sp.next_x = self.sp.last_x;
+            did = true;
+        }
+        did
+    }
+
     /// IsoMovingObject.isInLoadedArea (single-player): the tiles of the player's chunk map.
     fn is_in_loaded_area(x: i32, y: i32) -> bool {
         let x_min = (CHUNK_MAP_WORLD_X - CHUNK_GRID_WIDTH / 2) * 8;
         let y_min = (CHUNK_MAP_WORLD_Y - CHUNK_GRID_WIDTH / 2) * 8;
         let width = CHUNK_GRID_WIDTH * 8;
         x >= x_min && x < x_min + width && y >= y_min && y < y_min + width
+    }
+
+    /// IsoMovingObject.checkBreakHoppable + checkHitHoppable + checkBreakBendableFence(current) after a collision: they
+    /// make a crawling zombie thump a hoppable fence, a zombie climb a hoppable fence it hit head on, or a zombie
+    /// thump a bendable fence. The squares on the collided edge must hold nothing of the kind (no wall, fence, window or
+    /// door flag on either square, and the zombie is not crawling); `Err` otherwise.
+    fn check_collision_edge_effects(&self, rd: &SpRead, last: Pos, cur: Pos) -> Result<(), String> {
+        use crate::zombie::iso::sprite_details::iso_flag_type::IsoFlagType as F;
+        if self.crawling {
+            return Err(
+                "IsoMovingObject.checkBreakHoppable: a crawling zombie (not ported)".into(),
+            );
+        }
+        for p in [last, cur] {
+            let Some(sq) = Self::move_square(rd, p) else {
+                continue;
+            };
+            let edge = [
+                F::HoppableN,
+                F::HoppableW,
+                F::TallHoppableN,
+                F::TallHoppableW,
+                F::collideN,
+                F::collideW,
+                F::windowN,
+                F::windowW,
+                F::WindowN,
+                F::WindowW,
+                F::doorN,
+                F::doorW,
+                F::DoorWallN,
+                F::DoorWallW,
+            ];
+            if edge.iter().any(|f| sq.has(*f)) {
+                return Err(
+                    "IsoMovingObject.checkHitHoppable: a fence, wall, window or door edge is hit (climbOverFence, thump and bend are not ported)"
+                        .into(),
+                );
+            }
+        }
+        Ok(())
     }
 
     /// IsoMovingObject.DoCollide(favour): the zombie's next position against the squares' walls. Returns whether it
@@ -304,24 +361,49 @@ impl IsoZombie {
                 self.sp.current.unwrap_or_default(),
             );
             let (dx, dy, dz) = (cur.0 - last.0, cur.1 - last.1, cur.2 - last.2);
-            let collide = self.test_collide_adjacent(rd, last, dx, dy, dz)?;
-            if collide {
-                return Err(
-                    "IsoMovingObject.DoCollide: the zombie walks into a wall (the thump, hop and bend checks are not ported)"
-                        .into(),
-                );
+            if self.test_collide_adjacent(rd, last, dx, dy, dz)? {
+                if last.0 < cur.0 {
+                    self.sp.collided_e = true;
+                }
+                if last.0 > cur.0 {
+                    self.sp.collided_w = true;
+                }
+                if last.1 < cur.1 {
+                    self.sp.collided_s = true;
+                }
+                if last.1 > cur.1 {
+                    self.sp.collided_n = true;
+                }
+                self.sp.current = self.sp.last;
+                self.check_collision_edge_effects(rd, last, cur)?;
+                self.favour_collided_axes(favour);
+                self.sp.collided_this_frame = true;
+                return Ok(true);
             }
         } else if self.sp.next_x != self.sp.last_x || self.sp.next_y != self.sp.last_y {
-            if self.sp.current.is_none() {
-                return Err(
-                    "IsoMovingObject.DoCollide: the zombie leaves the loaded squares (not ported)"
-                        .into(),
-                );
-            }
-            // chr.getPath2() == null (the headless path finder never finds a path), not sitting on furniture
+            let Some(cur) = self.sp.current else {
+                if self.sp.next_x < self.sp.last_x {
+                    self.sp.collided_w = true;
+                }
+                if self.sp.next_x > self.sp.last_x {
+                    self.sp.collided_e = true;
+                }
+                if self.sp.next_y < self.sp.last_y {
+                    self.sp.collided_n = true;
+                }
+                if self.sp.next_y > self.sp.last_y {
+                    self.sp.collided_s = true;
+                }
+                self.sp.next_x = self.sp.last_x;
+                self.sp.next_y = self.sp.last_y;
+                self.sp.current = self.sp.last;
+                self.sp.collided_this_frame = true;
+                return Ok(true);
+            };
+            // chr.getPath2() == null (the headless path finder never finds a path), not sitting on furniture,
+            // `chr.isClimbing()` false
             let feeler = self.get_feeler_tile(rd, 0.5);
-            // chr.isClimbing(): false
-            if let (Some(feeler), Some(cur)) = (feeler, self.sp.current) {
+            if let Some(feeler) = feeler {
                 if feeler != cur
                     && self.test_collide_adjacent(
                         rd,
@@ -331,15 +413,49 @@ impl IsoZombie {
                         feeler.2 - cur.2,
                     )?
                 {
-                    return Err(
-                        "IsoMovingObject.DoCollide: the zombie walks into a wall (the thump, hop and bend checks are not ported)"
-                            .into(),
-                    );
+                    if self.sp.last.is_some() {
+                        if cur.0 < feeler.0 {
+                            self.sp.collided_e = true;
+                        }
+                        if cur.0 > feeler.0 {
+                            self.sp.collided_w = true;
+                        }
+                        if cur.1 < feeler.1 {
+                            self.sp.collided_s = true;
+                        }
+                        if cur.1 > feeler.1 {
+                            self.sp.collided_n = true;
+                        }
+                        // the hop and bend checks look at `last` and its neighbour on the collided side
+                        let last = self.sp.last.unwrap_or(cur);
+                        self.check_collision_edge_effects(rd, last, feeler)?;
+                        self.favour_collided_axes(favour);
+                    }
+                    self.sp.collided_this_frame = true;
+                    return Ok(true);
                 }
             }
         }
-        let _ = favour;
         Ok(false)
+    }
+
+    /// DoCollide's tail: a corner hit (a vertical and a horizontal side at once) keeps the horizontal sides for
+    /// `favour == 2` and the vertical ones for `favour == 1`.
+    fn favour_collided_axes(&mut self, favour: i32) {
+        if favour == 2 {
+            if (self.sp.collided_s || self.sp.collided_n)
+                && (self.sp.collided_e || self.sp.collided_w)
+            {
+                self.sp.collided_s = false;
+                self.sp.collided_n = false;
+            }
+        } else if favour == 1
+            && (self.sp.collided_s || self.sp.collided_n)
+            && (self.sp.collided_e || self.sp.collided_w)
+        {
+            self.sp.collided_w = false;
+            self.sp.collided_e = false;
+        }
     }
 
     /// IsoMovingObject.postupdate for the single-player zombie: slide away from walls, `ensureOnTile`, the next position
@@ -347,10 +463,9 @@ impl IsoZombie {
     /// current square. `Err` where the original would leave the loaded area or take a branch not ported.
     pub(crate) fn moving_postupdate(
         &mut self,
-        world: &ZombieWorld,
+        world: &mut ZombieWorld,
         rd: &SpRead,
     ) -> Result<(), String> {
-        let _ = world;
         self.slide_head_away_from_walls(rd, true)?;
         // ensureOnTile: `current == null` and not an IsoPlayer: returns
         self.sp.time_since_zombie_attack += 1;
@@ -392,40 +507,33 @@ impl IsoZombie {
         // collidedWithVehicle = false; PolygonalMap2.resolveCollision: no vehicle exists, the position is unchanged
         let onx = self.sp.next_x;
         let ony = self.sp.next_y;
-        let mut len;
         let mut b_did_collide = false;
-        // `collidable` is true
+        // `collidable` is true: the collision passes, the favoured axis alternating from tick to tick
         let alt = self.sp.alt_collide;
         self.do_collide(rd, if alt { 2 } else { 1 })?;
-        if self.sp.collided_n || self.sp.collided_s {
-            self.sp.next_y = self.sp.last_y;
-        }
-        if self.sp.collided_w || self.sp.collided_e {
-            self.sp.next_x = self.sp.last_x;
-        }
+        self.undo_collided_axes();
         self.do_collide(rd, if alt { 1 } else { 2 })?;
         self.sp.alt_collide = !self.sp.alt_collide;
-        if self.sp.collided_n || self.sp.collided_s {
-            self.sp.next_y = self.sp.last_y;
+        if self.undo_collided_axes() {
             b_did_collide = true;
         }
-        if self.sp.collided_w || self.sp.collided_e {
-            self.sp.next_x = self.sp.last_x;
-            b_did_collide = true;
-        }
-        len = (self.sp.next_x - self.sp.last_x).abs() + (self.sp.next_y - self.sp.last_y).abs();
-        let _ = len;
-        len = 0.0;
-        let _ = len;
+        let len = (self.sp.next_x - self.sp.last_x).abs() + (self.sp.next_y - self.sp.last_y).abs();
         let (lnx, lny) = (self.sp.next_x, self.sp.next_y);
         self.sp.next_x = onx;
         self.sp.next_y = ony;
         if b_did_collide {
-            return Err(
-                "IsoMovingObject.postupdate: the second collision pass after a collision is not ported".into(),
-            );
+            let alt = self.sp.alt_collide;
+            self.do_collide(rd, if alt { 2 } else { 1 })?;
+            self.undo_collided_axes();
+            self.do_collide(rd, if alt { 1 } else { 2 })?;
+            self.undo_collided_axes();
+            if (self.sp.next_x - self.sp.last_x).abs() + (self.sp.next_y - self.sp.last_y).abs()
+                < len
+            {
+                self.sp.next_x = lnx;
+                self.sp.next_y = lny;
+            }
         }
-        let _ = (lnx, lny);
         if self.sp.collided_this_frame {
             self.sp.current = self.sp.last;
         }
@@ -435,7 +543,7 @@ impl IsoZombie {
         let movement_mod = if !(dx.abs() > 0.0) && !(dy.abs() > 0.0) {
             0.0
         } else {
-            self.get_global_movement_mod(rd)
+            self.get_global_movement_mod(world, rd)
         };
         if dx.abs() > 0.01 || dy.abs() > 0.01 {
             dx *= movement_mod;
@@ -462,14 +570,126 @@ impl IsoZombie {
         Ok(())
     }
 
-    /// IsoGameCharacter.getGlobalMovementMod -> IsoMovingObject.getGlobalMovementMod: 0.75 on stairs, else 1 (the
-    /// vegetation's rustle effect and the tree noises change nothing a zombie reads).
-    fn get_global_movement_mod(&self, rd: &SpRead) -> f32 {
+    /// IsoGameCharacter.getGlobalMovementMod -> IsoMovingObject.getGlobalMovementMod(true): a zombie that is not
+    /// climbing (those states are not ported) makes the trees and bushes of its square and of the feeler square rustle
+    /// (`setRenderEffect(Vegetation_Rustle)`, which draws `Rand.Next(45.0F, 60.0F)` once per object), then 0.75 on
+    /// stairs, else 1. `doTreeNoises` only collects the square for the tree sound manager, which the headless world
+    /// never runs.
+    fn get_global_movement_mod(&mut self, world: &mut ZombieWorld, rd: &SpRead) -> f32 {
+        let z = self.character.moving.z;
+        if self.sp.current.is_some() && z - (pz_math::fastfloor(z) as f32) < 0.5f32 {
+            if let Some(cur) = self.sp.current {
+                self.rustle_vegetation(world, rd, cur);
+            }
+            // `getFeelerTile(this.feelersize)` with feelersize 0.5
+            if let Some(feeler) = self.get_feeler_tile(rd, 0.5) {
+                if Some(feeler) != self.sp.current {
+                    self.rustle_vegetation(world, rd, feeler);
+                }
+            }
+        }
         if self.move_current(rd).is_some_and(|c| c.has_stairs()) {
             0.75
         } else {
             1.0
         }
+    }
+
+    /// The body of getGlobalMovementMod for one square: `if (sq.has(tree) || sq.hasBush())` every object from index 1
+    /// that is an `IsoTree` or a bush gets `setRenderEffect(RenderEffectType.Vegetation_Rustle)`; with no effect set
+    /// yet `ObjectRenderEffects.getNew` draws `Rand.Next(45.0F, 60.0F)` (single-player: `GameServer.server` is false).
+    fn rustle_vegetation(&mut self, world: &mut ZombieWorld, rd: &SpRead, p: Pos) {
+        let Some(sq) = Self::move_square(rd, p) else {
+            return;
+        };
+        let sm = &*rd.world.sprites;
+        let alias = &*rd.world.alias;
+        let bush = |o: &crate::zombie::iso::iso_object::IsoObject| {
+            o.sprite.is_some_and(|s| {
+                let sprite = sm.sprite(s);
+                sprite.tileset_name.as_deref() == Some("f_bushes_1")
+                    || sprite.properties.get(alias, "Bush").is_some()
+            })
+        };
+        use crate::zombie::iso::iso_object::ObjectKind;
+        use crate::zombie::iso::sprite_details::iso_object_type::IsoObjectType as T;
+        if !(sq.has_type(T::tree) || sq.objects.iter().any(&bush)) {
+            return;
+        }
+        for (i, obj) in sq.objects.iter().enumerate().skip(1) {
+            if matches!(obj.kind, ObjectKind::IsoTree(_)) || bush(obj) {
+                let key = (p.0, p.1, p.2, i);
+                if !self.sp.render_effects.contains(&key) {
+                    // ObjectRenderEffects.getNew: `totalMaxTime = Rand.Next(45.0F, 60.0F) * 1.0F`
+                    let _ = world.rand.next_float(45.0, 60.0);
+                    self.sp.render_effects.push(key);
+                }
+            }
+        }
+    }
+
+    /// IsoMovingObject.separate for an IsoZombie in the single-player world (called by IsoZombie.updateInternal after
+    /// `wasSeparated = false`): a zombie that is solid (not on the floor) and pushable (not attacking or facing its
+    /// target) pushes itself out of the player stand-in when that one stands on its own square or on a square of its
+    /// `nav` (the neighbours the chunk's `doGridNav` linked: those of the same chunk and level, not blocked by a wall,
+    /// window, door or stairs) and `|next - playerNext| < width + playerWidth`: `nextX/nextY -= diff.setLength((len -
+    /// twidth) / 8)`, i.e. away from the player by an eighth of the overlap. `collideWith(player)` only raises the Lua
+    /// event `OnCharacterCollide` (no handler in the game's Lua; `getThumpableFor` of a player is null).
+    pub(crate) fn separate(&mut self, rd: &SpRead) -> Result<(), String> {
+        use crate::zombie::iso::vector2::Vector2;
+        // IsoZombie.isSolidForSeparate: none of FakeDead/FallDown/OnGround/GetUp/HitReaction is ported, not sitting
+        // against a wall, not a ragdoll; IsoMovingObject.isSolidForSeparate: `current != null`, `solid`, `!isOnFloor`
+        if self.sp.current.is_none() || self.on_floor {
+            return Ok(());
+        }
+        // IsoZombie.isPushableForSeparate
+        if matches!(
+            self.current_state,
+            Some(ZombieState::Attack) | Some(ZombieState::FaceTarget)
+        ) {
+            return Ok(());
+        }
+        let Some(cur) = self.move_current(rd) else {
+            return Ok(());
+        };
+        let p = &rd.world.player;
+        let psq = (
+            pz_math::fastfloor(p.x),
+            pz_math::fastfloor(p.y),
+            pz_math::fastfloor(p.z),
+        );
+        let in_nav = psq != pos_of(cur)
+            && psq.2 == cur.z
+            && (psq.0 - cur.x).abs() <= 1
+            && (psq.1 - cur.y).abs() <= 1
+            && psq.0.div_euclid(8) == cur.x.div_euclid(8)
+            && psq.1.div_euclid(8) == cur.y.div_euclid(8);
+        let Some(player_sq) = Self::move_square(rd, psq) else {
+            return Ok(());
+        };
+        if psq != pos_of(cur) && !(in_nav && !cur.is_blocked_to(player_sq, &Sq(rd.squares))) {
+            return Ok(());
+        }
+        // the stand-in is solid (`IsoPlayer.isSolidForSeparate`), on the same level (`|dz| <= 0.3`)
+        if (self.character.moving.z - p.z).abs() > 0.3f32 {
+            return Ok(());
+        }
+        let twidth = self.character.moving.width + p.width;
+        let mut diff = Vector2::new(self.sp.next_x - p.x, self.sp.next_y - p.y);
+        let len = diff.get_length();
+        if len >= twidth {
+            return Ok(());
+        }
+        // `GameServer.server || distToNearestCamCharacter() < 60`: DistTo is the Manhattan distance
+        let m = &self.character.moving;
+        let dist = (m.x - p.x).abs() + (m.y - p.y).abs();
+        if dist < 60.0f32 {
+            // isPushedByForSeparate(player): not a hit-reacting zombie, not a client, not an animal
+            diff.set_length((len - twidth) / 8.0f32);
+            self.sp.next_x -= diff.x;
+            self.sp.next_y -= diff.y;
+        }
+        Ok(())
     }
 
     /// IsoMovingObject.doStairs: `Err` when the zombie is on or next to a staircase (not ported); else only `lz` follows

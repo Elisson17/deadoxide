@@ -33,6 +33,7 @@ use crate::zombie::core::skinnedmodel::animation::animation_player::{
 use crate::zombie::core::skinnedmodel::animation::animation_track::AnimationTrack;
 use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
 use crate::zombie::iso::iso_grid_square::{GetSquare, IsoGridSquare};
+use crate::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager;
 use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::util::string_utils;
 
@@ -55,6 +56,8 @@ pub struct SinglePlayerWorld {
     pub player: PlayerStandIn,
     pub loaded_chunks: Vec<(i32, i32)>,
     pub alias: Rc<TilePropertyAliasMap>,
+    /// the loaded tile sprites (`IsoObject.isBush` reads the sprite's tileset name and properties)
+    pub sprites: Rc<IsoSpriteManager>,
     /// the zombie's `IsoMovingObject.getID()`: the scenario's second moving object (the player stand-in is the first)
     pub zombie_object_id: i32,
 }
@@ -1033,8 +1036,9 @@ impl IsoZombie {
             }
         }
         // (farming plant and campfire of the square, setLastHeardSound, RespondToSound (no world sound exists),
-        // separate, ZombieGroupManager.update (a lone zombie): UNKNOWN)
+        // ZombieGroupManager.update (a lone zombie): UNKNOWN)
         self.time_since_respond_to_sound += thirty;
+        self.separate(rd)?;
         self.update_search_for_corpse_sp(thirty)
     }
 
