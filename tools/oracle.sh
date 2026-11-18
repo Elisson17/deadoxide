@@ -227,6 +227,11 @@ sel zombieai && server_case zombieai ZombieAiProbe \
   "zai:5:60:-1.0:-1.0:force" "zai:6:60:-2.0:2.0:force" "zai:12345:60:5.0:5.0:force" "zai:12345:2000:3.0:0:none" \
   "zai:7:2000:3.0:0:none" "zai:2:2000:3.0:0:none" "zai:12:2200:3.0:0:none" "zai:3:1389:3.0:0:none" \
   "zai:1:2269:3.0:0:none" "zai:9:1774:3.0:0:none"
+# the ORIGINAL zombie.pathfind in the booted server over real chunks of Rosewood (PathProbe): LineClearCollideMain, the
+# vanilla PolygonalMap2.lineClearCollide/canStandAt of seeded random segments (lcc:<cx1>:<cy1>:<cx2>:<cy2>:<n>:<seed>, chunk
+# rectangles plus a one-chunk ring; floors 0..2, the four collision flags, short/long/anywhere targets, centred or not)
+sel pathfind && server_case pathfind PathProbe \
+  "lcc:1033:1457:1038:1462:4000:7" "lcc:1008:1448:1015:1455:4000:11"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

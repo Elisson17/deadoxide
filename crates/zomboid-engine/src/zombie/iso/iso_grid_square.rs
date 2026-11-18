@@ -41,6 +41,11 @@ pub struct IsoGridSquare {
     /// `chunk == null || chunk.loaded` of the original, which `RecalcProperties` copies into `propertiesDirty`:
     /// true for a square without a chunk and for the squares of a chunk that is loaded (`IsoChunk::set_loaded`).
     pub chunk_loaded: bool,
+    /// What `getHoppableOrWindowFrame` finds on the square, per object (bit 1: an object whose `IsoObject.isHoppable`
+    /// or `isWindowFrame` direction is NORTH_SOUTH, bit 2: EAST_WEST), set by `recalc_properties`. The union in
+    /// `properties` cannot say it: one object with both `HoppableN` and `HoppableW` is a NORTH_SOUTH hoppable only, and
+    /// a non-hoppable wall removes `HoppableN` from the union.
+    pub hoppable_edges: u8,
 }
 
 impl IsoGridSquare {
@@ -65,6 +70,7 @@ impl IsoGridSquare {
             erosion: None,
             properties_dirty: true,
             chunk_loaded: true,
+            hoppable_edges: 0,
         }
     }
 
@@ -249,6 +255,20 @@ impl IsoGridSquare {
         self.properties.clear();
         self.has_types = 0;
         self.has_tree = false;
+        self.hoppable_edges = 0;
+        for obj in &self.objects {
+            let Some(spr) = obj.sprite else { continue };
+            let sp = &sm.sprite(spr).properties;
+            // IsoObject.getHoppableDirection: HoppableN is NORTH_SOUTH, else HoppableW is EAST_WEST; getWindowFrameDirection:
+            // WindowN then WindowW
+            for (n, w) in [(F::HoppableN, F::HoppableW), (F::WindowN, F::WindowW)] {
+                if sp.has(n) {
+                    self.hoppable_edges |= 1;
+                } else if sp.has(w) {
+                    self.hoppable_edges |= 2;
+                }
+            }
+        }
         let (mut non_water_solid_trans, mut non_water_solid_floor, mut non_transparent_solid_floor) =
             (false, false, false);
         let (
@@ -438,7 +458,7 @@ impl IsoGridSquare {
     }
     /// zombie.iso.IsoGridSquare.getAdjacentSquare: the original reads the `nav` pointers; here the neighbour is looked up,
     /// which is the same once `doGridNav` has run for the area.
-    fn adjacent<'a, G: GetSquare>(
+    fn adjacent<'a, G: GetSquare + ?Sized>(
         &self,
         g: &'a G,
         dir: IsoDirections,
@@ -446,7 +466,7 @@ impl IsoGridSquare {
         g.get_grid_square(self.x + dir.dx(), self.y + dir.dy(), self.z)
     }
     /// zombie.iso.IsoGridSquare.isSlopedSurfaceEdgeBlocked
-    pub fn is_sloped_surface_edge_blocked<G: GetSquare>(
+    pub fn is_sloped_surface_edge_blocked<G: GetSquare + ?Sized>(
         &self,
         alias: &TilePropertyAliasMap,
         g: &G,
