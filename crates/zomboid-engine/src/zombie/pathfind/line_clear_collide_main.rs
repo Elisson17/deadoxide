@@ -1,14 +1,15 @@
 //! zombie.pathfind.LineClearCollideMain (`isNotClear` = `isNotClearOld`, `canStandAtOld`) and
-//! `PolygonalMap2.supercover`, for the squares of a flat floor: plain squares, walls (`collideW`/`collideN`), closed
-//! doors, solid squares and holes. NOT PORTED (an `Err` where the original would take the branch): stairs, sloped
-//! surfaces, `solidtrans` squares (their adjacency to windows and hoppables), the cost check of `SquareUpdateTask`
-//! (flag 4, only for non-zombies) and the debug rendering. Vehicles are not looked at either (UNKNOWN: a vehicle in the
-//! chunks around the line would make the original answer "not clear").
+//! `PolygonalMap2.supercover` over the squares of a loaded map: plain squares, walls, closed doors, solid squares,
+//! holes, stairs, sloped surfaces and `solidtrans` squares next to a window or a hoppable. NOT PORTED (an `Err` where
+//! the original would take the branch): the cost check (flag 4, no caller sets it) and the debug rendering (flag 8).
+//! Vehicles are not looked at (the squares model has none: UNKNOWN for a vehicle near the line).
 use super::liang_barsky::line_rect_intersect;
 use crate::zombie::core::math::pz_math;
 use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
+use crate::zombie::iso::iso_directions::IsoDirections;
 use crate::zombie::iso::iso_grid_square::{GetSquare, IsoGridSquare};
 use crate::zombie::iso::sprite_details::iso_flag_type::IsoFlagType;
+use crate::zombie::iso::sprite_details::iso_object_type::IsoObjectType;
 use crate::zombie::iso::vector2::Vector2;
 
 /// zombie.pathfind.PolygonalMap2.RADIUS_DIAGONAL: `(float) Math.sqrt(0.18F)`
@@ -77,8 +78,9 @@ pub fn supercover(x0: f32, y0: f32, x1: f32, y1: f32, pts: &mut Vec<(i32, i32)>)
     }
 }
 
-/// `square == null || square.getObjects().isEmpty()` then the sloped surface of the square below: only a sloped surface
-/// below changes the floor test, and that is not ported.
+/// `bHasFloor` of canStandAtOld / isNotClearOld: `square != null && (solidFloorCached ? solidFloor :
+/// TreatAsSolidFloor())`, and a square without objects (or none) takes the floor from a sloped surface below it that
+/// reaches 0.9 at its centre.
 fn has_floor(
     g: &dyn GetSquare,
     alias: &TilePropertyAliasMap,
@@ -86,32 +88,39 @@ fn has_floor(
     sy: i32,
     z: i32,
     square: Option<&IsoGridSquare>,
-) -> Result<bool, String> {
-    let has_floor = square.is_some_and(|s| s.treat_as_solid_floor(alias));
+) -> bool {
+    let mut b_has_floor = square.is_some_and(|s| s.treat_as_solid_floor(alias));
     if square.is_none_or(|s| s.objects.is_empty()) {
         if let Some(below) = g.get_grid_square(sx, sy, z - 1) {
-            if below.get_sloped_surface_direction(alias).is_some() {
-                return Err(
-                    "LineClearCollideMain: the sloped surface of the square below is not ported"
-                        .into(),
-                );
+            if below.get_sloped_surface_height_at(alias, 0.5, 0.5) > 0.9f32 {
+                b_has_floor = true;
             }
         }
     }
-    Ok(has_floor)
+    b_has_floor
+}
+
+/// The distance test shared by the edge checks of canStandAtOld: the squared distance from (x, y) to the closest point
+/// (`closest_x`, `closest_y`) of the edge is below 0.3 squared.
+fn within_radius(x: f32, y: f32, closest_x: f32, closest_y: f32) -> bool {
+    let distance_x = x - closest_x;
+    let distance_y = y - closest_y;
+    let distance_squared = distance_x * distance_x + distance_y * distance_y;
+    distance_squared < 0.09f32
 }
 
 /// zombie.pathfind.LineClearCollideMain.canStandAtOld (the squares part; the vehicles of the chunks around are not
-/// looked at).
+/// looked at). `flags` bit 1 ignores doors, bit 2 is `closeToWalls`.
 pub fn can_stand_at_old(
     g: &dyn GetSquare,
     alias: &TilePropertyAliasMap,
     x: f32,
     y: f32,
     z: f32,
-    ignore_doors: bool,
-    close_to_walls: bool,
+    flags: i32,
 ) -> Result<bool, String> {
+    let ignore_doors = (flags & 1) != 0;
+    let close_to_walls = (flags & 2) != 0;
     let min_x = pz_math::fastfloor(x - 0.3f32);
     let min_y = pz_math::fastfloor(y - 0.3f32);
     let max_x = f64::from(x + 0.3f32).ceil() as i32;
@@ -122,77 +131,165 @@ pub fn can_stand_at_old(
             let b_target_square =
                 x >= sx as f32 && y >= sy as f32 && x < (sx + 1) as f32 && y < (sy + 1) as f32;
             let square = g.get_grid_square(sx, sy, zi);
-            let b_has_floor = has_floor(g, alias, sx, sy, zi, square)?;
+            let b_has_floor = has_floor(g, alias, sx, sy, zi, square);
+            let (sxf, syf, sx1, sy1) = (sx as f32, sy as f32, (sx + 1) as f32, (sy + 1) as f32);
             match square {
                 Some(sq)
                     if !sq.has(IsoFlagType::solid)
-                        && (!sq.has(IsoFlagType::solidtrans))
+                        && (!sq.has(IsoFlagType::solidtrans)
+                            || sq.is_adjacent_to_window(g)
+                            || sq.is_adjacent_to_hoppable(g))
                         && b_has_floor =>
                 {
-                    if sq.has_stairs() || sq.get_sloped_surface_direction(alias).is_some() {
-                        return Err(
-                            "LineClearCollideMain.canStandAtOld: a stairs or sloped square is not ported".into(),
-                        );
-                    }
-                    if !close_to_walls {
-                        if sq.has(IsoFlagType::collideW)
-                            || (!ignore_doors && sq.has_blocked_door(false))
-                        {
-                            let closest_x = sx as f32;
-                            let closest_y = clamp(y, sy as f32, (sy + 1) as f32);
-                            let distance_x = x - closest_x;
-                            let distance_y = y - closest_y;
-                            let distance_squared =
-                                distance_x * distance_x + distance_y * distance_y;
-                            if distance_squared < 0.09f32 {
-                                return Ok(false);
+                    if sq.has_stairs() {
+                        if !close_to_walls && !b_target_square {
+                            // N, S, W, E in that order: the closest point of the edge
+                            for (edge, cx, cy) in [
+                                (IsoDirections::N, clamp(x, sxf, sx1), syf),
+                                (IsoDirections::S, clamp(x, sxf, sx1), sy1),
+                                (IsoDirections::W, sxf, clamp(y, syf, sy1)),
+                                (IsoDirections::E, sx1, clamp(y, syf, sy1)),
+                            ] {
+                                if sq.is_stairs_edge_blocked(g, edge) && within_radius(x, y, cx, cy)
+                                {
+                                    return Ok(false);
+                                }
                             }
                         }
-                        if sq.has(IsoFlagType::collideN)
-                            || (!ignore_doors && sq.has_blocked_door(true))
-                        {
-                            let closest_x = clamp(x, sx as f32, (sx + 1) as f32);
-                            let closest_y = sy as f32;
-                            let distance_x = x - closest_x;
-                            let distance_y = y - closest_y;
-                            let distance_squared =
-                                distance_x * distance_x + distance_y * distance_y;
-                            if distance_squared < 0.09f32 {
-                                return Ok(false);
+                    } else if sq.has_sloped_surface(alias) {
+                        if !close_to_walls && !b_target_square {
+                            for (edge, cx, cy) in [
+                                (IsoDirections::N, clamp(x, sxf, sx1), syf),
+                                (IsoDirections::S, clamp(x, sxf, sx1), sy1),
+                                (IsoDirections::W, sxf, clamp(y, syf, sy1)),
+                                (IsoDirections::E, sx1, clamp(y, syf, sy1)),
+                            ] {
+                                if sq.is_sloped_surface_edge_blocked(alias, g, edge)
+                                    && within_radius(x, y, cx, cy)
+                                {
+                                    return Ok(false);
+                                }
                             }
                         }
+                    } else if !close_to_walls {
+                        if (sq.has(IsoFlagType::collideW)
+                            || (!ignore_doors && sq.has_blocked_door(false)))
+                            && within_radius(x, y, sxf, clamp(y, syf, sy1))
+                        {
+                            return Ok(false);
+                        }
+                        if (sq.has(IsoFlagType::collideN)
+                            || (!ignore_doors && sq.has_blocked_door(true)))
+                            && within_radius(x, y, clamp(x, sxf, sx1), syf)
+                        {
+                            return Ok(false);
+                        }
                     }
-                }
-                Some(sq)
-                    if !sq.has(IsoFlagType::solid)
-                        && sq.has(IsoFlagType::solidtrans)
-                        && b_has_floor =>
-                {
-                    return Err(
-                        "LineClearCollideMain.canStandAtOld: a solidtrans square (adjacent window or hoppable) is not ported"
-                            .into(),
-                    );
                 }
                 _ => {
                     if close_to_walls {
                         if b_target_square {
                             return Ok(false);
                         }
-                    } else {
-                        let closest_x = clamp(x, sx as f32, (sx + 1) as f32);
-                        let closest_y = clamp(y, sy as f32, (sy + 1) as f32);
-                        let distance_x = x - closest_x;
-                        let distance_y = y - closest_y;
-                        let distance_squared = distance_x * distance_x + distance_y * distance_y;
-                        if distance_squared < 0.09f32 {
-                            return Ok(false);
-                        }
+                    } else if within_radius(x, y, clamp(x, sxf, sx1), clamp(y, syf, sy1)) {
+                        return Ok(false);
                     }
                 }
             }
         }
     }
     Ok(true)
+}
+
+/// `testCollisionHorizontal` of LineClearCollideMain (without the debug line): the segment crosses the box of a
+/// horizontal edge of the square (`pt_x`, `pt_y`), `skip_n`/`skip_s` take the margin off that side.
+#[allow(clippy::too_many_arguments)]
+fn test_collision_horizontal(
+    from: (f32, f32),
+    to: (f32, f32),
+    pt_x: f32,
+    pt_y: f32,
+    skip_n: bool,
+    skip_s: bool,
+) -> bool {
+    let (from_x, from_y) = from;
+    let (to_x, to_y) = to;
+    let mut w = 0.3f32;
+    let mut n = 0.3f32;
+    let mut e = 0.3f32;
+    let mut s = 0.3f32;
+    if from_x < pt_x && to_x < pt_x {
+        w = 0.0;
+    } else if from_x >= pt_x + 1.0 && to_x >= pt_x + 1.0 {
+        e = 0.0;
+    }
+    if from_y < pt_y && to_y < pt_y {
+        n = 0.0;
+    } else if from_y >= pt_y && to_y >= pt_y {
+        s = 0.0;
+    }
+    if skip_n {
+        n = 0.0;
+    }
+    if skip_s {
+        s = 0.0;
+    }
+    line_rect_intersect(
+        from_x,
+        from_y,
+        to_x - from_x,
+        to_y - from_y,
+        pt_x - w,
+        pt_y - n,
+        pt_x + 1.0 + e,
+        pt_y + s,
+    )
+    .is_some()
+}
+
+/// `testCollisionVertical` of LineClearCollideMain (without the debug line).
+#[allow(clippy::too_many_arguments)]
+fn test_collision_vertical(
+    from: (f32, f32),
+    to: (f32, f32),
+    pt_x: f32,
+    pt_y: f32,
+    skip_w: bool,
+    skip_e: bool,
+) -> bool {
+    let (from_x, from_y) = from;
+    let (to_x, to_y) = to;
+    let mut w = 0.3f32;
+    let mut n = 0.3f32;
+    let mut e = 0.3f32;
+    let mut s = 0.3f32;
+    if from_x < pt_x && to_x < pt_x {
+        w = 0.0;
+    } else if from_x >= pt_x && to_x >= pt_x {
+        e = 0.0;
+    }
+    if from_y < pt_y && to_y < pt_y {
+        n = 0.0;
+    } else if from_y >= pt_y + 1.0 && to_y >= pt_y + 1.0 {
+        s = 0.0;
+    }
+    if skip_w {
+        w = 0.0;
+    }
+    if skip_e {
+        e = 0.0;
+    }
+    line_rect_intersect(
+        from_x,
+        from_y,
+        to_x - from_x,
+        to_y - from_y,
+        pt_x - w,
+        pt_y - n,
+        pt_x + e,
+        pt_y + 1.0 + s,
+    )
+    .is_some()
 }
 
 /// zombie.pathfind.LineClearCollideMain.isNotClearOld without a vehicle and without the cost check: whether the segment
@@ -210,14 +307,17 @@ pub fn is_not_clear_old(
     flags: i32,
 ) -> Result<bool, String> {
     let ignore_doors = (flags & 1) != 0;
-    let close_to_walls = (flags & 2) != 0;
-    let check_cost = (flags & 4) != 0;
-    if check_cost {
+    if (flags & 4) != 0 {
         return Err(
             "LineClearCollideMain.isNotClearOld: the cost check (flag 4) is not ported".into(),
         );
     }
-    if !can_stand_at_old(g, alias, to_x, to_y, z as f32, ignore_doors, close_to_walls)? {
+    if (flags & 8) != 0 {
+        return Err(
+            "LineClearCollideMain.isNotClearOld: the debug rendering (flag 8) is not ported".into(),
+        );
+    }
+    if !can_stand_at_old(g, alias, to_x, to_y, z as f32, flags)? {
         return Ok(true);
     }
     let rd = radius_diagonal();
@@ -244,6 +344,8 @@ pub fn is_not_clear_old(
     }
     supercover(x0, y0, x1, y1, &mut pts);
     supercover(x2, y2, x3, y3, &mut pts);
+    let from = (from_x, from_y);
+    let to = (to_x, to_y);
     let rect = |left: f32, top: f32, right: f32, bottom: f32| {
         line_rect_intersect(
             from_x,
@@ -259,21 +361,16 @@ pub fn is_not_clear_old(
     };
     for &(px, py) in &pts {
         let square = g.get_grid_square(px, py, z);
-        let b_has_floor = has_floor(g, alias, px, py, z, square)?;
+        let b_has_floor = has_floor(g, alias, px, py, z, square);
         let (pxf, pyf) = (px as f32, py as f32);
         let blocked_square = match square {
             None => true,
             Some(s) => {
-                if s.has(IsoFlagType::solid) {
-                    true
-                } else if s.has(IsoFlagType::solidtrans) {
-                    return Err(
-                        "LineClearCollideMain.isNotClearOld: a solidtrans square (adjacent window or hoppable) is not ported"
-                            .into(),
-                    );
-                } else {
-                    !b_has_floor
-                }
+                s.has(IsoFlagType::solid)
+                    || (s.has(IsoFlagType::solidtrans)
+                        && !s.is_adjacent_to_window(g)
+                        && !s.is_adjacent_to_hoppable(g))
+                    || !b_has_floor
             }
         };
         if blocked_square {
@@ -295,48 +392,126 @@ pub fn is_not_clear_old(
                 return Ok(true);
             }
         } else if let Some(sq) = square {
-            if sq.has_stairs() || sq.get_sloped_surface_direction(alias).is_some() {
-                return Err(
-                    "LineClearCollideMain.isNotClearOld: a stairs or sloped square is not ported"
-                        .into(),
-                );
-            }
-            if sq.has(IsoFlagType::collideW) || (!ignore_doors && sq.has_blocked_door(false)) {
-                let mut wx = 0.3f32;
-                let mut nx = 0.3f32;
-                let mut ex = 0.3f32;
-                let mut sx = 0.3f32;
-                if from_x < pxf && to_x < pxf {
-                    wx = 0.0;
-                } else if from_x >= pxf && to_x >= pxf {
-                    ex = 0.0;
+            if sq.has_stairs() {
+                if sq.has_stairs_north() {
+                    if test_collision_vertical(from, to, pxf, pyf, false, true)
+                        || test_collision_vertical(from, to, pxf + 1.0, pyf, true, false)
+                        || (sq.has_type(IsoObjectType::stairsTN)
+                            && test_collision_horizontal(from, to, pxf, pyf, false, true))
+                    {
+                        return Ok(true);
+                    }
                 }
-                if from_y < pyf && to_y < pyf {
-                    nx = 0.0;
-                } else if from_y >= (py + 1) as f32 && to_y >= (py + 1) as f32 {
-                    sx = 0.0;
+                if sq.has_stairs_west() {
+                    if test_collision_horizontal(from, to, pxf, pyf, false, true)
+                        || test_collision_horizontal(from, to, pxf, pyf + 1.0, true, false)
+                        || (sq.has_type(IsoObjectType::stairsTW)
+                            && test_collision_vertical(from, to, pxf, pyf, false, true))
+                    {
+                        return Ok(true);
+                    }
                 }
-                if rect(pxf - wx, pyf - nx, pxf + ex, pyf + 1.0 + sx) {
-                    return Ok(true);
+            } else if sq.has_sloped_surface(alias) {
+                let adj = |d: IsoDirections| g.get_grid_square(px + d.dx(), py + d.dy(), z);
+                let Some(dir) = sq.get_sloped_surface_direction(alias) else {
+                    continue;
+                };
+                if dir == IsoDirections::N || dir == IsoDirections::S {
+                    if adj(IsoDirections::W)
+                        .is_none_or(|o| !sq.has_identical_sloped_surface(o, alias))
+                        && test_collision_vertical(from, to, pxf, pyf, false, true)
+                    {
+                        return Ok(true);
+                    }
+                    if adj(IsoDirections::E)
+                        .is_none_or(|o| !sq.has_identical_sloped_surface(o, alias))
+                        && test_collision_vertical(from, to, pxf + 1.0, pyf, true, false)
+                    {
+                        return Ok(true);
+                    }
+                    let max = sq.get_sloped_surface_height_max(alias);
+                    if dir == IsoDirections::N
+                        && adj(IsoDirections::N)
+                            .is_none_or(|o| max != o.get_sloped_surface_height_at(alias, 0.5, 1.0))
+                        && test_collision_horizontal(from, to, pxf, pyf, false, true)
+                    {
+                        return Ok(true);
+                    }
+                    if dir == IsoDirections::S
+                        && adj(IsoDirections::S)
+                            .is_none_or(|o| max != o.get_sloped_surface_height_at(alias, 0.5, 0.0))
+                        && test_collision_horizontal(from, to, pxf, pyf + 1.0, true, false)
+                    {
+                        return Ok(true);
+                    }
                 }
-            }
-            if sq.has(IsoFlagType::collideN) || (!ignore_doors && sq.has_blocked_door(true)) {
-                let mut wxx = 0.3f32;
-                let mut nxx = 0.3f32;
-                let mut exx = 0.3f32;
-                let mut sxx = 0.3f32;
-                if from_x < pxf && to_x < pxf {
-                    wxx = 0.0;
-                } else if from_x >= (px + 1) as f32 && to_x >= (px + 1) as f32 {
-                    exx = 0.0;
+                if dir == IsoDirections::W || dir == IsoDirections::E {
+                    if adj(IsoDirections::N)
+                        .is_none_or(|o| !sq.has_identical_sloped_surface(o, alias))
+                        && test_collision_horizontal(from, to, pxf, pyf, false, true)
+                    {
+                        return Ok(true);
+                    }
+                    if adj(IsoDirections::S)
+                        .is_none_or(|o| !sq.has_identical_sloped_surface(o, alias))
+                        && test_collision_horizontal(from, to, pxf, pyf + 1.0, true, false)
+                    {
+                        return Ok(true);
+                    }
+                    let max = sq.get_sloped_surface_height_max(alias);
+                    if dir == IsoDirections::W
+                        && adj(IsoDirections::W)
+                            .is_none_or(|o| max != o.get_sloped_surface_height_at(alias, 1.0, 0.5))
+                        && test_collision_vertical(from, to, pxf, pyf, false, true)
+                    {
+                        return Ok(true);
+                    }
+                    if dir == IsoDirections::E
+                        && adj(IsoDirections::E)
+                            .is_none_or(|o| max != o.get_sloped_surface_height_at(alias, 0.0, 0.5))
+                        && test_collision_vertical(from, to, pxf + 1.0, pyf, true, false)
+                    {
+                        return Ok(true);
+                    }
                 }
-                if from_y < pyf && to_y < pyf {
-                    nxx = 0.0;
-                } else if from_y >= pyf && to_y >= pyf {
-                    sxx = 0.0;
+            } else {
+                if sq.has(IsoFlagType::collideW) || (!ignore_doors && sq.has_blocked_door(false)) {
+                    let mut wx = 0.3f32;
+                    let mut nx = 0.3f32;
+                    let mut ex = 0.3f32;
+                    let mut sx = 0.3f32;
+                    if from_x < pxf && to_x < pxf {
+                        wx = 0.0;
+                    } else if from_x >= pxf && to_x >= pxf {
+                        ex = 0.0;
+                    }
+                    if from_y < pyf && to_y < pyf {
+                        nx = 0.0;
+                    } else if from_y >= (py + 1) as f32 && to_y >= (py + 1) as f32 {
+                        sx = 0.0;
+                    }
+                    if rect(pxf - wx, pyf - nx, pxf + ex, pyf + 1.0 + sx) {
+                        return Ok(true);
+                    }
                 }
-                if rect(pxf - wxx, pyf - nxx, pxf + 1.0 + exx, pyf + sxx) {
-                    return Ok(true);
+                if sq.has(IsoFlagType::collideN) || (!ignore_doors && sq.has_blocked_door(true)) {
+                    let mut wxx = 0.3f32;
+                    let mut nxx = 0.3f32;
+                    let mut exx = 0.3f32;
+                    let mut sxx = 0.3f32;
+                    if from_x < pxf && to_x < pxf {
+                        wxx = 0.0;
+                    } else if from_x >= (px + 1) as f32 && to_x >= (px + 1) as f32 {
+                        exx = 0.0;
+                    }
+                    if from_y < pyf && to_y < pyf {
+                        nxx = 0.0;
+                    } else if from_y >= pyf && to_y >= pyf {
+                        sxx = 0.0;
+                    }
+                    if rect(pxf - wxx, pyf - nxx, pxf + 1.0 + exx, pyf + sxx) {
+                        return Ok(true);
+                    }
                 }
             }
         }

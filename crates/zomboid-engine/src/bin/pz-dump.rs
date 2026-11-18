@@ -17,6 +17,8 @@
 mod fmod_dump;
 #[path = "pz-dump-models/mod.rs"]
 mod models;
+#[path = "pz-dump-path/mod.rs"]
+mod path_dump;
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -105,6 +107,7 @@ fn main() {
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
         Some("zombieai") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
+        Some("pathfind") if a.len() >= 4 => path_dump::pathfind(Path::new(&a[2]), &a[3..]),
         Some("fmodbanks" | "fmodstrings" | "fmodevents" | "fmodsamples") if a.len() >= 5 => {
             fmod_dump::dump(Path::new(&a[2]), &a[4], &a[5..])
         }

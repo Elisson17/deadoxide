@@ -3,3 +3,4 @@
 pub mod liang_barsky;
 pub mod line_clear_collide_main;
 pub mod path_find_behavior2;
+pub mod square_edges;
