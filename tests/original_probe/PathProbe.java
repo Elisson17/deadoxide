@@ -156,6 +156,17 @@ public class PathProbe {
         waitPm();
     }
 
+    // native mode (PathfindNative.useNativeCode = true, libPZPathFind): the chunks loaded since `from` are added to the native
+    // world and its thread is waited for, as PathExplore did (the Java world above only enumerates the walkable squares)
+    static void nativeWorld(int from) throws Exception {
+        zombie.pathfind.nativeCode.PathfindNative.useNativeCode = true;
+        for (int i = from; i < loaded.size(); i++) zombie.pathfind.nativeCode.PathfindNative.instance.addChunkToWorld(loaded.get(i));
+        Object th = zombie.pathfind.nativeCode.PathfindNativeThread.instance;
+        long t0 = System.currentTimeMillis();
+        while (!((java.util.Collection<?>) g(th, "chunkTaskQueue")).isEmpty() && System.currentTimeMillis() - t0 < 120000) Thread.sleep(50);
+        Thread.sleep(1800);
+    }
+
     static boolean pmInit = false;
     static boolean ignore = false;
 
@@ -256,7 +267,10 @@ public class PathProbe {
         long seed = Long.parseLong(p[6]);
         String kind = p[7];
         boolean onSquares = p.length > 8 && p[8].equals("sq");
+        boolean nat = p.length > 8 && p[p.length - 1].equals("native");
+        int before = loaded.size();
         javaWorld(cell, cx1, cy1, cx2, cy2);
+        if (nat) nativeWorld(before);
         ArrayList<int[]> walk = new ArrayList<>();
         if (onSquares) {
             for (int wy = cy1; wy <= cy2; wy++) {
@@ -309,7 +323,7 @@ public class PathProbe {
                     tx = b[0] + r.nextFloat();
                     ty = b[1] + r.nextFloat();
                 }
-                searchOne(out, pm, mover, kind, i, sx, sy, a[2], tx, ty, b[2]);
+                searchOne(out, pm, mover, kind, i, sx, sy, a[2], tx, ty, b[2], nat);
                 continue;
             }
             int sz = r.nextInt(4) == 0 ? 1 + r.nextInt(2) : 0;
@@ -336,18 +350,52 @@ public class PathProbe {
                 tx = (float) Math.floor(tx) + 0.5f;
                 ty = (float) Math.floor(ty) + 0.5f;
             }
-            searchOne(out, pm, mover, kind, i, sx, sy, sz, tx, ty, tz);
+            searchOne(out, pm, mover, kind, i, sx, sy, sz, tx, ty, tz, nat);
+        }
+        out.println("END " + spec);
+    }
+
+    // preq:<cx1>:<cy1>:<cx2>:<cy2>:<kind>[:native]:<sx,sy,sz,tx,ty,tz>/...: the listed requests only
+    static void preq(PrintStream out, String spec, IsoCell cell) throws Exception {
+        String[] p = spec.split(":");
+        int cx1 = Integer.parseInt(p[1]), cy1 = Integer.parseInt(p[2]), cx2 = Integer.parseInt(p[3]), cy2 = Integer.parseInt(p[4]);
+        String kind = p[5];
+        boolean nat = p.length > 7 && p[6].equals("native");
+        String list = p[p.length - 1];
+        int before = loaded.size();
+        javaWorld(cell, cx1, cy1, cx2, cy2);
+        if (nat) nativeWorld(before);
+        zombie.ai.astar.Mover mover;
+        zombie.iso.IsoMovingObject.setIDCount(0);
+        if (kind.equals("player")) {
+            mover = new zombie.characters.IsoPlayer(cell, new zombie.characters.SurvivorDesc(), cx1 * 8 + 1, cy1 * 8 + 1, 0);
+        } else {
+            zombie.characters.IsoZombie z = new zombie.characters.IsoZombie(cell);
+            if (kind.equals("crawler")) z.crawling = true;
+            mover = z;
+        }
+        out.println("SCENARIO " + spec);
+        int i = 0;
+        for (String r : list.split("/")) {
+            String[] v = r.split(",");
+            searchOne(out, PolygonalMap2.instance, mover, kind, i++, Float.parseFloat(v[0]), Float.parseFloat(v[1]), Integer.parseInt(v[2]),
+                Float.parseFloat(v[3]), Float.parseFloat(v[4]), Integer.parseInt(v[5]), nat);
         }
         out.println("END " + spec);
     }
 
     static void searchOne(PrintStream out, PolygonalMap2 pm, zombie.ai.astar.Mover mover, String kind, int i, float sx, float sy, int sz,
-                          float tx, float ty, int tz) throws Exception {
+                          float tx, float ty, int tz, boolean nat) throws Exception {
         zombie.pathfind.TestRequest tr = new zombie.pathfind.TestRequest();
-        pm.addRequest(tr, mover, sx, sy, (float) sz, tx, ty, (float) tz);
+        if (nat) {
+            zombie.pathfind.nativeCode.PathfindNative.instance.addRequest(tr, mover, sx, sy, (float) sz, tx, ty, (float) tz);
+        } else {
+            pm.addRequest(tr, mover, sx, sy, (float) sz, tx, ty, (float) tz);
+        }
         long t0 = System.currentTimeMillis();
         while (!tr.done && System.currentTimeMillis() - t0 < 60000) {
-            pm.updateMain();
+            if (nat) zombie.pathfind.nativeCode.PathfindNative.instance.updateMain();
+            else pm.updateMain();
             Thread.sleep(5);
         }
         out.println("P " + i + " " + kind + " " + f(sx) + "," + f(sy) + "," + sz + " -> " + f(tx) + "," + f(ty) + "," + tz
@@ -368,6 +416,7 @@ public class PathProbe {
                 if (a[i].startsWith("lcc:")) lcc(out, a[i], cell);
                 else if (a[i].startsWith("pgraph:")) pgraph(out, a[i], cell);
                 else if (a[i].startsWith("psearch:")) psearch(out, a[i], cell);
+                else if (a[i].startsWith("preq:")) preq(out, a[i], cell);
                 else throw new IllegalArgumentException("unknown scenario " + a[i]);
             }
         });

@@ -297,7 +297,7 @@ fn path_str(path: &PzPath) -> String {
 /// `PathProbe.psearch`: scenario `psearch:<cx1>:<cy1>:<cx2>:<cy2>:<n>:<seed>:<mover>`.
 fn psearch(sb: &mut String, spec: &str, w: &mut PathWorld) -> Result<(), String> {
     let p: Vec<&str> = spec.split(':').collect();
-    if p.len() != 8 && p.len() != 9 {
+    if !(8..=10).contains(&p.len()) {
         return Err(format!("bad scenario {spec}"));
     }
     let num = |i: usize| p[i].parse::<i32>().map_err(|e| format!("{spec}: {e}"));
@@ -305,6 +305,8 @@ fn psearch(sb: &mut String, spec: &str, w: &mut PathWorld) -> Result<(), String>
     let seed: i64 = p[6].parse().map_err(|e| format!("{spec}: {e}"))?;
     let kind = p[7];
     let on_squares = p.len() > 8 && p[8] == "sq";
+    // `:native`: the search of libPZPathFind
+    let native = p.len() > 8 && p[p.len() - 1] == "native";
     let mover = match kind {
         "player" => Mover::Player { npc: false },
         "crawler" => Mover::Zombie {
@@ -322,6 +324,7 @@ fn psearch(sb: &mut String, spec: &str, w: &mut PathWorld) -> Result<(), String>
         _ => return Err(format!("{spec}: unknown mover {kind}")),
     };
     let pm = w.java_world(cx1, cy1, cx2, cy2);
+    pm.native = native;
     // the walkable squares of the rectangle (`:sq`): not solid, with a floor or stairs
     let mut walk: Vec<(i32, i32, i32)> = Vec::new();
     if on_squares {
@@ -423,6 +426,50 @@ fn psearch(sb: &mut String, spec: &str, w: &mut PathWorld) -> Result<(), String>
     Ok(())
 }
 
+/// `PathProbe.preq`: `preq:<cx1>:<cy1>:<cx2>:<cy2>:<kind>[:native]:<sx,sy,sz,tx,ty,tz>/...`, the listed requests only.
+fn preq(sb: &mut String, spec: &str, w: &mut PathWorld) -> Result<(), String> {
+    let p: Vec<&str> = spec.split(':').collect();
+    if !(7..=8).contains(&p.len()) {
+        return Err(format!("bad scenario {spec}"));
+    }
+    let num = |i: usize| p[i].parse::<i32>().map_err(|e| format!("{spec}: {e}"));
+    let (cx1, cy1, cx2, cy2) = (num(1)?, num(2)?, num(3)?, num(4)?);
+    let kind = p[5];
+    let native = p.len() > 7 && p[6] == "native";
+    let mover = match kind {
+        "player" => Mover::Player { npc: false },
+        "crawler" | "zombie" => Mover::Zombie {
+            crawling: kind == "crawler",
+            can_crawl_under_vehicle: true,
+            can_walk: true,
+            has_target: false,
+        },
+        _ => return Err(format!("{spec}: unknown mover {kind}")),
+    };
+    let pm = w.java_world(cx1, cy1, cx2, cy2);
+    pm.native = native;
+    let _ = writeln!(sb, "SCENARIO {spec}");
+    for (i, r) in p[p.len() - 1].split('/').enumerate() {
+        let v: Vec<&str> = r.split(',').collect();
+        if v.len() != 6 {
+            return Err(format!("{spec}: bad request {r}"));
+        }
+        let fl = |k: usize| v[k].parse::<f32>().map_err(|e| format!("{spec}: {e}"));
+        let it = |k: usize| v[k].parse::<i32>().map_err(|e| format!("{spec}: {e}"));
+        search_one(
+            sb,
+            pm,
+            mover.clone(),
+            kind,
+            i as i32,
+            (fl(0)?, fl(1)?, it(2)?),
+            (fl(3)?, fl(4)?, it(5)?),
+        )?;
+    }
+    let _ = writeln!(sb, "END {spec}");
+    Ok(())
+}
+
 /// `PathProbe.searchOne`: one request, answered by the next `updateThread`.
 fn search_one(
     sb: &mut String,
@@ -465,6 +512,8 @@ pub fn pathfind(root: &Path, scenarios: &[String]) -> Result<String, String> {
             pgraph(&mut sb, spec, &mut w)?;
         } else if spec.starts_with("psearch:") {
             psearch(&mut sb, spec, &mut w)?;
+        } else if spec.starts_with("preq:") {
+            preq(&mut sb, spec, &mut w)?;
         } else {
             return Err(format!("unknown scenario {spec}"));
         }

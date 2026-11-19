@@ -204,7 +204,7 @@ impl SearchNode {
     }
 
     /// zombie.pathfind.SearchNode.dist
-    fn dist(&self, other: &SearchNode) -> f64 {
+    fn dist(&self, other: &SearchNode, native: bool) -> f64 {
         match (&self.square, &other.square) {
             (Some(a), Some(b)) if (a.x - b.x).abs() <= 1 && (a.y - b.y).abs() <= 1 => {
                 if a.x != b.x && a.y != b.y {
@@ -216,6 +216,12 @@ impl SearchNode {
             _ => {
                 let (x1, y1, z1) = (self.get_x(), self.get_y(), self.get_z());
                 let (x2, y2, z2) = (other.get_x(), other.get_y(), other.get_z());
+                if native {
+                    // libPZPathFind SearchNode::dist: the whole sum in float, `z * 2.5`, z squared first
+                    let (fx, fy) = (x1 - x2, y1 - y2);
+                    let fz = (z1 - z2) * 2.5f32;
+                    return f64::from((fz * fz + fx * fx + fy * fy).sqrt());
+                }
                 let dx = f64::from(x1 - x2);
                 let dy = f64::from(y1 - y2);
                 let dz = f64::from((z1 - z2) * 2.5f32);
@@ -374,7 +380,7 @@ impl AStarNodes for VgaStar<'_> {
 
     /// zombie.pathfind.SearchNode.h
     fn h(&self, n: usize) -> f64 {
-        self.nodes[n].dist(&self.nodes[self.goal])
+        self.nodes[n].dist(&self.nodes[self.goal], self.native)
     }
 
     /// zombie.pathfind.SearchNode.c
@@ -382,7 +388,7 @@ impl AStarNodes for VgaStar<'_> {
         let this = &self.nodes[from];
         let other = &self.nodes[to];
         if other.in_unloaded_area {
-            return this.dist(other);
+            return this.dist(other, self.native);
         }
         let m = self.map;
         let mut add = 0.0f64;
@@ -465,7 +471,7 @@ impl AStarNodes for VgaStar<'_> {
         if let Some(s) = &other.square {
             add += f64::from(s.cost);
         }
-        this.dist(other) + add
+        this.dist(other, self.native) + add
     }
 
     /// zombie.pathfind.SearchNode.getSuccessors
