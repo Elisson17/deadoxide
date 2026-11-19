@@ -784,7 +784,7 @@ fn fmodsamples_matches_original() {
     check("fmodsamples", &["-", "samples"]);
 }
 
-/// zombie.inventory item classes and containers (InventoryProbe in the booted server) over the cases of
+/// Inventory items and containers, the item classes and ItemContainer (InventoryProbe in the booted server) over the cases of
 /// tests/inventory_cases.txt.
 #[test]
 fn inventory_matches_original() {

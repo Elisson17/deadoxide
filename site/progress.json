@@ -1,14 +1,14 @@
 {
-  "generated": "2026-11-18",
+  "generated": "2026-11-19",
   "game": "Project Zomboid 42.21.0 (Steam build 25485521)",
   "overall": 25.4,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 468,
+    "classesTouched": 470,
     "classes": 3432,
-    "methodsCited": 1900,
+    "methodsCited": 1902,
     "methods": 46318,
-    "methodPercent": 4.1,
+    "methodPercent": 4.11,
     "oracleCases": [
       "actioncontext",
       "animalzones",
@@ -44,6 +44,7 @@
       "glbmodelscene",
       "glbscene",
       "gos",
+      "inventory",
       "isoregion",
       "items",
       "javachars",
@@ -103,7 +104,7 @@
       "score": 0.8125,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 1900 of 46318 method names (4.1%) in 468 of 3432 classes; byte-identical to the original in 82 oracle cases (actioncontext, animalzones, animclips, animscene, animsets, basements, body, chunkobjects, chunksave, climate, clothingitems, collide, doortoggle, entitysprites, erosion, erosionini, fbxanims, fbxanimscene, fbxmodels, fbxmodelscene, fbxscene, fdlibm, fmodbanks, fmodevents, fmodsamples, fmodstrings, fonts, gametime, glbanims, glbanimscene, glbmodels, glbmodelscene, glbscene, gos, isoregion, items, javachars, loot, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luagame, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapver, mapzone, metagrid, moddata, mods, outfitrandom, outfits, pathfind, radio, recipes, sandbox, savemeta, scriptparser, sounds, specialcollide, stairs, tiledefs, translator, txtmodels, vehicles, visited, worlddictionary, xmodels, xmodelscene, xscene, xui, zombie, zombieai, zoneoutlines, zonetriangles)",
+        "direct port from decompiled Java: 1902 of 46318 method names (4.11%) in 470 of 3432 classes; byte-identical to the original in 83 oracle cases (actioncontext, animalzones, animclips, animscene, animsets, basements, body, chunkobjects, chunksave, climate, clothingitems, collide, doortoggle, entitysprites, erosion, erosionini, fbxanims, fbxanimscene, fbxmodels, fbxmodelscene, fbxscene, fdlibm, fmodbanks, fmodevents, fmodsamples, fmodstrings, fonts, gametime, glbanims, glbanimscene, glbmodels, glbmodelscene, glbscene, gos, inventory, isoregion, items, javachars, loot, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luagame, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapver, mapzone, metagrid, moddata, mods, outfitrandom, outfits, pathfind, radio, recipes, sandbox, savemeta, scriptparser, sounds, specialcollide, stairs, tiledefs, translator, txtmodels, vehicles, visited, worlddictionary, xmodels, xmodelscene, xscene, xui, zombie, zombieai, zoneoutlines, zonetriangles)",
         "format families read: 13 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",
