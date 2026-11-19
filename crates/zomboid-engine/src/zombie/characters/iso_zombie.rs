@@ -256,6 +256,8 @@ pub enum ZombieState {
     FaceTarget,
     /// zombie.ai.states.WalkTowardState
     WalkToward,
+    /// zombie.ai.states.StaggerBackState
+    StaggerBack,
 }
 
 impl ZombieState {
@@ -268,6 +270,7 @@ impl ZombieState {
             ZombieState::Attack => "AttackState",
             ZombieState::FaceTarget => "ZombieFaceTargetState",
             ZombieState::WalkToward => "WalkTowardState",
+            ZombieState::StaggerBack => "StaggerBackState",
         }
     }
 }
@@ -344,6 +347,19 @@ pub struct SpState {
     pub move_delta: f32,
     /// `knockedDown`
     pub knocked_down: bool,
+    /// IsoZombie `hitTime` (hits taken), IsoGameCharacter `hitForce`, `staggerTimeMod`, `hitDir`, `hitReaction`,
+    /// IsoZombie `staggerBack`, `becomeCrawler`, `usePhysicHitReaction`, `fallOnFront`, `lastHitPart` (BodyPartType
+    /// ordinal)
+    pub hit_time: i32,
+    pub hit_force: f32,
+    pub stagger_time_mod: f32,
+    pub hit_dir: Vector2,
+    pub hit_reaction: String,
+    pub stagger_back: bool,
+    pub become_crawler: bool,
+    pub use_physic_hit_reaction: bool,
+    pub fall_on_front: bool,
+    pub last_hit_part: i32,
     /// `canSeeTarget`
     pub can_see_target: bool,
     pub alerted: bool,
@@ -408,6 +424,16 @@ impl Default for SpState {
             max_twist: 15.0,
             move_delta: 1.0,
             knocked_down: false,
+            hit_time: 0,
+            hit_force: 0.0,
+            stagger_time_mod: 0.0,
+            hit_dir: Vector2::default(),
+            hit_reaction: String::new(),
+            stagger_back: false,
+            become_crawler: false,
+            use_physic_hit_reaction: false,
+            fall_on_front: false,
+            last_hit_part: 0,
             can_see_target: false,
             alerted: false,
             lunge_timer: 0.0,

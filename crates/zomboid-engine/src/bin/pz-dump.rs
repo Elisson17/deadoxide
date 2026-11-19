@@ -10810,12 +10810,25 @@ pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
     let (chunks, alias, sprites) = zombie_chunks_alias(root)?;
     let alias = std::rc::Rc::new(alias);
     let sprites = std::rc::Rc::new(sprites);
+    // the item scripts, only when a scenario hits the zombie with a weapon of them
+    let scripts = if scenarios.iter().any(|s| s.contains(":hit")) {
+        Some(zomboid_engine::zombie::scripting::script_manager::ScriptManager::load(root)?)
+    } else {
+        None
+    };
     for spec in scenarios {
         if spec == "zsq" {
             zombie_square_matrices(&mut sb, &chunks);
         } else {
             zombie_ai_scenario(
-                &mut sb, spec, &survivors, &assets, &chunks, &alias, &sprites,
+                &mut sb,
+                spec,
+                &survivors,
+                &assets,
+                &chunks,
+                &alias,
+                &sprites,
+                scripts.as_ref(),
             )?;
         }
     }
@@ -10837,9 +10850,11 @@ fn zombie_ai_scenario(
     sprites: &std::rc::Rc<
         zomboid_engine::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager,
     >,
+    scripts: Option<&zomboid_engine::zombie::scripting::script_manager::ScriptManager>,
 ) -> Result<(), String> {
     use zomboid_engine::java::{float_to_string as fl, Random};
     use zomboid_engine::zombie::characters::iso_zombie::{IsoZombie, Lore, ZombieWorld};
+    use zomboid_engine::zombie::characters::iso_zombie_hit::HitWeapon;
     use zomboid_engine::zombie::characters::iso_zombie_sp::{
         PlayerStandIn, SinglePlayerWorld, SpRead,
     };
@@ -10897,7 +10912,35 @@ fn zombie_ai_scenario(
     let ticks: usize = p[2].parse().map_err(|e| format!("{spec}: {e}"))?;
     let dx: f32 = p[3].parse().map_err(|e| format!("{spec}: {e}"))?;
     let dy: f32 = p[4].parse().map_err(|e| format!("{spec}: {e}"))?;
-    let force = p[5] == "force";
+    // `force`, or `hit<N>[,<M>...][@<weapon>[@<damageSplit>[@<flags>]]]`: like force, and at those ticks the player
+    // stand-in hits the zombie (default weapon Base.BaseballBat, split 1.0; flag `c` = critical hit)
+    let hit_spec: Vec<&str> = p[5].split('@').collect();
+    let hit_ticks: Vec<usize> = if hit_spec[0].starts_with("hit") {
+        hit_spec[0][3..]
+            .split(',')
+            .map(|t| t.parse().map_err(|e| format!("{spec}: {e}")))
+            .collect::<Result<_, _>>()?
+    } else {
+        Vec::new()
+    };
+    let force = p[5] == "force" || !hit_ticks.is_empty();
+    let hit_weapon_name = hit_spec.get(1).copied().unwrap_or("Base.BaseballBat");
+    let hit_split: f32 = match hit_spec.get(2) {
+        Some(t) => zomboid_engine::java::parse_float(t).ok_or_else(|| format!("{spec}: split"))?,
+        None => 1.0,
+    };
+    let hit_critical = hit_spec.get(3).is_some_and(|f| f.contains('c'));
+    let hit_weapon = if hit_ticks.is_empty() {
+        None
+    } else {
+        let item = scripts
+            .ok_or("zombieai: the item scripts are not loaded")?
+            .items
+            .iter()
+            .find(|i| i.full_name() == hit_weapon_name)
+            .ok_or_else(|| format!("{spec}: no item {hit_weapon_name}"))?;
+        Some(HitWeapon::from_item(item)?)
+    };
     let sandbox = zombie_sandbox(None)?;
     let lore = Lore::from_sandbox(&sandbox)?;
     let grid = ZombieGrid::new(chunks);
@@ -10908,6 +10951,7 @@ fn zombie_ai_scenario(
             z: 0.0,
             width: 0.24,
             health: 1.0,
+            critical_hit: false,
         },
         loaded_chunks: vec![(1034, 1458), (1034, 1459), (1035, 1458), (1035, 1459)],
         alias: alias.clone(),
@@ -10951,6 +10995,26 @@ fn zombie_ai_scenario(
         if force {
             z.sp.target = true;
             z.time_since_seen_flesh = 0.0;
+        }
+        if let (true, Some(weapon)) = (hit_ticks.contains(&n), hit_weapon.as_ref()) {
+            // InventoryItemFactory.CreateItem: Item.InstanceItem's `Rand.Next(Integer.MAX_VALUE)` (the outfit seed)
+            // and `InventoryItem.id = Rand.Next(2146250223)`
+            let _ = world.rand.next(i32::MAX);
+            let _ = world.rand.next(2146250223);
+            if let Some(sp) = world.sp.as_mut() {
+                sp.player.critical_hit = hit_critical;
+            }
+            let damage = z.hit_sp(&mut world, &grid, weapon, hit_split)?;
+            let _ = writeln!(
+                sb,
+                "HIT damage={} hp={} dead={} knockedDown={} staggerBack={} hitReaction={}",
+                fl(damage),
+                fl(z.character.health),
+                z.is_dead(),
+                z.sp.knocked_down,
+                z.sp.stagger_back,
+                z.sp.hit_reaction
+            );
         }
         z.tick_sp(&mut world, &grid)?;
         let draws = world.rand.id();

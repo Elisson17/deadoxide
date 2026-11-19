@@ -47,6 +47,8 @@ pub struct PlayerStandIn {
     pub width: f32,
     /// `getHealth()` (nothing in the ported states changes it: the attack's bite is not ported)
     pub health: f32,
+    /// `isCriticalHit()`: the wielder's critical hit flag a melee hit reads (set before the hit)
+    pub critical_hit: bool,
 }
 
 /// The single-player world a zombie lives in: the one player, the chunks of its `IsoChunkMap` (chunk coordinates,
@@ -564,6 +566,16 @@ impl IsoZombie {
             "bonfloor" => b(self.on_floor),
             "bmoving" => b(self.sp.is_moving),
             "bknockeddown" => b(self.sp.knocked_down),
+            // IsoGameCharacter.hasHitReaction / getHitReaction, IsoZombie.isStaggerBack, getHitForce, getHitDir
+            "hashitreaction" => b(!self.sp.hit_reaction.is_empty()),
+            "hitreaction" => s(&self.sp.hit_reaction),
+            "bstaggerback" => b(self.sp.stagger_back),
+            "hitforce" => f(self.sp.hit_force),
+            "hitdir.x" => f(self.sp.hit_dir.x),
+            "hitdir.y" => f(self.sp.hit_dir.y),
+            "fallonfront" => b(self.sp.fall_on_front),
+            "bbecomecrawler" => b(self.sp.become_crawler),
+            "usephysichitreaction" => b(self.sp.use_physic_hit_reaction),
             "bcrawling" => b(self.crawling),
             "bdead" => b(self.character.health <= 0.0),
             "alerted" => b(self.sp.alerted),
@@ -748,6 +760,9 @@ impl IsoZombie {
                 "bmoving" => self.sp.is_moving = v,
                 "bonfloor" => self.on_floor = v,
                 "bknockeddown" => self.sp.knocked_down = v,
+                "fallonfront" => self.sp.fall_on_front = v,
+                "bbecomecrawler" => self.sp.become_crawler = v,
+                "usephysichitreaction" => self.sp.use_physic_hit_reaction = v,
                 "attackdiddamage" => self.sp.attack_did_damage = v,
                 n if SETTABLE_VARIABLES.contains(&n) => {
                     return Err(format!("setVariable({key}, {v}): the setter is not ported"))
@@ -774,6 +789,14 @@ impl IsoZombie {
                 }
                 "bmoving" => self.sp.is_moving = string_utils::try_parse_boolean(Some(v)),
                 "bonfloor" => self.on_floor = string_utils::try_parse_boolean(Some(v)),
+                "hitreaction" => self.sp.hit_reaction = v.to_string(),
+                "fallonfront" => self.sp.fall_on_front = string_utils::try_parse_boolean(Some(v)),
+                "bbecomecrawler" => {
+                    self.sp.become_crawler = string_utils::try_parse_boolean(Some(v))
+                }
+                "usephysichitreaction" => {
+                    self.sp.use_physic_hit_reaction = string_utils::try_parse_boolean(Some(v))
+                }
                 n if SETTABLE_VARIABLES.contains(&n) => {
                     return Err(format!(
                         "setVariable({key}, \"{v}\"): the setter is not ported"
@@ -800,6 +823,10 @@ impl IsoZombie {
                 "attackoutcome" => self.sp.attack_outcome = String::new(),
                 "bmoving" => self.sp.is_moving = false,
                 "bonfloor" => self.on_floor = false,
+                "fallonfront" => self.sp.fall_on_front = false,
+                "bbecomecrawler" => self.sp.become_crawler = false,
+                "usephysichitreaction" => self.sp.use_physic_hit_reaction = false,
+                "hitreaction" => self.sp.hit_reaction = String::new(),
                 n if SETTABLE_VARIABLES.contains(&n) => {
                     return Err(format!("clearVariable({key}): the setter is not ported"))
                 }
@@ -1008,6 +1035,12 @@ impl IsoZombie {
         self.sp.last_z = self.character.moving.z;
         self.state_execute(world, rd)?;
         let cur = self.current_state;
+        // `cur != StaggerBackState && != BurntToDeath && != FakeDeadZombieState && != ZombieFallDownState && !=
+        // ZombieOnGroundState && != ZombieHitReactionState && != ZombieGetUpState` guards everything below (the
+        // walk animation choice, the thump test, `damageSheetRope`, the target vector, `separate`, the corpse search)
+        if matches!(cur, Some(ZombieState::StaggerBack)) {
+            return Ok(());
+        }
         // `cur == PathFindState && finder.progress == notyetfound`: PlayAnim("ZombieIdle"), then
         // `def.animFrameIncrease = 0.08F + Rand.Next(1000) / 8000.0F; *= 0.5F`
         if cur == Some(ZombieState::PathFind)
@@ -1066,6 +1099,10 @@ impl IsoZombie {
             Some(ZombieState::Attack) => self.attack_execute(rd),
             Some(ZombieState::FaceTarget) => self.face_target_execute(rd),
             Some(ZombieState::WalkToward) => self.walk_toward_execute(world, rd),
+            Some(ZombieState::StaggerBack) => {
+                self.stagger_back_execute();
+                Ok(())
+            }
         }
     }
 
@@ -1083,6 +1120,10 @@ impl IsoZombie {
             ZombieState::Attack => self.attack_enter(),
             ZombieState::FaceTarget => Ok(()),
             ZombieState::WalkToward => self.walk_toward_enter(),
+            ZombieState::StaggerBack => {
+                self.stagger_back_enter();
+                Ok(())
+            }
         }
     }
 
@@ -1092,12 +1133,16 @@ impl IsoZombie {
             ZombieState::PathFind => self.path_find_exit(),
             ZombieState::Attack => self.attack_exit(),
             ZombieState::WalkToward => self.walk_toward_exit(),
+            ZombieState::StaggerBack => {
+                self.stagger_back_exit();
+                Ok(())
+            }
         }
     }
 
     /// zombie.ai.StateMachine.changeRootState(newState, restart = false): leave the current state, remember it as the
     /// previous, enter the new one. (The `OnAIStateChange` Lua event: no handler modelled, UNKNOWN.)
-    fn change_root_state(
+    pub(crate) fn change_root_state(
         &mut self,
         new_state: Option<ZombieState>,
         world: &mut ZombieWorld,
@@ -1127,19 +1172,7 @@ impl IsoZombie {
         let root = anim.action_context.get_current_state_name();
         let children = anim.action_context.get_child_state_names();
         anim.animator.set_state_names(&root, &children)?;
-        let ai = match root.to_lowercase().as_str() {
-            "idle" => ZombieState::Idle,
-            "pathfind" => ZombieState::PathFind,
-            "lunge" => ZombieState::Lunge,
-            "attack" => ZombieState::Attack,
-            "face-target" => ZombieState::FaceTarget,
-            "walktoward" => ZombieState::WalkToward,
-            _ => {
-                return Err(format!(
-                "IsoZombie.actionStateChanged: the AI state of action state '{root}' is not ported"
-            ))
-            }
-        };
+        let ai = super::iso_zombie_states::ai_state_for(&root)?;
         if !children.is_empty() {
             return Err(format!(
                 "IsoZombie.actionStateChanged: sub states {children:?} are not ported"
