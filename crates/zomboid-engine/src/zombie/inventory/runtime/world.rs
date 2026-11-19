@@ -19,17 +19,44 @@ pub struct Scripts<'a> {
     pub manager: &'a ScriptManager,
     index: BucketIndex,
     by_full: HashMap<String, usize>,
+    /// `WorldDictionary.getItemRegistryID` of every item script of a new world: `DictionaryData.parseInfoLoadList`
+    /// numbers the items from 0 in the iteration order of `itemLoadListMain`, a `HashMap<String, ItemInfo>` that
+    /// `InitLoadPP` filled in the order the scripts were first met (`ScriptManager.item_parse_order`). `InitLoadPP`
+    /// runs before the script is loaded, so `obsolete` is not known then: no vanilla script has `Obsolete` (UNKNOWN
+    /// for a script that has).
+    registry: HashMap<String, i16>,
+    /// `WorldDictionary.getItemTypeFromID`
+    registry_types: HashMap<i16, String>,
 }
 
 impl<'a> Scripts<'a> {
     pub fn new(manager: &'a ScriptManager) -> Self {
+        let keys: Vec<&str> = manager.item_parse_order.iter().map(String::as_str).collect();
+        let mut registry = HashMap::new();
+        let mut registry_types = HashMap::new();
+        for (next, i) in crate::java::hash_map_order(&keys).into_iter().enumerate() {
+            registry.insert(keys[i].to_string(), next as i16);
+            registry_types.insert(next as i16, keys[i].to_string());
+        }
         Scripts {
             manager,
             index: manager.item_index(),
             by_full: (manager.items.iter().enumerate())
                 .map(|(i, item)| (item.full_name(), i))
                 .collect(),
+            registry,
+            registry_types,
         }
+    }
+
+    /// `WorldDictionary.getItemTypeFromID` (the full type), `None` for the original's null.
+    pub fn registry_type(&self, id: i16) -> Option<&str> {
+        self.registry_types.get(&id).map(String::as_str)
+    }
+
+    /// `WorldDictionary.getItemRegistryID(fullType)` for a new world, -1 where the original gives it (not registered).
+    pub fn registry_id(&self, full_type: &str) -> i16 {
+        self.registry.get(full_type).copied().unwrap_or(-1)
     }
 
     /// ScriptManager.FindItem(name): the index of the item script, `None` for the original's null.
@@ -55,6 +82,11 @@ pub struct World<'a> {
     pub rand: RandAbstract<Random>,
     pub game_time: GameTime,
     pub sandbox: SandboxOptions,
+    /// `Core.getInstance().getPoisonousBerry()`: the berry (a full type) of this world that carries poison (drawn by
+    /// `Core.initPoisonousBerry` when a world is made, stored in the save's `GameTime`); `None` when none is set.
+    pub poisonous_berry: Option<String>,
+    /// `Core.getInstance().getPoisonousMushroom()`, as the berry
+    pub poisonous_mushroom: Option<String>,
     /// `(float)ZomboidGlobals.equippedOrWornEncumbranceMultiplier`
     pub equipped_multiplier: f32,
     pub items: Vec<LiveItem>,
@@ -77,6 +109,8 @@ impl<'a> World<'a> {
             rand: RandAbstract::new(Random::new(seed)),
             game_time: GameTime::default(),
             sandbox,
+            poisonous_berry: None,
+            poisonous_mushroom: None,
             equipped_multiplier: equipped_multiplier as f32,
             items: Vec::new(),
             containers: Vec::new(),
@@ -118,8 +152,26 @@ impl<'a> World<'a> {
         // InstanceItem: `OutfitRNG.setSeed(Rand.Next(Integer.MAX_VALUE))`, then `item.synchWithVisual()`
         self.rand.next(i32::MAX);
         self.synch_with_visual(&mut item, script)?;
+        // InstanceItem: `item.setRegistry_id(this)`, then `initialiseItem()` on the game's own threads (this one, as the
+        // probe runs on the server's main thread): `setInitialised(true)`; the script's `OnCreate` is a Lua call, refused above
+        item.registry_id = self.scripts.registry_id(&item.full_type);
+        item.is_initialised = true;
         // the factory: `item.id = Rand.Next(2146250223) + 1233423`
         item.id = self.rand.next(2_146_250_223).wrapping_add(1_233_423);
+        // createItemInternal: `if (itemType.equals(Core.getInstance().getPoisonousBerry()))` the (Food) item gets detection
+        // level 1 and power 5, the poisonous mushroom 2 and 10 (a ClassCastException when it is not a Food)
+        for (named, level, power) in [
+            (&self.poisonous_berry, 1, 5),
+            (&self.poisonous_mushroom, 2, 10),
+        ] {
+            if named.as_deref() == Some(item_type) {
+                let Kind::Food(fd) = &mut item.kind else {
+                    return Err("ClassCastException: not a Food".to_string());
+                };
+                fd.poison_detection_level = level;
+                fd.poison_power = power;
+            }
+        }
         let id = self.items.len();
         self.items.push(item);
         // `if (item instanceof Drainable) item.setCurrentUses((int)(item.getMaxUses() * useDelta))`, useDelta 1
@@ -134,7 +186,11 @@ impl<'a> World<'a> {
     /// fresh item whose script lists `StaticModelsByIndex` or `WorldStaticModelsByIndex` picks its model index (the
     /// larger of the two lists), and the icon of that index replaces its texture. The texture is not modelled; a script
     /// whose `IconsForTexture` is too short for the index makes the original throw, which is an `Err` here.
-    fn synch_with_visual(&mut self, item: &mut LiveItem, script: &Item) -> Result<(), String> {
+    pub(super) fn synch_with_visual(
+        &mut self,
+        item: &mut LiveItem,
+        script: &Item,
+    ) -> Result<(), String> {
         let list = |key: &str| -> Option<usize> {
             let v = script_complex(script, key)?;
             let n = crate::java::split_char(v, ';').len();

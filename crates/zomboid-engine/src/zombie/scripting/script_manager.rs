@@ -63,6 +63,10 @@ pub struct ScriptManager {
     pub entities: Vec<GameEntityScript>,
     /// Item scripts that loaded, in module then script-name order (the original's list order is not reproduced).
     pub items: Vec<super::item::Item>,
+    /// Full names of the item scripts in the order `ScriptBucket.CreateFromTokenPP` first met them while the files were
+    /// parsed (`InitLoadPP` -> `WorldDictionary.onLoadItem` fills its load list in this order): files in load order,
+    /// definition order within a file.
+    pub item_parse_order: Vec<String>,
     /// Model scripts that loaded, per module (same order as `module_list`), in the order of the script names.
     pub models: Vec<Vec<ModelScript>>,
     /// zombie.core.Translator, which `Item.OnScriptsLoaded` asks for display names.
@@ -350,6 +354,9 @@ impl ScriptManager {
                 let names = module.names.entry(tag.clone()).or_default();
                 if !names.contains(&name) {
                     names.push(name.clone());
+                    if tag == "item" {
+                        self.item_parse_order.push(format!("{}.{name}", module.name));
+                    }
                 }
                 module.last_file.insert(
                     (tag.clone(), name.clone()),

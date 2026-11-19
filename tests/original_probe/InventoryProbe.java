@@ -3,6 +3,7 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.nio.ByteBuffer;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,10 +11,12 @@ import java.util.Map;
 import java.util.TreeSet;
 import zombie.GameTime;
 import zombie.SandboxOptions;
+import zombie.core.Core;
 import zombie.inventory.InventoryItem;
 import zombie.inventory.InventoryItemFactory;
 import zombie.inventory.ItemContainer;
 import zombie.inventory.ItemUser;
+import se.krka.kahlua.j2se.KahluaTableImpl;
 import zombie.inventory.types.DrainableComboItem;
 import zombie.inventory.types.Food;
 import zombie.inventory.types.Literature;
@@ -32,7 +35,7 @@ import zombie.scripting.objects.ResourceLocation;
 //                                about them is claimed.
 //   reset <seed> [k=v,...]       a new scenario: the generator is a java.util.Random(seed) (RandAbstract.id counts the
 //                                draws), no containers or variables; k is tod, nights, mult or sb.<SandboxOption>
-//   container <name> <type> <capacity> [k=v,...]     new ItemContainer(type, null, null); k is accept (OnlyAcceptCategory), temp
+//   container <name> <type> <capacity> [k=v,...]     new ItemContainer(type, null, null); k is accept (OnlyAcceptCategory), temp, explored, looted
 //   new <var> <type>             InventoryItemFactory.CreateItem(type)
 //   add <container> <var> <type> ItemContainer.AddItem(String)
 //   put <container> <var>        ItemContainer.AddItem(InventoryItem)
@@ -47,6 +50,17 @@ import zombie.scripting.objects.ResourceLocation;
 //   pick <var> <container> <index>   the item at that place of the container, by a name
 //   use <var>                    InventoryItem.Use() (DrainableComboItem.Use() for a drainable)
 //   useitem <var> [crafting inContainer consumes keep destroy]   ItemUser.UseItem
+//   regs                         WorldDictionary.getItemRegistryID of every item script
+//   field <var> <name> <value>   a field of the item set directly (by its Java type), see FIELDS
+//   list <var> <name> a,b,c      a list field (spices, extraItems, learnedRecipes, customPages)
+//   bytes <var> <hex>            byteData
+//   mod <var> <path> <s|d|b|t> <value>   modData: a dotted path of string keys (#n a number key), a value of that type
+//   fields <var>                 the fields the save writes that show does not print
+//   save <var>                   InventoryItem.save: the bytes
+//   roundtrip <var> <newvar>     saveWithSize, InventoryItem.loadItem of those bytes into <newvar>, then its bytes again
+//   csave <container>            ItemContainer.save: the bytes
+//   cload <container> <newcontainer>   a new container that loads those bytes, then its items and its bytes again
+//   createsave                   every modelled script made, saved, loaded and saved again
 // The server flag is cleared while the probe runs, so that the items' update() reads the game clock and not the wall
 // clock (InventoryItem.calculateTimeMultiplier).
 public class InventoryProbe {
@@ -239,6 +253,9 @@ public class InventoryProbe {
         setField(gt, "nightsSurvived", 0);
         gt.setMultiplier(1.0f);
         swapRand(Long.parseLong(p[1]));
+        // a world draws these two with Core.initPoisonousBerry/Mushroom; fixed here so a scenario does not depend on the boot
+        Core.getInstance().setPoisonousBerry("Base.BerryGeneric2");
+        Core.getInstance().setPoisonousMushroom("Base.MushroomGeneric3");
         if (p.length > 2) clock(p[2].split(","));
         SandboxOptions so = SandboxOptions.instance;
         out.println("RESET " + String.join(" ", p) + " mult=" + f(gt.getMultiplier()) + " tod=" + f(gt.getTimeOfDay()) + " nights=" + gt.getNightsSurvived()
@@ -310,6 +327,190 @@ public class InventoryProbe {
         }
     }
 
+
+    // ---- save and load ----
+    static final int WORLD_VERSION = zombie.iso.IsoWorld.getWorldVersion();
+
+    static String hex(byte[] a, int from, int to) {
+        StringBuilder b = new StringBuilder();
+        for (int i = from; i < to; i++) b.append(String.format("%02x", a[i]));
+        return b.toString();
+    }
+
+    static byte[] unhex(String h) {
+        byte[] r = new byte[h.length() / 2];
+        for (int i = 0; i < r.length; i++) r[i] = (byte) Integer.parseInt(h.substring(2 * i, 2 * i + 2), 16);
+        return r;
+    }
+
+    static String bits(ByteBuffer bb) {
+        return "len=" + bb.position() + " " + hex(bb.array(), 0, bb.position());
+    }
+
+    static ByteBuffer saved(InventoryItem it) throws Exception {
+        ByteBuffer bb = ByteBuffer.allocate(1 << 20);
+        it.save(bb, false);
+        return bb;
+    }
+
+    static ByteBuffer savedSized(InventoryItem it) throws Exception {
+        ByteBuffer bb = ByteBuffer.allocate(1 << 20);
+        it.saveWithSize(bb, false);
+        return bb;
+    }
+
+    static InventoryItem reloaded(ByteBuffer bb) throws Exception {
+        ByteBuffer in = ByteBuffer.wrap(bb.array(), 0, bb.position());
+        return InventoryItem.loadItem(in, WORLD_VERSION);
+    }
+
+    static String tableText(KahluaTableImpl t) {
+        StringBuilder b = new StringBuilder("{");
+        se.krka.kahlua.vm.KahluaTableIterator it = t.iterator();
+        boolean first = true;
+        while (it.advance()) {
+            if (!first) b.append(',');
+            first = false;
+            Object k = it.getKey(), v = it.getValue();
+            b.append(k instanceof String ? "s:" + k : k instanceof Double ? "d:" + Double.doubleToRawLongBits((Double) k) : "?:" + k).append('=');
+            b.append(v instanceof String ? "s:" + v : v instanceof Double ? "d:" + Double.doubleToRawLongBits((Double) v) : v instanceof Boolean ? "b:" + v : v instanceof KahluaTableImpl tt ? tableText(tt) : "?:" + v);
+        }
+        return b.append('}').toString();
+    }
+
+    static Object peek(Object o, String name) {
+        try {
+            return getField(o, o.getClass(), name);
+        } catch (NoSuchFieldException e) {
+            Class<?> c = o.getClass().getSuperclass();
+            while (c != null) {
+                try {
+                    return getField(o, c, name);
+                } catch (Exception e2) { c = c.getSuperclass(); }
+            }
+            throw new RuntimeException(e);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static String pv(Object v) {
+        if (v == null) return "null";
+        if (v instanceof Float x) return f(x);
+        if (v instanceof ByteBuffer bb) return "bytes:" + hex(bb.array(), 0, bb.limit());
+        if (v instanceof zombie.core.Color c) return "rgba:" + hx(c.r) + "," + hx(c.g) + "," + hx(c.b) + "," + hx(c.a);
+        if (v instanceof KahluaTableImpl t) return tableText(t);
+        if (v instanceof java.util.Map<?, ?> m) return new java.util.TreeMap<>(m).toString();
+        return String.valueOf(v);
+    }
+
+    static final String[] COMMON_FIELDS = {"table", "customName", "customColor", "col", "itemCapacity", "keyId", "remoteControlId", "remoteRange", "colorRed", "colorGreen", "colorBlue",
+        "worker", "stashMap", "zombieInfected", "attachedSlot", "attachedSlotType", "attachedToModel", "maxCapacity", "recordedMediaIndex", "worldXRotation", "worldYRotation",
+        "worldZRotation", "worldScale", "isInitialised", "modelIndex", "activated", "haveBeenRepaired", "favorite", "byteData", "extraItems", "name", "originalName", "registryId",
+        "currentAmmoCount", "customWeight", "isCookable"};
+    static final String[] FOOD_FIELDS = {"calories", "proteins", "lipids", "carbohydrates", "dangerousUncooked", "poisonDetectionLevel", "spices", "poisonPower", "chef", "painReduction",
+        "fluReduction", "foodSicknessChange", "poison", "useForPoison", "rottenTime", "compostTime", "cookedInMicrowave", "fatigueChange", "endChange", "milkQty", "milkType",
+        "stressChange", "frozen", "isCookable"};
+    static final String[] LITERATURE_FIELDS = {"numberOfPages", "alreadyReadPages", "canBeWrite", "customPages", "lockedBy", "learnedRecipes", "alreadyRead"};
+
+    static String fields(InventoryItem it) {
+        StringBuilder b = new StringBuilder();
+        for (String n : COMMON_FIELDS) b.append(' ').append(n).append('=').append(pv(peek(it, n)));
+        if (it instanceof Food) for (String n : FOOD_FIELDS) b.append(" F.").append(n).append('=').append(pv(peek(it, n)));
+        if (it instanceof Literature) for (String n : LITERATURE_FIELDS) b.append(" L.").append(n).append('=').append(pv(peek(it, n)));
+        return b.toString();
+    }
+
+    static void field(String[] p) throws Exception {
+        InventoryItem it = item(p[1]);
+        Class<?> c = it.getClass();
+        java.lang.reflect.Field fd = null;
+        while (c != null && fd == null) {
+            try { fd = c.getDeclaredField(p[2]); } catch (NoSuchFieldException e) { c = c.getSuperclass(); }
+        }
+        if (fd == null) throw new NoSuchFieldException(p[2]);
+        fd.setAccessible(true);
+        Class<?> t = fd.getType();
+        String v = p[3];
+        if (t == int.class) fd.setInt(it, Integer.parseInt(v));
+        else if (t == short.class) fd.setShort(it, Short.parseShort(v));
+        else if (t == byte.class) fd.setByte(it, Byte.parseByte(v));
+        else if (t == float.class) fd.setFloat(it, Float.parseFloat(v));
+        else if (t == boolean.class) fd.setBoolean(it, Boolean.parseBoolean(v));
+        else if (t == String.class) fd.set(it, v.equals("null") ? null : v);
+        else if (t == zombie.core.Color.class) {
+            String[] x = v.split(",");
+            fd.set(it, new zombie.core.Color(Float.parseFloat(x[0]), Float.parseFloat(x[1]), Float.parseFloat(x[2]), Float.parseFloat(x[3])));
+        } else throw new IllegalArgumentException("field type " + t + " of " + p[2]);
+    }
+
+    static void list(String[] p) throws Exception {
+        InventoryItem it = item(p[1]);
+        String[] x = p[3].equals("null") ? null : p[3].equals("empty") ? new String[0] : p[3].split(",");
+        switch (p[2]) {
+            case "spices" -> ((Food) it).setSpices(x == null ? null : new ArrayList<>(java.util.Arrays.asList(x)));
+            case "extraItems" -> setField(it, "extraItems", x == null ? null : new ArrayList<>(java.util.Arrays.asList(x)));
+            case "learnedRecipes" -> ((Literature) it).setLearnedRecipes(x == null ? null : new ArrayList<>(java.util.Arrays.asList(x)));
+            case "customPages" -> {
+                java.util.HashMap<Integer, String> m = null;
+                if (x != null) {
+                    m = new java.util.HashMap<>();
+                    for (int i = 0; i < x.length; i++) m.put(i + 1, x[i]);
+                }
+                ((Literature) it).setCustomPages(m);
+            }
+            default -> throw new IllegalArgumentException("list " + p[2]);
+        }
+    }
+
+    static Object modKey(String k) {
+        return k.startsWith("#") ? (Object) Double.valueOf(k.substring(1)) : k;
+    }
+
+    static void mod(String[] p) throws Exception {
+        InventoryItem it = item(p[1]);
+        KahluaTableImpl t = (KahluaTableImpl) it.getModData();
+        String[] path = p[2].split("\\.");
+        for (int i = 0; i < path.length - 1; i++) {
+            Object n = t.rawget(modKey(path[i]));
+            if (!(n instanceof KahluaTableImpl)) {
+                n = zombie.Lua.LuaManager.platform.newTable();
+                t.rawset(modKey(path[i]), n);
+            }
+            t = (KahluaTableImpl) n;
+        }
+        Object key = modKey(path[path.length - 1]);
+        switch (p[3]) {
+            case "s" -> t.rawset(key, p[4]);
+            case "d" -> t.rawset(key, Double.valueOf(p[4]));
+            case "b" -> t.rawset(key, Boolean.valueOf(p[4]));
+            case "t" -> t.rawset(key, zombie.Lua.LuaManager.platform.newTable());
+            default -> throw new IllegalArgumentException("mod type " + p[3]);
+        }
+    }
+
+    static void createsave(PrintStream out) throws Exception {
+        ArrayList<Item> items = new ArrayList<>(ScriptManager.instance.getAllItems());
+        items.sort((x, y) -> x.getFullName().compareTo(y.getFullName()));
+        for (Item sc : items) {
+            if (skip(sc) != null) continue;
+            if (sc.getFullName().equals("Base.CorpseAnimal")) {
+                // Food.load -> initAnimalIcons -> loadCorpseFromByteData: builds a dead animal body
+                out.println("SKIP " + sc.getFullName() + " load builds an animal corpse");
+                continue;
+            }
+            InventoryItem item = InventoryItemFactory.CreateItem(sc.getFullName());
+            if (item == null) {
+                out.println("SAVED " + sc.getFullName() + " null");
+                continue;
+            }
+            ByteBuffer bb = savedSized(item);
+            InventoryItem back = reloaded(bb);
+            String again = back == null ? "null" : bits(savedSized(back));
+            out.println("SAVED " + sc.getFullName() + " " + bits(bb) + " back=" + again + " draws=" + draws());
+        }
+    }
+
     static void advance(float dtod) throws Exception {
         GameTime gt = GameTime.instance;
         float t = gt.getTimeOfDay() + dtod;
@@ -332,6 +533,8 @@ public class InventoryProbe {
                     String k = e.substring(0, e.indexOf('=')), v = e.substring(e.indexOf('=') + 1);
                     if (k.equals("accept")) c.setOnlyAcceptCategory(v);
                     else if (k.equals("temp")) c.setCustomTemperature(Float.parseFloat(v));
+                    else if (k.equals("explored")) c.setExplored(Boolean.parseBoolean(v));
+                    else if (k.equals("looted")) c.setHasBeenLooted(Boolean.parseBoolean(v));
                     else throw new IllegalArgumentException("container option " + e);
                 }
                 containers.put(p[1], c);
@@ -397,6 +600,58 @@ public class InventoryProbe {
                 int consumed = ItemUser.UseItem(it, p.length > 2 && Boolean.parseBoolean(p[2]), p.length > 3 && Boolean.parseBoolean(p[3]),
                     p.length > 4 ? Integer.parseInt(p[4]) : 1, p.length > 5 && Boolean.parseBoolean(p[5]), p.length > 6 && Boolean.parseBoolean(p[6]));
                 out.println("USEITEM " + String.join(" ", p) + " = " + consumed + " -> " + show(it) + " draws=" + draws());
+            }
+            case "field" -> {
+                field(p);
+                out.println("FIELD " + String.join(" ", p) + " -> " + show(item(p[1])) + fields(item(p[1])));
+            }
+            case "list" -> {
+                list(p);
+                out.println("LIST " + String.join(" ", p) + " -> " + fields(item(p[1])));
+            }
+            case "bytes" -> {
+                setField(item(p[1]), "byteData", p[2].equals("null") ? null : ByteBuffer.wrap(unhex(p[2])));
+                out.println("BYTES " + p[1] + " " + p[2]);
+            }
+            case "mod" -> {
+                mod(p);
+                out.println("MOD " + String.join(" ", p) + " -> " + pv(peek(item(p[1]), "table")));
+            }
+            case "fields" -> out.println("FIELDS " + p[1] + fields(item(p[1])));
+            case "save" -> out.println("SAVE " + p[1] + " " + bits(saved(item(p[1]))));
+            case "roundtrip" -> {
+                InventoryItem it = item(p[1]);
+                ByteBuffer bb = savedSized(it);
+                InventoryItem back = reloaded(bb);
+                if (back != null) vars.put(p[2], back);
+                out.println("ROUNDTRIP " + p[1] + " " + p[2] + " " + bits(bb) + " draws=" + draws());
+                if (back == null) out.println("BACK " + p[2] + " null");
+                else out.println("BACK " + p[2] + " " + show(back) + fields(back) + " again=" + bits(savedSized(back)));
+            }
+            case "csave" -> {
+                ByteBuffer bb = ByteBuffer.allocate(1 << 20);
+                cont(p[1]).save(bb);
+                out.println("CSAVE " + p[1] + " " + bits(bb));
+            }
+            case "cload" -> {
+                ByteBuffer bb = ByteBuffer.allocate(1 << 20);
+                cont(p[1]).save(bb);
+                ByteBuffer in = ByteBuffer.wrap(bb.array(), 0, bb.position());
+                ItemContainer n = new ItemContainer();
+                n.load(in, WORLD_VERSION);
+                containers.put(p[2], n);
+                ByteBuffer again = ByteBuffer.allocate(1 << 20);
+                n.save(again);
+                out.println("CLOAD " + p[1] + " " + p[2] + " type=" + n.getType() + " capacity=" + n.getCapacity() + " explored=" + n.isExplored() + " looted=" + n.isHasBeenLooted()
+                    + " read=" + in.position() + "/" + in.limit() + " draws=" + draws());
+                for (InventoryItem i : n.getItems()) out.println("LOADED " + p[2] + " " + show(i) + fields(i));
+                out.println("CAGAIN " + p[2] + " " + bits(again));
+            }
+            case "createsave" -> createsave(out);
+            case "regs" -> {
+                ArrayList<Item> all = new ArrayList<>(ScriptManager.instance.getAllItems());
+                all.sort((x, y) -> x.getFullName().compareTo(y.getFullName()));
+                for (Item it : all) out.println("REG " + it.getFullName() + " " + zombie.world.WorldDictionary.getItemRegistryID(it.getFullName()) + " " + it.getRegistry_id());
             }
             case "ageupdate" -> {
                 ((Food) item(p[1])).updateAge(false);
