@@ -72,6 +72,16 @@ impl AnimationClip {
             .collect()
     }
 
+    /// `getBoneFramesAt(idx).length`: how many frames bone `idx` has (0 for a bone outside 0..60).
+    pub fn bone_frame_count(&self, idx: usize) -> usize {
+        self.key_frames_by_bone_index.get(idx).map_or(0, Vec::len)
+    }
+
+    /// `getBoneFramesAt(idx)[n]`
+    pub fn bone_frame(&self, idx: usize, n: usize) -> &Keyframe {
+        &self.keyframe_array[self.key_frames_by_bone_index[idx][n]]
+    }
+
     /// AnimationClip.recalculateKeyframesByBoneIndex: per bone 0..60 the keyframes of that bone in array order, the
     /// last one dropped when `keepLastFrame` is false and there is more than one.
     pub fn recalculate_keyframes_by_bone_index(&mut self) {

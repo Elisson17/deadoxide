@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
 use super::chunk_save::ChunkSave;
-use super::iso_grid_square::IsoGridSquare;
+use super::iso_grid_square::{GetSquare, IsoGridSquare};
 use super::iso_meta_grid::IsoMetaGrid;
 use super::sprite::iso_sprite_manager::IsoSpriteManager;
 use super::sprite_details::iso_flag_type::IsoFlagType;
+use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
 use crate::zombie::erosion::erosion_data;
 
 /// zombie.iso.IsoChunk: an 8x8 column of squares over all levels. So far the square storage the map loader fills.
@@ -139,11 +140,14 @@ impl IsoChunk {
     /// are built (with the chunk not loaded, so no square is left dirty by them), the squares under a rain blocking
     /// tile get `haveRoof` (and lose `exterior`), `RecalcAllWithNeighbours(true, chunkGetter)` builds the properties
     /// of the squares that are still dirty (those `ensureNotNull` made after their level had been passed) and every
-    /// square is marked dirty. The collide, path and vision matrices of that pass are not modelled.
+    /// square is marked dirty. The same pass leaves each square's collide, path and vision matrices (the chunk getter
+    /// sees only this chunk's squares, so the bits towards a neighbouring chunk stay as `getNew` made them; the
+    /// border recalculation of `IsoChunk`'s main-thread pass is not part of this method).
     pub fn load_in_world_streamer_thread(
         &mut self,
         sm: &IsoSpriteManager,
         meta_grid: &IsoMetaGrid,
+        alias: &TilePropertyAliasMap,
     ) {
         for z in self.min_level..=self.max_level {
             for y in 0..8 {
@@ -202,10 +206,45 @@ impl IsoChunk {
                 }
             }
         }
+        // RecalcAllWithNeighbours(true, chunkGetter): every square's matrices from the squares of this chunk
+        let mut matrices = Vec::new();
+        {
+            let getter = ChunkGetter(self);
+            for z in self.min_level..=self.max_level {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        if let Some(sq) = self.get_grid_square(x, y, z) {
+                            matrices.push((x, y, z, sq.calculate_matrices(alias, &getter)));
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y, z, (c, p, v)) in matrices {
+            if let Some(sq) = self.get_grid_square_mut(x, y, z) {
+                sq.collide_matrix = c;
+                sq.path_matrix = p;
+                sq.vision_matrix = v;
+            }
+        }
         for level in self.squares.values_mut() {
             for sq in level.iter_mut().flatten() {
                 sq.properties_dirty = true;
             }
+        }
+    }
+}
+
+/// zombie.iso.IsoChunk.ChunkGetter: the squares of one chunk by world coordinates, nothing outside it.
+struct ChunkGetter<'a>(&'a IsoChunk);
+
+impl GetSquare for ChunkGetter<'_> {
+    fn get_grid_square(&self, x: i32, y: i32, z: i32) -> Option<&IsoGridSquare> {
+        let (lx, ly) = (x - self.0.wx * 8, y - self.0.wy * 8);
+        if (0..8).contains(&lx) && (0..8).contains(&ly) && (-32..=31).contains(&z) {
+            self.0.get_grid_square(lx, ly, z)
+        } else {
+            None
         }
     }
 }

@@ -2,14 +2,22 @@
 //! `AnimationClip`): `media/anims_X/<animationDirectory>/**.X`,
 //! each file read the way `ImportedSkeleton.processAnimation` reads an Assimp `aiAnimation`.
 //!
-//! The keyframes (bone poses) are not read: they only feed the skeleton's pose and the deferred (root) movement, which
-//! this port does not compute (UNKNOWN: bone transforms and deferred movement). Nothing the animator's state, its
-//! variables or the random draws depend on is in them.
+//! The keyframes (bone poses) are read only on demand, by `with_keyframes`: the animator's state, its variables and the
+//! random draws do not depend on them, the deferred (root) movement of a track does. A clip's keyframes come from
+//! `FileTask_LoadAnimation.loadX` (the file imported with `MAKE_LEFT_HANDED | REMOVE_REDUNDANT_MATERIALS`, processed in
+//! `AnimationOnly` mode skinned to the `Human` animation mesh's skeleton), once per file.
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use super::animation_clip::AnimationClip;
+use crate::native::assimp;
+use crate::zombie::core::skinnedmodel::model::jassimp::processed_ai_scene::{
+    ProcessedAiScene, ProcessedAiSceneParams,
+};
+use crate::zombie::core::skinnedmodel::model::jassimp::LoadMode;
+use crate::zombie::core::skinnedmodel::model::skinning_data::SkinningData;
 use crate::zombie::zomboid_file_system::ZomboidFileSystem;
 
 /// One `AnimationSet` of an `.X` file as Assimp's X importer hands it to `ImportedSkeleton.processAnimation`:
@@ -282,12 +290,104 @@ pub fn clip_of(a: &XAnimation) -> AnimationClip {
 #[derive(Clone, Debug, Default)]
 pub struct AnimationClips {
     pub clips: HashMap<String, Rc<AnimationClip>>,
+    /// The `.X` file each clip name is defined in.
+    sources: HashMap<String, PathBuf>,
+    /// The keyframe loader (`with_keyframes`); without it a clip is its name and duration only.
+    loader: Option<Rc<KeyframeLoader>>,
+}
+
+/// The `Human` animation mesh's skeleton and the files' clips loaded so far.
+#[derive(Debug)]
+struct KeyframeLoader {
+    skin: SkinningData,
+    files: RefCell<HashMap<PathBuf, HashMap<String, Rc<AnimationClip>>>>,
 }
 
 impl AnimationClips {
-    /// `skinningData.animationClips.get(name)`
+    /// `skinningData.animationClips.get(name)`: the name and duration clip, whatever `with_keyframes` was told.
     pub fn get(&self, name: &str) -> Option<&Rc<AnimationClip>> {
         self.clips.get(name)
+    }
+
+    /// Whether `with_keyframes` was called: tracks then carry the deferred bone's keyframes.
+    pub fn has_keyframes(&self) -> bool {
+        self.loader.is_some()
+    }
+
+    /// `skinningData.getBone(name).index`: the bone of the animation mesh's skeleton (`None` without keyframes loaded,
+    /// or for a bone the skeleton does not have).
+    pub fn bone_index(&self, name: &str) -> Option<i32> {
+        self.loader
+            .as_ref()
+            .and_then(|l| l.skin.bone_indices.get(name).copied())
+    }
+
+    /// `skinningData.animationClips.get(name)` with its keyframes: the first request of a file imports it
+    /// (`FileTask_LoadAnimation.loadX`). `Ok(None)` is a clip no file defines.
+    pub fn get_full(&self, name: &str) -> Result<Option<Rc<AnimationClip>>, String> {
+        let Some(loader) = &self.loader else {
+            return Ok(self.clips.get(name).cloned());
+        };
+        let Some(path) = self.sources.get(name) else {
+            return Ok(self.clips.get(name).cloned());
+        };
+        if !loader.files.borrow().contains_key(path) {
+            let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let scene = assimp::import_file(&path.to_string_lossy(), &bytes, "anim")
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            let mut params = ProcessedAiSceneParams::create(&scene);
+            params.mode = LoadMode::AnimationOnly;
+            params.skinned_to = Some(&loader.skin);
+            let processed = ProcessedAiScene::process(&params)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            let skeleton = processed
+                .skeleton
+                .ok_or_else(|| format!("{}: no skeleton in the animation file", path.display()))?;
+            let mut by_name = HashMap::new();
+            for (key, clip) in skeleton.clips.iter() {
+                by_name.insert(key.to_string(), Rc::new(clip.clone()));
+            }
+            loader.files.borrow_mut().insert(path.clone(), by_name);
+        }
+        let files = loader.files.borrow();
+        Ok(files
+            .get(path)
+            .and_then(|f| f.get(name))
+            .cloned()
+            .or_else(|| self.clips.get(name).cloned()))
+    }
+
+    /// Make `get_full` load keyframes: the skeleton of `animationsMesh <mesh>`'s `meshFile`, processed as a `Normal`
+    /// mesh (`FileTask_LoadMesh.loadX`: its steps `FIND_INSTANCES | MAKE_LEFT_HANDED | LIMIT_BONE_WEIGHTS | TRIANGULATE
+    /// | OPTIMIZE_MESHES | REMOVE_REDUNDANT_MATERIALS | JOIN_IDENTICAL_VERTICES`) gives the bone indices every clip is
+    /// numbered by.
+    pub fn with_keyframes(mut self, fs: &ZomboidFileSystem, mesh: &str) -> Result<Self, String> {
+        let script =
+            std::fs::read_to_string(fs.get_media_file("scripts/generated/animations_meshes.txt"))
+                .map_err(|e| format!("animations_meshes.txt: {e}"))?;
+        let mesh_file = animations_mesh_file(&script, mesh)?;
+        let path = fs.get_media_file(&format!("models_X/{mesh_file}.x"));
+        let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let scene = assimp::import_file(&path.to_string_lossy(), &bytes, "mesh")
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let processed = ProcessedAiScene::process(&ProcessedAiSceneParams::create(&scene))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let sk = processed
+            .skeleton
+            .ok_or_else(|| format!("{}: no skeleton in the animations mesh", path.display()))?;
+        let skin = SkinningData::new(
+            sk.clips,
+            sk.bind_pose,
+            sk.inv_bind_pose,
+            &sk.skin_offset_matrices,
+            sk.skeleton_hierarchy,
+            sk.bone_indices,
+        )?;
+        self.loader = Some(Rc::new(KeyframeLoader {
+            skin,
+            files: RefCell::new(HashMap::new()),
+        }));
+        Ok(self)
     }
 
     /// The clips of `animationsMesh <mesh>`'s `animationDirectory` lines. Files are read in path order: the original
@@ -316,6 +416,7 @@ impl AnimationClips {
                     if clips.clips.contains_key(&clip.name) {
                         duplicates.push(clip.name.clone());
                     }
+                    clips.sources.insert(clip.name.clone(), f.clone());
                     clips.clips.insert(clip.name.clone(), Rc::new(clip));
                 }
             }
@@ -335,6 +436,32 @@ fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The `meshFile = <path>,` line of `animationsMesh <mesh> { ... }` in a script (`AnimationsMesh.Load`).
+fn animations_mesh_file(script: &str, mesh: &str) -> Result<String, String> {
+    let mut inside = false;
+    for line in script.lines() {
+        let l = line.trim();
+        if !inside {
+            inside = l == format!("animationsMesh {mesh}");
+            continue;
+        }
+        if l == "}" {
+            break;
+        }
+        if let Some(rest) = l.strip_prefix("meshFile") {
+            let v = rest
+                .trim_start()
+                .trim_start_matches('=')
+                .trim()
+                .trim_end_matches(',');
+            return Ok(v.trim().to_string());
+        }
+    }
+    Err(format!(
+        "animations_meshes.txt: no meshFile for animationsMesh {mesh}"
+    ))
 }
 
 /// The `animationDirectory = <dir>,` lines of `animationsMesh <mesh> { ... }` in a script (`AnimationsMesh.Load`).

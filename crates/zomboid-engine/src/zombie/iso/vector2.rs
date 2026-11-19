@@ -37,6 +37,43 @@ impl Vector2 {
             length
         }
     }
+
+    /// zombie.iso.Vector2.set(float, float)
+    pub fn set(&mut self, x: f32, y: f32) -> &mut Self {
+        self.x = x;
+        self.y = y;
+        self
+    }
+
+    /// zombie.iso.Vector2.rotate: both parts in double, `(float)` each.
+    pub fn rotate(&mut self, radians: f32) {
+        let r = f64::from(radians);
+        let c = crate::java_fdlibm::cos(r);
+        let s = crate::java_fdlibm::sin(r);
+        let rx = f64::from(self.x) * c - f64::from(self.y) * s;
+        let ry = f64::from(self.x) * s + f64::from(self.y) * c;
+        self.x = rx as f32;
+        self.y = ry as f32;
+    }
+
+    /// zombie.iso.Vector2.setLength: `normalize()`, then both parts times `length`.
+    pub fn set_length(&mut self, length: f32) -> &mut Self {
+        self.normalize();
+        self.x *= length;
+        self.y *= length;
+        self
+    }
+
+    /// zombie.iso.Vector2.scale(float)
+    pub fn scale(&mut self, scale: f32) {
+        self.x *= scale;
+        self.y *= scale;
+    }
+
+    /// zombie.iso.Vector2.addScaled(a, b, scale, result): `a + b * scale` per part.
+    pub fn add_scaled(a: &Vector2, b: &Vector2, scale: f32) -> Vector2 {
+        Vector2::new(a.x + b.x * scale, a.y + b.y * scale)
+    }
 }
 
 #[cfg(test)]

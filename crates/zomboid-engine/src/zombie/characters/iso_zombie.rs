@@ -99,6 +99,9 @@ pub struct ZombieAnimAssets {
     pub action_group: Rc<ActionGroup>,
     pub anim_set: Rc<AnimationSet>,
     pub clips: Rc<AnimationClips>,
+    /// `AdvancedAnimator.motionScale` and `rotationScale` (`media/AnimSets/Defaults.xml`)
+    pub motion_scale: f32,
+    pub rotation_scale: f32,
 }
 
 /// The zombie's `StateMachineComponent` pieces (its `ActionContext` and `AdvancedAnimator`) with the animation fields
@@ -363,6 +366,29 @@ pub struct SpState {
     /// WalkTowardState's `IGNORE_OFFSET` (None until the state is first entered) and `TICK_COUNT`
     pub walk_toward_ignore_offset: Option<bool>,
     pub walk_toward_tick_count: i64,
+    /// IsoMovingObject `nx`/`ny` (`getNextX/Y`: where the zombie goes this tick), `lastX`/`ly`/`lz` (as of the last
+    /// `update`)
+    pub next_x: f32,
+    pub next_y: f32,
+    pub last_x: f32,
+    pub last_y: f32,
+    pub last_z: f32,
+    /// IsoMovingObject `current` and `last`: the squares by coordinates (`None` is null)
+    pub current: Option<(i32, i32, i32)>,
+    pub last: Option<(i32, i32, i32)>,
+    /// IsoMovingObject `collidedN/S/W/E`, `collidedThisFrame`, `altCollide`, `timeSinceZombieAttack` (1000000)
+    pub collided_n: bool,
+    pub collided_s: bool,
+    pub collided_w: bool,
+    pub collided_e: bool,
+    pub collided_this_frame: bool,
+    pub alt_collide: bool,
+    /// The tile objects (square x, y, z and index in its object list) whose `IsoObject.objectRenderEffects` is set: the
+    /// zombie's walk made them rustle and the headless world never updates them, so the effect stays.
+    pub render_effects: Vec<(i32, i32, i32, usize)>,
+    pub time_since_zombie_attack: i32,
+    /// IsoGameCharacter `deferredMovementEnabled` (true until a state turns it off)
+    pub deferred_movement_enabled: bool,
 }
 
 impl Default for SpState {
@@ -396,6 +422,22 @@ impl Default for SpState {
             lunge_tick_count: 0,
             walk_toward_ignore_offset: None,
             walk_toward_tick_count: 0,
+            next_x: 0.0,
+            next_y: 0.0,
+            last_x: 0.0,
+            last_y: 0.0,
+            last_z: 0.0,
+            current: None,
+            last: None,
+            collided_n: false,
+            collided_s: false,
+            collided_w: false,
+            collided_e: false,
+            collided_this_frame: false,
+            alt_collide: false,
+            render_effects: Vec::new(),
+            time_since_zombie_attack: 1_000_000,
+            deferred_movement_enabled: true,
         }
     }
 }
@@ -504,7 +546,12 @@ impl IsoZombie {
             action_context.set_group(assets.action_group);
             z.anim = Some(ZombieAnim {
                 action_context,
-                animator: AdvancedAnimator::init(Some(assets.anim_set), assets.clips),
+                animator: {
+                    let mut animator = AdvancedAnimator::init(Some(assets.anim_set), assets.clips);
+                    animator.motion_scale = assets.motion_scale;
+                    animator.rotation_scale = assets.rotation_scale;
+                    animator
+                },
                 game_variables: AnimationVariableSource::default(),
                 animation_invisible_frame_delay: FrameDelay::new(4),
                 animation_time_scale: 1.0,
@@ -708,6 +755,10 @@ impl IsoZombie {
         self.character.moving.x = x;
         self.character.moving.y = y;
         self.character.moving.z = z;
+        // setX/setY also set `nx`/`ny`; setZ sets `lz`
+        self.sp.next_x = x;
+        self.sp.next_y = y;
+        self.sp.last_z = z;
     }
 
     /// One `preupdate(); update(); postupdate();` of the zombie in the world's update loop, for a zombie with no
@@ -732,6 +783,9 @@ impl IsoZombie {
         // updateAnimationTimeDelta: no player exists, so `maxAlpha` stays 0 and the zombie's animation is updated every
         // (delay + 1)-th frame, at that many frames' time. (IsoZombie.allowsInvisibleAnimationSkips: not a remote
         // zombie, `perObjectMultiplier` 1, `zombieAnimationDelay` debug option default true.)
+        // IsoMovingObject.preupdate: `setNextX(getX()); setNextY(getY())`
+        self.sp.next_x = self.character.moving.x;
+        self.sp.next_y = self.character.moving.y;
         anim.animation_time_scale = 1.0;
         anim.animation_updating_this_frame = true;
         let max_alpha = 0.0f32;

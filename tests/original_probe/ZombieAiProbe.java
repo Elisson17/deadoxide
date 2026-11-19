@@ -11,6 +11,7 @@ import zombie.iso.IsoCell;
 import zombie.iso.IsoChunk;
 import zombie.iso.IsoChunkMap;
 import zombie.iso.IsoGridSquare;
+import zombie.iso.IsoObject;
 import zombie.network.GameServer;
 import zombie.network.ServerLOS;
 import zombie.network.ServerMap;
@@ -26,6 +27,22 @@ import zombie.SandboxOptions;
 // Per tick: the draws of the global Rand, the action context's state, the AI state, position, direction, health, target,
 // the path behaviour and the animation variables the states read.
 public class ZombieAiProbe {
+    static int curTick;
+
+    /** A java.util.Random that prints the Java stack of every draw (PZ_RANDTRACE). */
+    static final class TraceRandom extends Random {
+        TraceRandom(long seed) { super(seed); }
+        private void tr(String k) {
+            StringBuilder sb = new StringBuilder("RANDTRACE tick=" + curTick + " " + k);
+            for (StackTraceElement e : new Throwable().getStackTrace()) {
+                String c = e.getClassName();
+                if (c.startsWith("zombie.")) sb.append("\n    ").append(c).append('.').append(e.getMethodName()).append(':').append(e.getLineNumber());
+            }
+            System.err.println(sb);
+        }
+        @Override public int nextInt(int bound) { tr("nextInt(" + bound + ")"); return super.nextInt(bound); }
+        @Override public float nextFloat() { tr("nextFloat"); return super.nextFloat(); }
+    }
     static final String[] VARS = {
         "bLunge", "bMoving", "bPathfind", "bHasTarget", "bCanSeeTarget", "bAttack", "isFacingTarget", "alerted", "bThump",
         "bKnockedDown", "bOnFloor", "bStaggerBack", "hashitreaction", "AttackType", "AttackOutcome", "AttackDidDamage", "ZombieBiteDone",
@@ -114,7 +131,8 @@ public class ZombieAiProbe {
         IsoCamera.setCameraCharacter(pl);
         java.lang.reflect.Field rf = RandAbstract.class.getDeclaredField("rand");
         rf.setAccessible(true);
-        rf.set(RandStandard.INSTANCE, new Random(seed));
+        // PZ_RANDTRACE=1: every draw of the global Rand prints its Java stack on stderr (debug aid, not part of the oracle)
+        rf.set(RandStandard.INSTANCE, System.getenv("PZ_RANDTRACE") != null ? new TraceRandom(seed) : new Random(seed));
         java.lang.reflect.Field idf = RandAbstract.class.getDeclaredField("id");
         idf.setAccessible(true);
         idf.set(RandStandard.INSTANCE, 0);
@@ -142,6 +160,7 @@ public class ZombieAiProbe {
         Object pfb = z.getPathFindBehavior2();
         int prev = (Integer) ActionContextProbe.g(RandStandard.INSTANCE, "id");
         for (int n = 1; n <= ticks; n++) {
+            curTick = n;
             if (force) {
                 z.setTarget(pl);
                 ZombieProbe.set(z, IsoZombie.class, "timeSinceSeenFlesh", 0.0f);
@@ -170,10 +189,39 @@ public class ZombieAiProbe {
                 + " goal=" + ActionContextProbe.g(pfb, "goal")
                 + " " + vars(z));
             prev = draws;
+            // PZ_DBG=<from>:<to>: the movement internals of those ticks on stderr (debug aid, not part of the oracle)
+            String dbg = System.getenv("PZ_DBG");
+            if (dbg != null) {
+                String[] r = dbg.split(":");
+                if (n >= Integer.parseInt(r[0]) && n <= Integer.parseInt(r[1])) {
+                    System.err.println("DBG " + n + " x=" + z.getX() + " y=" + z.getY() + " nx=" + z.getNextX() + " ny=" + z.getNextY()
+                        + " lx=" + z.getLastX() + " ly=" + z.getLastY() + " tx=" + ActionContextProbe.g(pfb, "targetX") + " ty=" + ActionContextProbe.g(pfb, "targetY")
+                        + " updating=" + z.isAnimationUpdatingThisFrame() + " path2=" + (z.getPath2() != null)
+                        + " impulse=" + z.getImpulsex() + "," + z.getImpulsey());
+                }
+            }
         }
         out.println("END " + spec + " draws=" + ActionContextProbe.g(RandStandard.INSTANCE, "id"));
         cell.getObjectList().remove(z);
+        // leave no trace for the next scenario of this JVM: the zombie is in the moving-object list of every square it
+        // stood on or moved from, and a rustled bush keeps its `objectRenderEffects` (the headless world never updates it)
         sq.getMovingObjects().remove(z);
+        for (IsoGridSquare s2 : new IsoGridSquare[] {z.getCurrentSquare(), z.getLastSquare(), z.getMovingSquare()}) {
+            if (s2 != null) s2.getMovingObjects().remove(z);
+        }
+        for (int cx = 8272; cx < 8288; cx++) {
+            for (int cy = 11664; cy < 11680; cy++) {
+                for (int cz = 0; cz < 8; cz++) {
+                    IsoGridSquare s3 = cell.getGridSquare(cx, cy, cz);
+                    if (s3 == null) continue;
+                    s3.getMovingObjects().remove(z);
+                    for (int oi = 0; oi < s3.getObjects().size(); oi++) {
+                        IsoObject o3 = s3.getObjects().get(oi);
+                        if (o3.getObjectRenderEffects() != null) ZombieProbe.set(o3, IsoObject.class, "objectRenderEffects", null);
+                    }
+                }
+            }
+        }
         cell.getObjectList().remove(pl);
         psq.getMovingObjects().remove(pl);
         IsoPlayer.players[0] = null;
@@ -184,11 +232,48 @@ public class ZombieAiProbe {
         }
     }
 
+    // `zsq`: the collide, path and vision matrices the harness's chunk loading left on every square of the four loaded chunks
+    // (`loadInWorldStreamerThread`'s own pass sees only the squares of its chunk, so the bits across a chunk border stay as
+    // the square was made: blocked for movement), which `IsoGridSquare.testCollideAdjacent` reads
+    static void squareMatrices(PrintStream out, IsoCell cell) throws Exception {
+        if (!ActionContextProbe.chunksLoaded) {
+            ActionContextProbe.loadChunks(cell);
+            ActionContextProbe.chunksLoaded = true;
+            ServerLOS.init();
+        }
+        out.println("SCENARIO zsq");
+        for (int wx = 1034; wx <= 1035; wx++) {
+            for (int wy = 1458; wy <= 1459; wy++) {
+                IsoChunk ch = null;
+                for (Object o : ServerMap.instance.loadedCells) {
+                    ServerMap.ServerCell sc = (ServerMap.ServerCell) o;
+                    int cx = wx - sc.wx * 8, cy = wy - sc.wy * 8;
+                    if (cx >= 0 && cx < 8 && cy >= 0 && cy < 8 && sc.chunks[cx][cy] != null) ch = sc.chunks[cx][cy];
+                }
+                out.println("CHUNK " + wx + " " + wy + " levels=" + ch.getMinLevel() + ".." + ch.getMaxLevel());
+                for (int z = ch.getMinLevel(); z <= ch.getMaxLevel(); z++) {
+                    for (int y = 0; y < 8; y++) {
+                        for (int x = 0; x < 8; x++) {
+                            IsoGridSquare sq = ch.getGridSquare(x, y, z);
+                            if (sq == null) continue;
+                            out.println("SQ " + sq.getX() + "," + sq.getY() + "," + sq.getZ()
+                                + " c=" + Integer.toHexString((Integer) ActionContextProbe.g(sq, "collideMatrix"))
+                                + " p=" + Integer.toHexString((Integer) ActionContextProbe.g(sq, "pathMatrix"))
+                                + " v=" + Integer.toHexString((Integer) ActionContextProbe.g(sq, "visionMatrix")));
+                        }
+                    }
+                }
+            }
+        }
+        out.println("END zsq");
+    }
+
     public static void main(String[] a) throws Exception {
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
         ServerHarness.run(a[0], out -> {
             for (int i = 1; i < a.length; i++) {
-                if (a[i].startsWith("zai:")) scenario(out, a[i], zombie.iso.IsoWorld.instance.currentCell);
+                if (a[i].equals("zsq")) squareMatrices(out, zombie.iso.IsoWorld.instance.currentCell);
+                else if (a[i].startsWith("zai:")) scenario(out, a[i], zombie.iso.IsoWorld.instance.currentCell);
                 else throw new IllegalArgumentException("unknown scenario " + a[i]);
             }
         });
