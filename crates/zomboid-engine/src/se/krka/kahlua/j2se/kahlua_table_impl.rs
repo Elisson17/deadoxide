@@ -4,7 +4,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::java_nio::{read_string, read_string_stream, write_string, ByteBuffer, ByteBufferWriter};
+use crate::java_nio::{
+    read_string, read_string_stream, write_string, ByteBuffer, ByteBufferWriter,
+};
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
 use crate::se::krka::kahlua::vm::object::{

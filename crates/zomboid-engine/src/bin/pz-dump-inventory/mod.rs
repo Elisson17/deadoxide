@@ -6,13 +6,13 @@ use std::path::Path;
 use zomboid_engine::java;
 use zomboid_engine::java_nio::{ByteBuffer, ByteBufferWriter};
 use zomboid_engine::se::krka::kahlua::j2se::kahlua_table_impl::{KahluaTable, LuaValue};
-use zomboid_engine::zombie::iso::chunk_save::WORLD_VERSION;
 use zomboid_engine::se::krka::kahlua::vm::object::Object;
 use zomboid_engine::zombie::inventory::inventory_item::ItemType;
 use zomboid_engine::zombie::inventory::runtime::item::Kind;
 use zomboid_engine::zombie::inventory::runtime::{
     ContainerId, ItemId, LiveItem, Pred, Scripts, World,
 };
+use zomboid_engine::zombie::iso::chunk_save::WORLD_VERSION;
 use zomboid_engine::zombie::lua::lua_manager::{run_lua, LuaManager};
 use zomboid_engine::zombie::sandbox_options::SandboxOptions;
 use zomboid_engine::zombie::scripting::item::Value;
@@ -22,7 +22,6 @@ use zomboid_engine::zombie::scripting::script_manager::ScriptManager;
 fn hx(f: f32) -> String {
     format!("{:x}", f.to_bits())
 }
-
 
 /// InventoryProbe.hex
 fn hexs(b: &[u8]) -> String {
@@ -75,7 +74,10 @@ fn fields_text(it: &LiveItem) -> String {
     let mut put = |n: &str, v: String| {
         let _ = write!(b, " {n}={v}");
     };
-    put("table", it.mod_data.as_ref().map_or("null".into(), table_text));
+    put(
+        "table",
+        it.mod_data.as_ref().map_or("null".into(), table_text),
+    );
     put("customName", it.custom_name.to_string());
     put("customColor", it.custom_color.to_string());
     put(
@@ -135,7 +137,10 @@ fn fields_text(it: &LiveItem) -> String {
             put("lipids", f(fd.lipids));
             put("carbohydrates", f(fd.carbohydrates));
             put("dangerousUncooked", fd.dangerous_uncooked.to_string());
-            put("poisonDetectionLevel", fd.poison_detection_level.to_string());
+            put(
+                "poisonDetectionLevel",
+                fd.poison_detection_level.to_string(),
+            );
             put(
                 "spices",
                 fd.spices.as_ref().map_or("null".into(), |s| list_text(s)),

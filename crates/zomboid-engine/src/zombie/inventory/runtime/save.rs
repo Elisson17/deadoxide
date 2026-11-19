@@ -18,15 +18,19 @@ use crate::zombie::inventory::item_picker_roll::unported;
 impl World<'_> {
     /// InventoryItem.getModData: the table is made when it is first asked for.
     pub fn mod_data(&mut self, id: ItemId) -> &mut KahluaTable {
-        self.items[id].mod_data.get_or_insert_with(KahluaTable::default)
+        self.items[id]
+            .mod_data
+            .get_or_insert_with(KahluaTable::default)
     }
 
     /// InventoryItem.setCustomName(boolean): the flag, and modData `customName` is the item's name.
     pub fn set_custom_name(&mut self, id: ItemId, custom: bool) {
         self.items[id].custom_name = custom;
         let name = self.items[id].name.clone();
-        self.mod_data(id)
-            .rawset(LuaValue::String("customName".into()), LuaValue::String(name));
+        self.mod_data(id).rawset(
+            LuaValue::String("customName".into()),
+            LuaValue::String(name),
+        );
     }
 
     /// InventoryItem.save (ByteBuffer, boolean) with the class overrides of Food and Literature (each writes
@@ -73,12 +77,7 @@ impl World<'_> {
     }
 
     /// zombie.inventory.InventoryItem.save
-    fn save_base(
-        &self,
-        id: ItemId,
-        w: &mut ByteBufferWriter,
-        id_value: i32,
-    ) -> Result<(), String> {
+    fn save_base(&self, id: ItemId, w: &mut ByteBufferWriter, id_value: i32) -> Result<(), String> {
         let it = &self.items[id];
         w.put_short(it.registry_id);
         w.put(-1);
@@ -94,7 +93,8 @@ impl World<'_> {
             w.put(it.condition as i8);
         }
         // `visual != null` (flag 8): only clothing and weapons have one
-        if it.custom_color && (it.col[0] != 1.0 || it.col[1] != 1.0 || it.col[2] != 1.0 || it.col[3] != 1.0)
+        if it.custom_color
+            && (it.col[0] != 1.0 || it.col[1] != 1.0 || it.col[2] != 1.0 || it.col[3] != 1.0)
         {
             header.add_flags(16);
             for c in it.col {
@@ -211,7 +211,10 @@ impl World<'_> {
             bits.add_flags(536870912);
             w.put_int(it.model_index);
         }
-        if it.world_x_rotation != 0.0f32 || it.world_y_rotation != 0.0f32 || it.world_z_rotation != -1.0f32 {
+        if it.world_x_rotation != 0.0f32
+            || it.world_y_rotation != 0.0f32
+            || it.world_z_rotation != -1.0f32
+        {
             bits.add_flags(1073741824);
             w.put_float(it.world_x_rotation);
             w.put_float(it.world_y_rotation);
@@ -701,7 +704,9 @@ impl World<'_> {
             let size = b.get_int()?;
             // ByteBuffer.allocate(size): a negative size throws
             if size < 0 {
-                return Err(format!("java.lang.IllegalArgumentException: capacity < 0: ({size})"));
+                return Err(format!(
+                    "java.lang.IllegalArgumentException: capacity < 0: ({size})"
+                ));
             }
             self.items[id].byte_data = Some(b.get_bytes(size as usize)?.to_vec());
         }
@@ -866,7 +871,12 @@ impl World<'_> {
         let header = BitHeaderRead::alloc_read(HeaderSize::Byte, b)?;
         if !header.equals(0) {
             if header.has_flags(1)? {
-                let (cal, pro, lip, carb) = (b.get_float()?, b.get_float()?, b.get_float()?, b.get_float()?);
+                let (cal, pro, lip, carb) = (
+                    b.get_float()?,
+                    b.get_float()?,
+                    b.get_float()?,
+                    b.get_float()?,
+                );
                 let f = self.food_mut(id);
                 f.calories = cal;
                 f.proteins = pro;
@@ -1111,7 +1121,11 @@ impl World<'_> {
             let first = self.load_item(b, world_version)?;
             match first {
                 None => {
-                    let id_list_bytes = if identical > 1 { (identical - 1) as usize * 4 } else { 0 };
+                    let id_list_bytes = if identical > 1 {
+                        (identical - 1) as usize * 4
+                    } else {
+                        0
+                    };
                     b.set_position(b.position() + id_list_bytes)?;
                     for _ in 0..identical {
                         saved.push(None);

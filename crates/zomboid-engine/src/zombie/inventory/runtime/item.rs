@@ -1,12 +1,12 @@
 //! zombie.inventory.InventoryItem and the item classes `Item.InstanceItem` makes of the scripts the port models:
 //! ComboItem (`ItemType.NORMAL`), DrainableComboItem, Food and Literature.
+use crate::se::krka::kahlua::j2se::kahlua_table_impl::{KahluaTable, LuaValue};
 use crate::zombie::inventory::inventory_item::ItemType;
 use crate::zombie::inventory::item_picker_roll::firearm::ammo_item_key;
 use crate::zombie::inventory::item_picker_roll::{
     script_bool, script_complex, script_float, script_int, script_str, script_weight_capacity,
     unported,
 };
-use crate::se::krka::kahlua::j2se::kahlua_table_impl::{KahluaTable, LuaValue};
 use crate::zombie::scripting::item::Item;
 use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
@@ -465,7 +465,12 @@ impl LiveItem {
             script_int(item, "colorBlue"),
         );
         if cr < 255 || cg < 255 || cb < 255 {
-            it.col = [cr as f32 / 255.0f32, cg as f32 / 255.0f32, cb as f32 / 255.0f32, 1.0];
+            it.col = [
+                cr as f32 / 255.0f32,
+                cg as f32 / 255.0f32,
+                cb as f32 / 255.0f32,
+                1.0,
+            ];
         }
         it.color_red = cr as f32 / 255.0f32;
         it.color_green = cg as f32 / 255.0f32;

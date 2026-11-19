@@ -355,7 +355,8 @@ impl ScriptManager {
                 if !names.contains(&name) {
                     names.push(name.clone());
                     if tag == "item" {
-                        self.item_parse_order.push(format!("{}.{name}", module.name));
+                        self.item_parse_order
+                            .push(format!("{}.{name}", module.name));
                     }
                 }
                 module.last_file.insert(

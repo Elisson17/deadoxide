@@ -31,7 +31,11 @@ pub struct Scripts<'a> {
 
 impl<'a> Scripts<'a> {
     pub fn new(manager: &'a ScriptManager) -> Self {
-        let keys: Vec<&str> = manager.item_parse_order.iter().map(String::as_str).collect();
+        let keys: Vec<&str> = manager
+            .item_parse_order
+            .iter()
+            .map(String::as_str)
+            .collect();
         let mut registry = HashMap::new();
         let mut registry_types = HashMap::new();
         for (next, i) in crate::java::hash_map_order(&keys).into_iter().enumerate() {
