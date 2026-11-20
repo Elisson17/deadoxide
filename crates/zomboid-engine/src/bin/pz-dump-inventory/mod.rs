@@ -1113,6 +1113,103 @@ impl<'a> Scenario<'a> {
                 }
                 let _ = writeln!(out, "CAGAIN {} {}", p[2], bits_text(&again));
             }
+            // InventoryProbe `recordedmedia`: the media of a save, which this port does not model (an item that names one is
+            // skipped)
+            "recordedmedia" => {}
+            "rawitem" => {
+                // InventoryProbe `rawitem`: a block of a real save, loaded, its state, saved again
+                let raw = unhex(p[2])?;
+                let mut inp = ByteBuffer::wrap(&raw);
+                let back = match self.world.load_item(&mut inp, WORLD_VERSION) {
+                    Err(e) if e.starts_with("not ported") => {
+                        eprintln!("SKIPPED {}: {e}", p[1]);
+                        let _ = writeln!(out, "SKIPPED {}", p[1]);
+                        return Ok(());
+                    }
+                    r => r?,
+                };
+                let Some(back) = back else {
+                    let _ = writeln!(out, "RAWITEM {} null", p[1]);
+                    return Ok(());
+                };
+                if self.world.items[back].full_type == "Base.CorpseAnimal" {
+                    let _ = writeln!(out, "SKIPPED {}", p[1]);
+                    return Ok(());
+                }
+                let mut again = ByteBufferWriter::new();
+                self.world.save_item_with_size(back, &mut again)?;
+                let same = again.bytes() == &raw[..];
+                let _ = writeln!(
+                    out,
+                    "RAWITEM {} {}{} read={}/{} same={}{}",
+                    p[1],
+                    self.show(back),
+                    fields_text(&self.world.items[back]),
+                    inp.position(),
+                    inp.limit(),
+                    u8::from(same),
+                    if same {
+                        String::new()
+                    } else {
+                        format!(" again={}", bits_text(&again))
+                    }
+                );
+            }
+            "rawcont" => {
+                // InventoryProbe `rawcont`: the bytes of an ItemContainer.save of a real save
+                let raw = unhex(p[2])?;
+                let mut inp = ByteBuffer::wrap(&raw);
+                let n = self.world.new_container("", 50);
+                match self.world.container_load(n, &mut inp, WORLD_VERSION) {
+                    Err(e) if e.starts_with("not ported") => {
+                        eprintln!("SKIPPED {}: {e}", p[1]);
+                        let _ = writeln!(out, "SKIPPED {}", p[1]);
+                        return Ok(());
+                    }
+                    r => {
+                        r?;
+                    }
+                }
+                let items: Vec<ItemId> = self.world.containers[n].items.clone();
+                if items
+                    .iter()
+                    .any(|&i| self.world.items[i].full_type == "Base.CorpseAnimal")
+                {
+                    let _ = writeln!(out, "SKIPPED {}", p[1]);
+                    return Ok(());
+                }
+                let mut again = ByteBufferWriter::new();
+                self.world.container_save(n, &mut again)?;
+                let same = again.bytes() == &raw[..];
+                let c = &self.world.containers[n];
+                let _ = writeln!(
+                    out,
+                    "RAWCONT {} type={} capacity={} explored={} looted={} items={} read={}/{} same={}{}",
+                    p[1],
+                    c.type_name,
+                    c.capacity,
+                    c.explored,
+                    c.has_been_looted,
+                    items.len(),
+                    inp.position(),
+                    inp.limit(),
+                    u8::from(same),
+                    if same {
+                        String::new()
+                    } else {
+                        format!(" again={}", bits_text(&again))
+                    }
+                );
+                for i in items {
+                    let _ = writeln!(
+                        out,
+                        "LOADED {} {}{}",
+                        p[1],
+                        self.show(i),
+                        fields_text(&self.world.items[i])
+                    );
+                }
+            }
             "createsave" => {
                 let mut all = self.world.scripts.manager.all_items();
                 all.sort_by_key(|&i| {
