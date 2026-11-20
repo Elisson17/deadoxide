@@ -166,6 +166,7 @@ impl AnimatorOwner for ZombieOwner<'_> {
         layer_state_name: Option<&str>,
         _track: Option<&AnimationTrack>,
         event: &AnimEvent,
+        _rand: &mut RandAbstract<Random>,
     ) -> Result<(), String> {
         let Some(name) = event.event_name.as_deref() else {
             return Ok(());
@@ -256,6 +257,14 @@ pub enum ZombieState {
     FaceTarget,
     /// zombie.ai.states.WalkTowardState
     WalkToward,
+    /// zombie.ai.states.StaggerBackState
+    StaggerBack,
+    /// zombie.ai.states.ZombieFallDownState
+    FallDown,
+    /// zombie.ai.states.ZombieOnGroundState
+    OnGround,
+    /// zombie.ai.states.ZombieGetUpState
+    GetUp,
 }
 
 impl ZombieState {
@@ -268,6 +277,10 @@ impl ZombieState {
             ZombieState::Attack => "AttackState",
             ZombieState::FaceTarget => "ZombieFaceTargetState",
             ZombieState::WalkToward => "WalkTowardState",
+            ZombieState::StaggerBack => "StaggerBackState",
+            ZombieState::FallDown => "ZombieFallDownState",
+            ZombieState::OnGround => "ZombieOnGroundState",
+            ZombieState::GetUp => "ZombieGetUpState",
         }
     }
 }
@@ -344,6 +357,23 @@ pub struct SpState {
     pub move_delta: f32,
     /// `knockedDown`
     pub knocked_down: bool,
+    /// IsoZombie `hitTime` (hits taken), IsoGameCharacter `hitForce`, `staggerTimeMod`, `hitDir`, `hitReaction`,
+    /// IsoZombie `staggerBack`, `becomeCrawler`, `usePhysicHitReaction`, `fallOnFront`, `lastHitPart` (BodyPartType
+    /// ordinal)
+    pub hit_time: i32,
+    pub hit_force: f32,
+    pub stagger_time_mod: f32,
+    pub hit_dir: Vector2,
+    pub hit_reaction: String,
+    pub stagger_back: bool,
+    pub become_crawler: bool,
+    pub use_physic_hit_reaction: bool,
+    pub fall_on_front: bool,
+    pub last_hit_part: i32,
+    /// IsoGameCharacter `blockTurning` (set while falling down) and `reanimateTimer`; ZombieGetUpState's `PREV_STATE`
+    pub block_turning: bool,
+    pub reanimate_timer: f32,
+    pub get_up_prev_state: Option<ZombieState>,
     /// `canSeeTarget`
     pub can_see_target: bool,
     pub alerted: bool,
@@ -408,6 +438,19 @@ impl Default for SpState {
             max_twist: 15.0,
             move_delta: 1.0,
             knocked_down: false,
+            hit_time: 0,
+            hit_force: 0.0,
+            stagger_time_mod: 0.0,
+            hit_dir: Vector2::default(),
+            hit_reaction: String::new(),
+            stagger_back: false,
+            become_crawler: false,
+            use_physic_hit_reaction: false,
+            fall_on_front: false,
+            last_hit_part: 0,
+            block_turning: false,
+            reanimate_timer: 0.0,
+            get_up_prev_state: None,
             can_see_target: false,
             alerted: false,
             lunge_timer: 0.0,

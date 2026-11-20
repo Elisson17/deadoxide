@@ -77,9 +77,15 @@ public class ZombieAiProbe {
         float dx = Float.parseFloat(p[3]);
         float dy = Float.parseFloat(p[4]);
         boolean force = p[5].equals("force") || p[5].startsWith("hit");
-        // `hit<N>`: like force, and at tick N the player stand-in hits the zombie with a baseball bat (exploration of the
-        // states a hit leads to; the port does not run it)
-        int hitTick = p[5].startsWith("hit") ? Integer.parseInt(p[5].substring(3)) : -1;
+        // `hit<N>[,<M>...][@<weapon>[@<damageSplit>[@<flags>]]]`: like force, and at tick N (and M, ...) the player stand-in hits
+        // the zombie through `IsoZombie.Hit(weapon, player, damageSplit, false, 1.0f, false)` with the item of that script
+        // (default Base.BaseballBat, 1.0); flags: `c` = the wielder's critical hit is set before the hit
+        String[] hm = p[5].split("@");
+        java.util.Set<Integer> hitTicks = new java.util.HashSet<>();
+        if (hm[0].startsWith("hit")) for (String t : hm[0].substring(3).split(",")) hitTicks.add(Integer.parseInt(t));
+        String hitWeapon = hm.length > 1 ? hm[1] : "Base.BaseballBat";
+        float hitSplit = hm.length > 2 ? Float.parseFloat(hm[2]) : 1.0f;
+        String hitFlags = hm.length > 3 ? hm[3] : "";
         if (!ActionContextProbe.chunksLoaded) {
             ActionContextProbe.loadChunks(cell);
             ActionContextProbe.chunksLoaded = true;
@@ -165,10 +171,20 @@ public class ZombieAiProbe {
                 z.setTarget(pl);
                 ZombieProbe.set(z, IsoZombie.class, "timeSinceSeenFlesh", 0.0f);
             }
-            if (n == hitTick) {
+            if (hitTicks.contains(n)) {
                 try {
-                    zombie.inventory.types.HandWeapon bat = (zombie.inventory.types.HandWeapon) zombie.inventory.InventoryItemFactory.CreateItem("Base.BaseballBat");
-                    float dmg = z.Hit(bat, pl, 1.0f, false, 1.0f, false);
+                    zombie.inventory.types.HandWeapon bat = (zombie.inventory.types.HandWeapon) zombie.inventory.InventoryItemFactory.CreateItem(hitWeapon);
+                    pl.setCriticalHit(hitFlags.contains("c"));
+                    if (System.getenv("PZ_HITINFO") != null) {
+                        System.err.println("HITINFO shovingMod=" + pl.getShovingMod() + " strongTrait=" + pl.getCharacterTraits().get(zombie.scripting.objects.CharacterTrait.STRONG)
+                            + " weakTrait=" + pl.getCharacterTraits().get(zombie.scripting.objects.CharacterTrait.WEAK) + " endurance=" + pl.getStats().get(zombie.characters.CharacterStat.ENDURANCE)
+                            + " knockbackAttackMod=" + ActionContextProbe.g(pl, "knockbackAttackMod") + " doShove=" + pl.isDoShove() + " aimAtFloor=" + pl.isAimAtFloor() + " crit=" + pl.isCriticalHit()
+                            + " weaponLevel=" + pl.getWeaponLevel() + " bothHands=" + pl.isItemInBothHands(bat) + " twoHand=" + bat.isTwoHandWeapon() + " ranged=" + bat.isRanged()
+                            + " staggerMod=" + bat.getStaggerBackTimeMod(pl, z) + " splat=" + bat.isSplatBloodOnNoDeath() + " knockback=" + bat.isKnockBackOnNoDeath() + " crit=" + bat.getCriticalDamageMultiplier()
+                            + " hasSharp=" + bat.hasSharpness() + " sharp=" + bat.getSharpness() + " sharpMult=" + bat.getSharpnessMultiplier() + " cond=" + bat.getCondition() + "/" + bat.getConditionMax() + " zhitReaction=" + pl.getVariableString("ZombieHitReaction") + " zdir=" + z.getForwardDirection().x + "," + z.getForwardDirection().y + " hitTime=" + z.getHitTime()
+                            + " fwd=" + pl.getForwardDirection().x + "," + pl.getForwardDirection().y + " invulnerable=" + z.isInvulnerable());
+                    }
+                    float dmg = z.Hit(bat, pl, hitSplit, false, 1.0f, false);
                     out.println("HIT damage=" + dmg + " hp=" + z.getHealth() + " dead=" + z.isDead() + " knockedDown=" + z.isKnockedDown() + " staggerBack=" + z.isStaggerBack() + " hitReaction=" + z.getHitReaction());
                 } catch (Throwable t) {
                     out.println("HIT-ERR " + t);

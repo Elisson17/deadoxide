@@ -252,6 +252,34 @@ sel pathsearch && server_case pathsearch PathProbe \
   "psearch:1033:1457:1038:1462:150:21:zombie:sq" "psearch:1033:1457:1038:1462:150:22:player:sq" \
   "psearch:1033:1457:1038:1462:100:23:crawler:sq" "psearch:1008:1448:1015:1455:150:24:player:sq" \
   "psearch:1008:1448:1015:1455:150:25:zombie:sq"
+# the ORIGINAL IsoZombie.Hit run headless in the same single-player harness (zai:<seed>:<ticks>:<dx>:<dy>:hit<N>[,<M>...]
+# [@<weapon>[@<damage split>[@c]]]; `c` = critical hit): at those ticks the player stand-in hits the zombie with a bat, axe,
+# hunting knife, lead pipe or bare hands (E65b): the hit's draws (the item creation, the body part, processHit, the blood),
+# the damage, StaggerBackState after a plain hit within reach, and after a critical hit ZombieFallDownState,
+# ZombieOnGroundState and ZombieGetUpState (the reanimate timer), from several directions, with repeated hits
+sel zombiehit && server_case zombiehit ZombieAiProbe \
+  "zai:11:150:2.0:0:hit20@Base.BaseballBat@1.0" "zai:11:150:2.0:0:hit20@Base.Axe@1.0" \
+  "zai:11:150:2.0:0:hit20@Base.HuntingKnife@1.0" "zai:11:150:2.0:0:hit20@Base.LeadPipe@1.0" \
+  "zai:11:150:2.0:0:hit20@Base.BareHands@1.0" "zai:11:150:0.5:0:hit20@Base.BaseballBat@1.0" \
+  "zai:11:150:0.5:0:hit20@Base.Axe@1.0" "zai:11:150:0.5:0:hit20@Base.HuntingKnife@1.0" \
+  "zai:11:150:0.5:0:hit20@Base.LeadPipe@1.0" "zai:11:150:0.5:0:hit20@Base.BareHands@1.0" \
+  "zai:12:150:2.0:0:hit20@Base.BaseballBat@1.0" "zai:12:150:2.0:0:hit20@Base.Axe@1.0" \
+  "zai:12:150:2.0:0:hit20@Base.HuntingKnife@1.0" "zai:12:150:2.0:0:hit20@Base.LeadPipe@1.0" \
+  "zai:12:150:2.0:0:hit20@Base.BareHands@1.0" "zai:12:150:0.5:0:hit20@Base.BaseballBat@1.0" \
+  "zai:12:150:0.5:0:hit20@Base.Axe@1.0" "zai:12:150:0.5:0:hit20@Base.HuntingKnife@1.0" \
+  "zai:12:150:0.5:0:hit20@Base.LeadPipe@1.0" "zai:12:150:0.5:0:hit20@Base.BareHands@1.0" \
+  "zai:21:200:2.0:0:hit20@Base.BaseballBat@1.0@c" "zai:21:200:2.0:0:hit20@Base.Axe@1.0@c" \
+  "zai:21:200:2.0:0:hit20@Base.HuntingKnife@1.0@c" "zai:21:200:2.0:0:hit20@Base.LeadPipe@1.0@c" \
+  "zai:21:200:2.0:0:hit20@Base.BareHands@1.0@c" "zai:31:400:3.0:0:hit20@Base.BaseballBat@1.0@c" \
+  "zai:32:400:3.0:0:hit20@Base.Axe@1.0@c" "zai:33:400:3.0:0:hit20@Base.HuntingKnife@1.0@c" \
+  "zai:34:400:3.0:0:hit20@Base.LeadPipe@1.0@c" "zai:35:400:3.0:0:hit20@Base.BareHands@1.0@c" \
+  "zai:36:400:4.0:-3.0:hit30@Base.BaseballBat@1.0@c" "zai:41:200:0:2.0:hit20@Base.BaseballBat@1.0" \
+  "zai:42:200:-2.0:0:hit20@Base.Axe@1.0" "zai:43:200:0:-2.0:hit20@Base.LeadPipe@1.0" \
+  "zai:44:200:1.5:1.5:hit20@Base.HuntingKnife@1.0" "zai:45:200:-1.5:-1.5:hit20@Base.BareHands@1.0" \
+  "zai:46:200:0:0.5:hit20@Base.BaseballBat@1.0@c" "zai:47:180:-0.5:0:hit20@Base.Axe@1.0@c" \
+  "zai:48:200:3.0:3.0:hit25@Base.LeadPipe@1.0@c" "zai:51:250:2.0:0:hit20,60@Base.BaseballBat@1.0" \
+  "zai:52:250:0.5:0:hit20,50,80,110,140@Base.LeadPipe@1.0" "zai:53:250:3.0:0:hit20,25,30,35,40@Base.BareHands@1.0" \
+  "zai:54:250:2.0:0:hit20,60,100@Base.Axe@0.5" "zai:55:250:0.5:0:hit20,24@Base.HuntingKnife@0.5"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin

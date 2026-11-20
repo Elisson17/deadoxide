@@ -413,6 +413,60 @@ fn pathsearch_matches_original() {
 }
 
 #[test]
+fn zombiehit_matches_original() {
+    // ZombieAiProbe's hit scenarios; keep in step with the `zombiehit` line of tools/oracle.sh
+    check(
+        "zombiehit",
+        &[
+            "zai:11:150:2.0:0:hit20@Base.BaseballBat@1.0",
+            "zai:11:150:2.0:0:hit20@Base.Axe@1.0",
+            "zai:11:150:2.0:0:hit20@Base.HuntingKnife@1.0",
+            "zai:11:150:2.0:0:hit20@Base.LeadPipe@1.0",
+            "zai:11:150:2.0:0:hit20@Base.BareHands@1.0",
+            "zai:11:150:0.5:0:hit20@Base.BaseballBat@1.0",
+            "zai:11:150:0.5:0:hit20@Base.Axe@1.0",
+            "zai:11:150:0.5:0:hit20@Base.HuntingKnife@1.0",
+            "zai:11:150:0.5:0:hit20@Base.LeadPipe@1.0",
+            "zai:11:150:0.5:0:hit20@Base.BareHands@1.0",
+            "zai:12:150:2.0:0:hit20@Base.BaseballBat@1.0",
+            "zai:12:150:2.0:0:hit20@Base.Axe@1.0",
+            "zai:12:150:2.0:0:hit20@Base.HuntingKnife@1.0",
+            "zai:12:150:2.0:0:hit20@Base.LeadPipe@1.0",
+            "zai:12:150:2.0:0:hit20@Base.BareHands@1.0",
+            "zai:12:150:0.5:0:hit20@Base.BaseballBat@1.0",
+            "zai:12:150:0.5:0:hit20@Base.Axe@1.0",
+            "zai:12:150:0.5:0:hit20@Base.HuntingKnife@1.0",
+            "zai:12:150:0.5:0:hit20@Base.LeadPipe@1.0",
+            "zai:12:150:0.5:0:hit20@Base.BareHands@1.0",
+            "zai:21:200:2.0:0:hit20@Base.BaseballBat@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.Axe@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.HuntingKnife@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.LeadPipe@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.BareHands@1.0@c",
+            "zai:31:400:3.0:0:hit20@Base.BaseballBat@1.0@c",
+            "zai:32:400:3.0:0:hit20@Base.Axe@1.0@c",
+            "zai:33:400:3.0:0:hit20@Base.HuntingKnife@1.0@c",
+            "zai:34:400:3.0:0:hit20@Base.LeadPipe@1.0@c",
+            "zai:35:400:3.0:0:hit20@Base.BareHands@1.0@c",
+            "zai:36:400:4.0:-3.0:hit30@Base.BaseballBat@1.0@c",
+            "zai:41:200:0:2.0:hit20@Base.BaseballBat@1.0",
+            "zai:42:200:-2.0:0:hit20@Base.Axe@1.0",
+            "zai:43:200:0:-2.0:hit20@Base.LeadPipe@1.0",
+            "zai:44:200:1.5:1.5:hit20@Base.HuntingKnife@1.0",
+            "zai:45:200:-1.5:-1.5:hit20@Base.BareHands@1.0",
+            "zai:46:200:0:0.5:hit20@Base.BaseballBat@1.0@c",
+            "zai:47:180:-0.5:0:hit20@Base.Axe@1.0@c",
+            "zai:48:200:3.0:3.0:hit25@Base.LeadPipe@1.0@c",
+            "zai:51:250:2.0:0:hit20,60@Base.BaseballBat@1.0",
+            "zai:52:250:0.5:0:hit20,50,80,110,140@Base.LeadPipe@1.0",
+            "zai:53:250:3.0:0:hit20,25,30,35,40@Base.BareHands@1.0",
+            "zai:54:250:2.0:0:hit20,60,100@Base.Axe@0.5",
+            "zai:55:250:0.5:0:hit20,24@Base.HuntingKnife@0.5",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");
