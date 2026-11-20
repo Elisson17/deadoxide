@@ -447,8 +447,8 @@ impl IsoZombie {
         }
         // setTarget(wielder): `GameClient.client` is false
         self.sp.target = true;
-        // `!GameServer.server && !GameClient.client`: setKnockedDown(crit || onFloor || alwaysKnockedDown)
-        self.sp.knocked_down = rd.world.player.critical_hit || self.on_floor || false;
+        // `!GameServer.server && !GameClient.client`: setKnockedDown(crit || onFloor || alwaysKnockedDown), the zombie is never always knocked down
+        self.sp.knocked_down = rd.world.player.critical_hit || self.on_floor;
         // checkClimbOverFenceHit / checkClimbThroughWindowHit: the zombie is in neither state
         if self.should_become_crawler(world, rd) {
             self.sp.become_crawler = true;
@@ -488,14 +488,14 @@ impl IsoZombie {
             self.sp.use_physic_hit_reaction = false;
         } else {
             let _chance = world.rand.next_float(0.0, 100.0);
-            self.sp.use_physic_hit_reaction = false && weapon.ranged;
+            // only a ranged weapon uses the result (a ranged weapon is an `Err` in `HitWeapon::from_item`)
+            self.sp.use_physic_hit_reaction = false;
         }
         // calculateShotDirection(wielder, target)
         self.calculate_shot_direction(world);
         // applyBlood with HitReaction.NONE: the default branch
-        if weapon.is_of_category("blunt") {
-            let _part = world.rand.next_range(BLOOD_UPPER_ARM_L, BLOOD_GROIN);
-        } else if !weapon.is_of_category("unarmed") {
+        // (a blunt weapon and any weapon that is not unarmed draw the same random body part)
+        if weapon.is_of_category("blunt") || !weapon.is_of_category("unarmed") {
             let _part = world.rand.next_range(BLOOD_UPPER_ARM_L, BLOOD_GROIN);
         }
         // `target instanceof IsoZombie && getEatBodyTarget() != null`: the zombie eats nothing here
@@ -529,9 +529,9 @@ impl IsoZombie {
         // the result is not read by a melee hit; only the draws matter
         if deg < 45.0 || (180.0..225.0).contains(&deg) {
             let _ = world.rand.next(9);
-        } else if (deg >= 45.0 && deg < 90.0)
-            || (deg >= 135.0 && deg < 180.0)
-            || (deg >= 225.0 && deg < 270.0)
+        } else if (45.0..90.0).contains(&deg)
+            || (135.0..180.0).contains(&deg)
+            || (225.0..270.0).contains(&deg)
             || deg >= 315.0
         {
             let _ = world.rand.next(4);
@@ -674,13 +674,8 @@ impl IsoZombie {
     /// zombie.ai.states.StaggerBackState.enter: `stateEventDelayTimer = getMaxStaggerTime` (no network).
     pub(crate) fn stagger_back_enter(&mut self) {
         // getMaxStaggerTime: `35 * hitForce * staggerTimeMod`, clamped to 20..30
-        let mut time = 35.0f32 * self.sp.hit_force * self.sp.stagger_time_mod;
-        if time < 20.0 {
-            time = 20.0;
-        } else if time > 30.0 {
-            time = 30.0;
-        }
-        self.character.moving.state_event_delay_timer = time;
+        let time = 35.0f32 * self.sp.hit_force * self.sp.stagger_time_mod;
+        self.character.moving.state_event_delay_timer = time.clamp(20.0, 30.0);
     }
 
     /// zombie.ai.states.StaggerBackState.execute: `getAnimationPlayer().setTargetToAngle()`

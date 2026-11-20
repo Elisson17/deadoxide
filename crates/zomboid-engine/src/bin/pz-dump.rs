@@ -10857,6 +10857,7 @@ pub fn zombieai(root: &Path, scenarios: &[String]) -> Result<String, String> {
 /// ZombieAiProbe.scenario: the zombie of a seed on the square (8280, 11670, 0) and a player stand-in (8280.5 + dx,
 /// 11670.5 + dy) in the single-player world, ticked as the world ticks its objects (`tick_sp`). `force` sets the
 /// zombie's target to the player (and `timeSinceSeenFlesh` to 0) before every tick.
+#[allow(clippy::too_many_arguments)]
 fn zombie_ai_scenario(
     sb: &mut String,
     spec: &str,
