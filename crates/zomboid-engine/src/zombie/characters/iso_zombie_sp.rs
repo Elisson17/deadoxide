@@ -16,8 +16,9 @@ use std::rc::Rc;
 
 use super::action::action_context::ActionContext;
 use super::iso_zombie::{IsoZombie, ZombieAnim, ZombieState, ZombieWorld, ANIM_EVENT_HANDLERS};
-use crate::java;
+use crate::java::{self, Random};
 use crate::zombie::core::math::pz_math;
+use crate::zombie::core::random::rand_abstract::RandAbstract;
 use crate::zombie::core::skinnedmodel::advancedanimation::advanced_animator::{AnimatorOwner, Env};
 use crate::zombie::core::skinnedmodel::advancedanimation::anim_event::{
     AnimEvent, AnimEventKind, AnimEventTime,
@@ -32,10 +33,16 @@ use crate::zombie::core::skinnedmodel::animation::animation_player::{
 };
 use crate::zombie::core::skinnedmodel::animation::animation_track::AnimationTrack;
 use crate::zombie::core::tile_property_alias_map::TilePropertyAliasMap;
+use crate::zombie::game_sounds::GameSounds;
 use crate::zombie::iso::iso_grid_square::{GetSquare, IsoGridSquare};
 use crate::zombie::iso::sprite::iso_sprite_manager::IsoSpriteManager;
 use crate::zombie::iso::vector2::Vector2;
 use crate::zombie::util::string_utils;
+
+/// java.lang.Boolean.parseBoolean: true for the text "true" in any case, false for null
+fn parse_boolean(v: Option<&str>) -> bool {
+    v.is_some_and(|t| java::equals_ignore_case(t, "true"))
+}
 
 /// zombie.characters.IsoPlayer, as much as a zombie reads of the player it targets.
 #[derive(Clone, Debug)]
@@ -62,6 +69,9 @@ pub struct SinglePlayerWorld {
     pub sprites: Rc<IsoSpriteManager>,
     /// the zombie's `IsoMovingObject.getID()`: the scenario's second moving object (the player stand-in is the first)
     pub zombie_object_id: i32,
+    /// `GameSounds` after `ScriptManager.Load`: the sounds a `PlaySound` animation event picks a clip of (`None`: the
+    /// sound scripts are not loaded and such an event is an `Err`)
+    pub game_sounds: Option<Rc<GameSounds>>,
 }
 
 impl SinglePlayerWorld {
@@ -575,7 +585,15 @@ impl IsoZombie {
             "hitdir.y" => f(self.sp.hit_dir.y),
             "fallonfront" => b(self.sp.fall_on_front),
             "bbecomecrawler" => b(self.sp.become_crawler),
+            "reanimatetimer" => f(self.sp.reanimate_timer),
             "usephysichitreaction" => b(self.sp.use_physic_hit_reaction),
+            "bbeingsteppedon" => match self.is_being_stepped_on(rd) {
+                Ok(v) => b(v),
+                Err(e) => {
+                    rd.flag(&e);
+                    None
+                }
+            },
             "bcrawling" => b(self.crawling),
             "bdead" => b(self.character.health <= 0.0),
             "alerted" => b(self.sp.alerted),
@@ -871,7 +889,9 @@ impl IsoZombie {
     /// `ZombieFallDownState` is not ported).
     fn should_be_turning(&self) -> bool {
         let is_twisting = self.is_twisting();
-        if self.is_behaviour_moving() {
+        if self.current_state == Some(ZombieState::FallDown) || self.sp.block_turning {
+            false
+        } else if self.is_behaviour_moving() {
             is_twisting
         } else if self.current_state == Some(ZombieState::Attack) {
             // isAttacking(): `!this.aimAtFloor`
@@ -924,6 +944,7 @@ impl IsoZombie {
         &mut self,
         anim: &mut ZombieAnim,
         rd: &SpRead,
+        rand: &mut RandAbstract<Random>,
         is_turning_around: bool,
     ) -> Result<(), String> {
         let is_different = self.sp.is_turning_around != is_turning_around;
@@ -933,7 +954,7 @@ impl IsoZombie {
             let previous_target_angle = self.sp.initial_turning_around_target;
             let current_target_angle = to_degrees(self.direction_angle_radians());
             if is_different && is_turning_around {
-                self.invoke_global_anim_event(anim, rd, "Turn180Started")?;
+                self.invoke_global_anim_event(anim, rd, rand, "Turn180Started")?;
                 self.sp.initial_turning_around_target = current_target_angle;
             }
             if !is_different && was_turning_around {
@@ -942,7 +963,7 @@ impl IsoZombie {
                     pz_math::deg_to_rad(current_target_angle),
                 ));
                 if pz_abs(angle_diff) > 90.0f32 {
-                    self.invoke_global_anim_event(anim, rd, "Turn180TargetChanged")?;
+                    self.invoke_global_anim_event(anim, rd, rand, "Turn180TargetChanged")?;
                     self.sp.is_turning_around = false;
                 }
             }
@@ -956,6 +977,7 @@ impl IsoZombie {
         &mut self,
         anim: &mut ZombieAnim,
         rd: &SpRead,
+        rand: &mut RandAbstract<Random>,
         name: &str,
     ) -> Result<(), String> {
         let event = AnimEvent {
@@ -968,7 +990,7 @@ impl IsoZombie {
             ctx: &mut anim.action_context,
             rd,
         };
-        owner.on_anim_event(-1, None, None, &event)
+        owner.on_anim_event(-1, None, None, &event, rand)
     }
 
     /// `getAnimationPlayer()`: the animation player is made on first use.
@@ -1038,7 +1060,13 @@ impl IsoZombie {
         // `cur != StaggerBackState && != BurntToDeath && != FakeDeadZombieState && != ZombieFallDownState && !=
         // ZombieOnGroundState && != ZombieHitReactionState && != ZombieGetUpState` guards everything below (the
         // walk animation choice, the thump test, `damageSheetRope`, the target vector, `separate`, the corpse search)
-        if matches!(cur, Some(ZombieState::StaggerBack)) {
+        if matches!(
+            cur,
+            Some(ZombieState::StaggerBack)
+                | Some(ZombieState::FallDown)
+                | Some(ZombieState::OnGround)
+                | Some(ZombieState::GetUp)
+        ) {
             return Ok(());
         }
         // `cur == PathFindState && finder.progress == notyetfound`: PlayAnim("ZombieIdle"), then
@@ -1103,6 +1131,9 @@ impl IsoZombie {
                 self.stagger_back_execute();
                 Ok(())
             }
+            // ZombieFallDownState and ZombieGetUpState have no execute (the base State's is empty)
+            Some(ZombieState::FallDown) | Some(ZombieState::GetUp) => Ok(()),
+            Some(ZombieState::OnGround) => self.on_ground_execute(world, rd),
         }
     }
 
@@ -1124,6 +1155,12 @@ impl IsoZombie {
                 self.stagger_back_enter();
                 Ok(())
             }
+            ZombieState::FallDown => {
+                self.fall_down_enter(world);
+                Ok(())
+            }
+            ZombieState::OnGround => self.on_ground_enter(world),
+            ZombieState::GetUp => self.get_up_enter(),
         }
     }
 
@@ -1135,6 +1172,16 @@ impl IsoZombie {
             ZombieState::WalkToward => self.walk_toward_exit(),
             ZombieState::StaggerBack => {
                 self.stagger_back_exit();
+                Ok(())
+            }
+            ZombieState::FallDown => {
+                self.fall_down_exit();
+                Ok(())
+            }
+            // ZombieOnGroundState.exit is empty
+            ZombieState::OnGround => Ok(()),
+            ZombieState::GetUp => {
+                self.get_up_exit();
                 Ok(())
             }
         }
@@ -1225,7 +1272,7 @@ impl IsoZombie {
         let t90 = self.should_be_turning90();
         self.sp.is_turning90 = t90;
         let ta = self.should_be_turning_around();
-        self.set_turning_around(anim, rd, ta)?;
+        self.set_turning_around(anim, rd, &mut world.rand, ta)?;
         let changed = {
             let view = SpView { z: self, rd };
             anim.action_context.update(&view)
@@ -1371,6 +1418,37 @@ struct SpOwner<'a> {
     rd: &'a SpRead<'a>,
 }
 
+impl SpOwner<'_> {
+    /// CharacterSoundEmitter.playSoundImpl(file, proxy) -> FMODSoundEmitter.playSoundImpl: `GameSounds.getSound(file)`
+    /// is null for a null or empty name (nothing is played, no draw); else `getRandomClip()` draws
+    /// `Rand.Next(clips.size())` and `addSound` draws nothing. A sound no script defines is made by
+    /// `getOrCreateSound` with one clip. The sound's own playing (FMOD) changes no state this port keeps.
+    fn play_sound_impl(
+        &mut self,
+        file: Option<&str>,
+        rand: &mut RandAbstract<Random>,
+    ) -> Result<(), String> {
+        let Some(file) = file.filter(|f| !f.is_empty()) else {
+            return Ok(());
+        };
+        let sounds = self
+            .rd
+            .world
+            .game_sounds
+            .as_ref()
+            .ok_or("PlaySound: the sound scripts are not loaded")?;
+        match sounds.sound_by_name.get(file) {
+            Some(&index) => {
+                sounds.sound(index).get_random_clip(rand)?;
+            }
+            None => {
+                rand.next(1);
+            }
+        }
+        Ok(())
+    }
+}
+
 impl IAnimationVariableSource for SpOwner<'_> {
     fn get_variable(&self, key: &str) -> Option<AnimationVariableSlot> {
         self.ctx
@@ -1392,6 +1470,7 @@ impl AnimatorOwner for SpOwner<'_> {
         layer_state_name: Option<&str>,
         _track: Option<&AnimationTrack>,
         event: &AnimEvent,
+        rand: &mut RandAbstract<Random>,
     ) -> Result<(), String> {
         let Some(name) = event.event_name.as_deref() else {
             return Ok(());
@@ -1429,6 +1508,30 @@ impl AnimatorOwner for SpOwner<'_> {
                 // IsoZombie.DoFootstepSound(type): the sound manager's listener test and the zombie footstep manager's
                 // queue (audio only; no state, no random draw: the oracle's draw counts cover it)
                 (_, "footstep") => {}
+                // IsoGameCharacter.OnAnimEvent_PlaySound: `getEmitter().playSoundImpl(file, this)`
+                (_, "playsound") => self.play_sound_impl(event.parameter_value.as_deref(), rand)?,
+                // OnAnimEvent_PlaySoundNoBlend asks the layer whether it blends: no zombie animation raises it
+                (_, "playsoundnoblend") => {
+                    return Err(
+                        "IsoGameCharacter.OnAnimEvent_PlaySoundNoBlend is not ported".into(),
+                    )
+                }
+                // IsoGameCharacter.OnAnimEvent_FallOnFront / _SetOnFloor / _SetKnockedDown: the boolean listeners
+                // (`Boolean.parseBoolean(event.parameterValue)`); `GameClient.client` is false
+                (_, "fallonfront") => {
+                    self.z.sp.fall_on_front = parse_boolean(event.parameter_value.as_deref())
+                }
+                (_, "setonfloor") => {
+                    self.z.on_floor = parse_boolean(event.parameter_value.as_deref())
+                }
+                (_, "setknockeddown") => {
+                    self.z.sp.knocked_down = parse_boolean(event.parameter_value.as_deref())
+                }
+                // OnAnimEvent_IsAlmostUp: setOnFloor(false), setKnockedDown(false), setSitOnGround(false)
+                (_, "isalmostup") => {
+                    self.z.on_floor = false;
+                    self.z.sp.knocked_down = false;
+                }
                 _ => {
                     return Err(format!(
                         "IsoGameCharacter.OnAnimEvent: the handler of '{name}' is not ported"
@@ -1441,6 +1544,24 @@ impl AnimatorOwner for SpOwner<'_> {
             // StateMachine.stateAnimEvent: the current state's animEvent
             if self.z.current_state == Some(ZombieState::Attack) {
                 self.z.attack_anim_event(self.ctx, self.rd, event)?;
+            }
+            // ZombieFallDownState.animEvent: FallOnFront (as the character's listener), PlayDeathSound (a death)
+            if self.z.current_state == Some(ZombieState::FallDown) {
+                if java::equals_ignore_case(name, "FallOnFront") {
+                    self.z.sp.fall_on_front = parse_boolean(event.parameter_value.as_deref());
+                }
+                if java::equals_ignore_case(name, "PlayDeathSound") {
+                    return Err(
+                        "ZombieFallDownState.animEvent: PlayDeathSound (a death) is not ported"
+                            .into(),
+                    );
+                }
+            }
+            // StaggerBackState.animEvent: FallOnFront, SetState (an FMOD parameter)
+            if self.z.current_state == Some(ZombieState::StaggerBack)
+                && java::equals_ignore_case(name, "FallOnFront")
+            {
+                self.z.sp.fall_on_front = parse_boolean(event.parameter_value.as_deref());
             }
         }
         Ok(())

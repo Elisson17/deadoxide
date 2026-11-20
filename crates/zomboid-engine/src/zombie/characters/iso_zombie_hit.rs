@@ -63,6 +63,9 @@ pub struct HitWeapon {
     /// `hitAngleMod`, radians
     pub hit_angle_mod: f32,
     pub two_hand_weapon: bool,
+    /// The size of the `WeaponSpritesByIndex` list, else the larger of the `StaticModelsByIndex` and
+    /// `WorldStaticModelsByIndex` lists (`InventoryItem.synchWithVisual` picks `modelIndex = Rand.Next(size)`).
+    pub model_index_count: Option<i32>,
 }
 
 impl HitWeapon {
@@ -78,6 +81,10 @@ impl HitWeapon {
         };
         let mut categories = Vec::new();
         let mut sharpness: Option<f32> = None;
+        let mut weapon_sprites: Option<i32> = None;
+        let mut static_models: Option<i32> = None;
+        let mut world_static_models: Option<i32> = None;
+        let count = |val: &str| crate::java::split_char(val, ';').len() as i32;
         for (key, val) in &item.unported {
             match key.as_str() {
                 "categories" => {
@@ -85,6 +92,9 @@ impl HitWeapon {
                         categories.push(ResourceLocation::of(part.trim())?);
                     }
                 }
+                "weaponspritesbyindex" => weapon_sprites = Some(count(val)),
+                "staticmodelsbyindex" => static_models = Some(count(val)),
+                "worldstaticmodelsbyindex" => world_static_models = Some(count(val)),
                 "sharpness" => {
                     sharpness = Some(
                         crate::java::parse_float(val)
@@ -115,6 +125,16 @@ impl HitWeapon {
             }
             critical_damage_multiplier *= (s + 1.0f32) / 2.0f32;
         }
+        // Item.InstanceItem: the static model lists are kept only when non-empty (a list is never empty here)
+        let model_index_count = if weapon_sprites.is_some() {
+            weapon_sprites
+        } else {
+            match (static_models, world_static_models) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (None, None) => None,
+            }
+        };
         Ok(HitWeapon {
             full_name: item.full_name(),
             melee: !categories.is_empty(),
@@ -128,7 +148,20 @@ impl HitWeapon {
             // `(float) Math.toRadians(hitAngleMod)`
             hit_angle_mod: f64::from(f("hitAngleMod")?).to_radians() as f32,
             two_hand_weapon: b("twoHandWeapon")?,
+            model_index_count,
         })
+    }
+
+    /// InventoryItemFactory.CreateItem(type) -> Item.InstanceItem: the random draws of making the item. The outfit
+    /// seed `OutfitRNG.setSeed(Rand.Next(Integer.MAX_VALUE))`, then `synchWithVisual`'s `modelIndex = Rand.Next(size)`
+    /// when the script lists weapon sprites or static models by index, then `item.id = Rand.Next(2146250223)`. (The
+    /// item configurator and `initialiseItem` draw nothing for the weapons measured.)
+    pub fn create_item_draws(&self, world: &mut ZombieWorld) {
+        let _ = world.rand.next(i32::MAX);
+        if let Some(n) = self.model_index_count {
+            let _ = world.rand.next(n);
+        }
+        let _ = world.rand.next(2146250223);
     }
 
     /// HandWeapon.isOfWeaponCategory(base:<path>)

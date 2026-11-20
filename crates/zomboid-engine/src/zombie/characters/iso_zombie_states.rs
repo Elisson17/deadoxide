@@ -135,6 +135,9 @@ pub fn ai_state_for(root: &str) -> Result<ZombieState, String> {
         "ZombieFaceTargetState" => Ok(ZombieState::FaceTarget),
         "WalkTowardState" => Ok(ZombieState::WalkToward),
         "StaggerBackState" => Ok(ZombieState::StaggerBack),
+        "ZombieFallDownState" => Ok(ZombieState::FallDown),
+        "ZombieOnGroundState" => Ok(ZombieState::OnGround),
+        "ZombieGetUpState" => Ok(ZombieState::GetUp),
         other => Err(format!(
             "IsoZombie.actionStateChanged: the AI state {other} of action state '{root}' is not ported"
         )),

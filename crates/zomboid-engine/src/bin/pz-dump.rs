@@ -99,7 +99,7 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
-        Some("zombieai") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
+        Some("zombieai") | Some("zombiehit") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),
@@ -10209,6 +10209,7 @@ fn anim_scenario(
             layer_state_name: Option<&str>,
             track: Option<&AnimationTrack>,
             event: &AnimEvent,
+            _rand: &mut RandAbstract<Random>,
         ) -> Result<(), String> {
             let track_name = track.map_or("null", |t| {
                 t.current_clip
@@ -10957,6 +10958,7 @@ fn zombie_ai_scenario(
         alias: alias.clone(),
         sprites: sprites.clone(),
         zombie_object_id: 1,
+        game_sounds: scripts.map(|m| std::rc::Rc::new(m.game_sounds.clone())),
     };
     let mut outfit_rng = OutfitRng::default();
     outfit_rng.set_seed(seed);
@@ -10997,10 +10999,7 @@ fn zombie_ai_scenario(
             z.time_since_seen_flesh = 0.0;
         }
         if let (true, Some(weapon)) = (hit_ticks.contains(&n), hit_weapon.as_ref()) {
-            // InventoryItemFactory.CreateItem: Item.InstanceItem's `Rand.Next(Integer.MAX_VALUE)` (the outfit seed)
-            // and `InventoryItem.id = Rand.Next(2146250223)`
-            let _ = world.rand.next(i32::MAX);
-            let _ = world.rand.next(2146250223);
+            weapon.create_item_draws(&mut world);
             if let Some(sp) = world.sp.as_mut() {
                 sp.player.critical_hit = hit_critical;
             }

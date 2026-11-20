@@ -74,13 +74,15 @@ pub trait AnimatorOwner: IAnimationVariableSource {
     fn is_player_ready(&self) -> bool;
 
     /// IsoGameCharacter.OnAnimEvent(layer, track, event): `layer_depth` is `AnimLayer.getDepth(sender)` and
-    /// `layer_state_name` `AnimLayer.getCurrentStateName(sender)`.
+    /// `layer_state_name` `AnimLayer.getCurrentStateName(sender)`; `rand` is the global `Rand` the handlers draw from
+    /// (a sound event picks a random clip).
     fn on_anim_event(
         &mut self,
         layer_depth: i32,
         layer_state_name: Option<&str>,
         track: Option<&AnimationTrack>,
         event: &AnimEvent,
+        rand: &mut RandAbstract<Random>,
     ) -> Result<(), String>;
 
     /// AnimationVariableReference.setVariable(character, boolean)
@@ -1294,8 +1296,13 @@ impl AdvancedAnimator {
         let depth = self.get_depth(layer);
         let state_name = self.state_name_of_layer(layer);
         let track_copy = track.and_then(|t| self.track(t).cloned());
-        env.owner
-            .on_anim_event(depth, state_name.as_deref(), track_copy.as_ref(), event)
+        env.owner.on_anim_event(
+            depth,
+            state_name.as_deref(),
+            track_copy.as_ref(),
+            event,
+            env.rand,
+        )
     }
 
     /// AdvancedAnimator.incrementWhileAliveFlag
