@@ -283,6 +283,155 @@ impl ByteBlock {
     }
 }
 
+/// java.nio.ByteBuffer for writing (big-endian): `put*` at the position, which overwrites or extends; `position(int)`
+/// moves it back (a flag header is written first and rewritten at the end). The bytes of the result are the ones
+/// before the position, as `flip()` and `limit` would give. A real buffer has a capacity and throws
+/// `BufferOverflowException` past it; this one grows, so a save the original would not fit is not detected.
+#[derive(Clone, Debug, Default)]
+pub struct ByteBufferWriter {
+    data: Vec<u8>,
+    position: usize,
+}
+
+impl ByteBufferWriter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// java.nio.Buffer.position(int): `Err` past what was written (the original's limit is its capacity, which this
+    /// buffer does not have; no save moves past its own end).
+    pub fn set_position(&mut self, p: usize) -> Result<(), String> {
+        if p > self.data.len() {
+            return Err(format!(
+                "java.lang.IllegalArgumentException: newPosition > limit: ({p} > {})",
+                self.data.len()
+            ));
+        }
+        self.position = p;
+        Ok(())
+    }
+
+    fn put_slice(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            if self.position < self.data.len() {
+                self.data[self.position] = b;
+            } else {
+                self.data.push(b);
+            }
+            self.position += 1;
+        }
+    }
+
+    /// ByteBuffer.put(byte)
+    pub fn put(&mut self, v: i8) {
+        self.put_slice(&[v as u8]);
+    }
+
+    pub fn put_bytes(&mut self, v: &[u8]) {
+        self.put_slice(v);
+    }
+
+    pub fn put_short(&mut self, v: i16) {
+        self.put_slice(&v.to_be_bytes());
+    }
+
+    pub fn put_int(&mut self, v: i32) {
+        self.put_slice(&v.to_be_bytes());
+    }
+
+    pub fn put_long(&mut self, v: i64) {
+        self.put_slice(&v.to_be_bytes());
+    }
+
+    pub fn put_float(&mut self, v: f32) {
+        self.put_slice(&v.to_bits().to_be_bytes());
+    }
+
+    pub fn put_double(&mut self, v: f64) {
+        self.put_slice(&v.to_bits().to_be_bytes());
+    }
+
+    /// The bytes written so far: `array()[0..position]`.
+    pub fn bytes(&self) -> &[u8] {
+        &self.data[..self.position]
+    }
+
+    /// The bytes from `from` to the position.
+    pub fn bytes_from(&self, from: usize) -> &[u8] {
+        &self.data[from..self.position]
+    }
+}
+
+/// zombie.GameWindow.WriteString (ByteBuffer) -> GameWindow.StringUTF.save: a short byte count (`(short)numBytes`) and the
+/// UTF-8 bytes; `null` and "" are a count of 0. (A Java String with an unpaired surrogate encodes as `?`; a Rust
+/// string has none.)
+pub fn write_string(w: &mut ByteBufferWriter, s: Option<&str>) {
+    match s {
+        Some(s) if !s.is_empty() => {
+            w.put_short(s.len() as i16);
+            w.put_bytes(s.as_bytes());
+        }
+        _ => w.put_short(0),
+    }
+}
+
+/// zombie.util.io.BitHeaderWrite: a flag word that is reserved at the current position, filled with `add_flags` and
+/// written back by `write`.
+#[derive(Clone, Copy, Debug)]
+pub struct BitHeaderWrite {
+    size: HeaderSize,
+    header: i64,
+    start_pos: usize,
+}
+
+impl BitHeaderWrite {
+    /// zombie.util.io.BitHeader.allocWrite: writes the empty header (`create`).
+    pub fn alloc_write(size: HeaderSize, w: &mut ByteBufferWriter) -> Self {
+        let h = BitHeaderWrite {
+            size,
+            header: 0,
+            start_pos: w.position(),
+        };
+        h.write_header(w);
+        h
+    }
+
+    fn write_header(&self, w: &mut ByteBufferWriter) {
+        match self.size {
+            HeaderSize::Byte => w.put(self.header as i8),
+            HeaderSize::Short => w.put_short(self.header as i16),
+            HeaderSize::Integer => w.put_int(self.header as i32),
+            HeaderSize::Long => w.put_long(self.header),
+        }
+    }
+
+    /// zombie.util.io.BitHeader.BitHeaderBase.addFlags
+    pub fn add_flags(&mut self, flags: i64) {
+        self.header |= flags;
+    }
+
+    /// zombie.util.io.BitHeader.BitHeaderBase.equals
+    pub fn equals(&self, flags: i64) -> bool {
+        self.header == flags
+    }
+
+    pub fn start_position(&self) -> usize {
+        self.start_pos
+    }
+
+    /// zombie.util.io.BitHeader.BitHeaderBase.write: the flags go back to where the header was reserved.
+    pub fn write(&self, w: &mut ByteBufferWriter) -> Result<(), String> {
+        let cur = w.position();
+        w.set_position(self.start_pos)?;
+        self.write_header(w);
+        w.set_position(cur)
+    }
+}
+
 /// zombie.core.utils.Bits.packFloatUnitToByte: the value is clamped to 0..1 (the original throws instead when
 /// `Core.debug` is set, which a normal run does not), then scaled to a signed byte.
 pub fn pack_float_unit_to_byte(f: f32) -> i8 {

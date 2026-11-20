@@ -234,6 +234,52 @@ sel zombieai && server_case zombieai ZombieAiProbe \
   "zai:3:3000:3.0:0:none" "zai:1:3000:3.0:0:none" "zai:9:3000:3.0:0:none" \
   "zai:6:300:-0.7:0:force" "zai:7:300:0.45:0.2:force" "zai:10:400:1.0:1.0:force" "zai:13:400:4.0:-3.0:force" \
   "zai:10:300:0.3:0.3:force" "zai:2:3000:3.0:0:none"
+# the ORIGINAL zombie.pathfind in the booted server over real chunks of Rosewood (PathProbe): LineClearCollideMain, the
+# vanilla PolygonalMap2.lineClearCollide/canStandAt of seeded random segments (lcc:<cx1>:<cy1>:<cx2>:<cy2>:<n>:<seed>, chunk
+# rectangles plus a one-chunk ring; floors 0..2, the four collision flags, short/long/anywhere targets, centred or not)
+sel pathfind && server_case pathfind PathProbe \
+  "lcc:1033:1457:1038:1462:4000:7" "lcc:1008:1448:1015:1455:4000:11"
+# the pathfinder's own cache in JAVA mode (PathfindNative.useNativeCode = false): zombie.pathfind.Square bits/cost/sloped
+# surface of every square of two chunk rectangles (SquareUpdateTask.getBits via ChunkUpdateTask), and the high-level data
+# (HLChunkLevel regions with their edge masks, staircases, sloped surfaces) of every chunk level
+sel pathgraph && server_case pathgraph PathProbe \
+  "pgraph:1033:1457:1038:1462" "pgraph:1008:1448:1015:1455"
+# seeded path requests answered by the ORIGINAL Java PolygonalMap2 (HLAStar over chunk regions and staircases, VGAStar over
+# squares, cleanPath, smoothPath for players, fixPathZ): zombie, crawler and player movers, random points and walkable squares
+# (:sq) up to 24 squares and 2 levels apart; every node as Float.toString plus its flags
+sel pathsearch && server_case pathsearch PathProbe \
+  "psearch:1033:1457:1038:1462:100:7:zombie" "psearch:1033:1457:1038:1462:100:8:player" \
+  "psearch:1033:1457:1038:1462:150:21:zombie:sq" "psearch:1033:1457:1038:1462:150:22:player:sq" \
+  "psearch:1033:1457:1038:1462:100:23:crawler:sq" "psearch:1008:1448:1015:1455:150:24:player:sq" \
+  "psearch:1008:1448:1015:1455:150:25:zombie:sq"
+# the ORIGINAL IsoZombie.Hit run headless in the same single-player harness (zai:<seed>:<ticks>:<dx>:<dy>:hit<N>[,<M>...]
+# [@<weapon>[@<damage split>[@c]]]; `c` = critical hit): at those ticks the player stand-in hits the zombie with a bat, axe,
+# hunting knife, lead pipe or bare hands (E65b): the hit's draws (the item creation, the body part, processHit, the blood),
+# the damage, StaggerBackState after a plain hit within reach, and after a critical hit ZombieFallDownState,
+# ZombieOnGroundState and ZombieGetUpState (the reanimate timer), from several directions, with repeated hits
+sel zombiehit && server_case zombiehit ZombieAiProbe \
+  "zai:11:150:2.0:0:hit20@Base.BaseballBat@1.0" "zai:11:150:2.0:0:hit20@Base.Axe@1.0" \
+  "zai:11:150:2.0:0:hit20@Base.HuntingKnife@1.0" "zai:11:150:2.0:0:hit20@Base.LeadPipe@1.0" \
+  "zai:11:150:2.0:0:hit20@Base.BareHands@1.0" "zai:11:150:0.5:0:hit20@Base.BaseballBat@1.0" \
+  "zai:11:150:0.5:0:hit20@Base.Axe@1.0" "zai:11:150:0.5:0:hit20@Base.HuntingKnife@1.0" \
+  "zai:11:150:0.5:0:hit20@Base.LeadPipe@1.0" "zai:11:150:0.5:0:hit20@Base.BareHands@1.0" \
+  "zai:12:150:2.0:0:hit20@Base.BaseballBat@1.0" "zai:12:150:2.0:0:hit20@Base.Axe@1.0" \
+  "zai:12:150:2.0:0:hit20@Base.HuntingKnife@1.0" "zai:12:150:2.0:0:hit20@Base.LeadPipe@1.0" \
+  "zai:12:150:2.0:0:hit20@Base.BareHands@1.0" "zai:12:150:0.5:0:hit20@Base.BaseballBat@1.0" \
+  "zai:12:150:0.5:0:hit20@Base.Axe@1.0" "zai:12:150:0.5:0:hit20@Base.HuntingKnife@1.0" \
+  "zai:12:150:0.5:0:hit20@Base.LeadPipe@1.0" "zai:12:150:0.5:0:hit20@Base.BareHands@1.0" \
+  "zai:21:200:2.0:0:hit20@Base.BaseballBat@1.0@c" "zai:21:200:2.0:0:hit20@Base.Axe@1.0@c" \
+  "zai:21:200:2.0:0:hit20@Base.HuntingKnife@1.0@c" "zai:21:200:2.0:0:hit20@Base.LeadPipe@1.0@c" \
+  "zai:21:200:2.0:0:hit20@Base.BareHands@1.0@c" "zai:31:400:3.0:0:hit20@Base.BaseballBat@1.0@c" \
+  "zai:32:400:3.0:0:hit20@Base.Axe@1.0@c" "zai:33:400:3.0:0:hit20@Base.HuntingKnife@1.0@c" \
+  "zai:34:400:3.0:0:hit20@Base.LeadPipe@1.0@c" "zai:35:400:3.0:0:hit20@Base.BareHands@1.0@c" \
+  "zai:36:400:4.0:-3.0:hit30@Base.BaseballBat@1.0@c" "zai:41:200:0:2.0:hit20@Base.BaseballBat@1.0" \
+  "zai:42:200:-2.0:0:hit20@Base.Axe@1.0" "zai:43:200:0:-2.0:hit20@Base.LeadPipe@1.0" \
+  "zai:44:200:1.5:1.5:hit20@Base.HuntingKnife@1.0" "zai:45:200:-1.5:-1.5:hit20@Base.BareHands@1.0" \
+  "zai:46:200:0:0.5:hit20@Base.BaseballBat@1.0@c" "zai:47:180:-0.5:0:hit20@Base.Axe@1.0@c" \
+  "zai:48:200:3.0:3.0:hit25@Base.LeadPipe@1.0@c" "zai:51:250:2.0:0:hit20,60@Base.BaseballBat@1.0" \
+  "zai:52:250:0.5:0:hit20,50,80,110,140@Base.LeadPipe@1.0" "zai:53:250:3.0:0:hit20,25,30,35,40@Base.BareHands@1.0" \
+  "zai:54:250:2.0:0:hit20,60,100@Base.Axe@0.5" "zai:55:250:0.5:0:hit20,24@Base.HuntingKnife@0.5"
 # the save's global_mod_data.bin (GlobalModData.load) and iTrack.bin (InstanceTracker.load, exported as text and CSV)
 sel moddata && server_case moddata ModDataProbe "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13"
 # the outfits of media/clothing/clothing.xml (OutfitManager) and PersistentOutfits with the save's z_outfits.bin
@@ -346,6 +392,43 @@ sel xmodels && ai_case xmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last
 sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x anim x media/anims_X
 # zombie.characters.BodyDamage and the stat updates of IsoGameCharacter on a headless IsoPlayer in the booted server
 sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
+# zombie.inventory item classes and containers (E67): InventoryItemFactory.CreateItem and what the item and container classes report, in the booted server
+sel inventory && server_case inventory InventoryProbe "$HERE/tests/inventory_cases.txt"
+# the same for every .fbx of media/models_X and media/textures (2032 files, binary and ASCII): the port of assimp's FBX importer
+# (FBXConverter: meshes, the $AssimpFbx$ chain nodes, skins, materials, animations). fbxscene: the importer alone (+mat also prints every
+# material property: key, semantic, index, type, data); fbxmodelscene/fbxanimscene: after the game's own flags (TriangulateProcess,
+# JoinIdenticalVertices, LimitBoneWeights, OptimizeMeshes, RemoveRedundantMaterials, FindInstances, MakeLeftHanded)
+sel fbxscene && ai_case fbxscene AiSceneProbe none+mat fbx media/models_X media/textures
+sel fbxmodelscene && ai_case fbxmodelscene AiSceneProbe mesh fbx media/models_X media/textures
+sel fbxanimscene && ai_case fbxanimscene AiSceneProbe anim fbx media/models_X media/textures
+# ProcessedAiScene.process over those: the models with the .fbx scale/rotation modifiers (FileTask_LoadMesh.loadFBX) in Normal and
+# StaticMesh mode, by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadFBX)
+sel fbxmodels && ai_case fbxmodels ProcessedSceneProbe Normal:fbx,StaticMesh:fbx,Normal:last+fbx,StaticMesh:all+fbx,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx mesh fbx media/models_X media/textures
+sel fbxanims && ai_case fbxanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim fbx media/models_X media/textures
+# FMOD sound banks (E64): the game's own FMODManager.init() headless (natives of this OS, game root as cwd) loads the four
+# banks media/sound/banks/Desktop/{ZomboidSound.strings,ZomboidMusic,ZomboidSound,ZomboidSoundMP}.bank; the probe prints what the
+# Studio API reports (FmodBanksProbe <mode>), pz-dump the same from a parse of the bank files, which are RE'd (no FMOD source)
+sel fmodbanks && game_case fmodbanks FmodBanksProbe banks
+# the string table (STDT of ZomboidSound.strings.bank): every event's path and GUID per bank in API list order, the VCAs, FMODManager's
+# sorted event path list, its parameter names, and GetBus/GetVCA over candidate paths the Rust side writes from its own table
+sel fmodstrings && { ./target/release/pz-dump fmodcandidates "$ROOT" >target/oracle/fmod_candidates.txt && game_case fmodstrings FmodBanksProbe strings "$HERE/target/oracle/fmod_candidates.txt"; }
+# the event and parameter records: per event the sustain flag, length (ms) and parameters (name, id, flags) the API reports, the global
+# parameter list and FMODManager's parameter table (globalIndex); the id of a parameter no event uses is UNKNOWN on both sides
+sel fmodevents && game_case fmodevents FmodBanksProbe events
+# the sample data: the FSB5 inside the SND chunk of each data bank: header numbers and names read by the probe, stream count, frequency, channels,
+# length (PCM and ms) and format of every stream from FMOD core opening the same head (sparse file in the scratch dir); the Vorbis decoder is not ported
+sel fmodsamples && game_case fmodsamples FmodBanksProbe samples
+# the same for every .glb of media/models_X (59 files, glTF 2.0 binary): the port of assimp's glTF2 importer (the accessors with the
+# vertex remapping table, skins, materials, animations in libc++ unordered_map order). glbscene: the importer alone (+mat also prints
+# every material property); glbmodelscene/glbanimscene: after the flags of FileTask_LoadMesh.loadGLTF / FileTask_LoadAnimation.loadGLTF
+sel glbscene && ai_case glbscene AiSceneProbe none+mat glb media/models_X
+sel glbmodelscene && ai_case glbmodelscene AiSceneProbe mesh glb media/models_X
+sel glbanimscene && ai_case glbanimscene AiSceneProbe anim glb media/models_X
+# ProcessedAiScene.process over those: the models (scale 1.0, no rotation: FileTask_LoadMesh.loadGLTF) in Normal and StaticMesh mode,
+# by mesh name, all meshes and skinned to another skeleton; the animations (FileTask_LoadAnimation.loadGLTF: the same scale 0.01 and
+# -90 degree rotation as an .fbx) alone and skinned to a skeleton
+sel glbmodels && ai_case glbmodels ProcessedSceneProbe Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x mesh glb media/models_X
+sel glbanims && ai_case glbanims ProcessedSceneProbe AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx anim glb media/models_X
 # zombie.scripting.ScriptParser (readBlock, stripComments, parseTokens) over crafted text
 sel scriptparser && jre_case scriptparser ScriptParserProbe "$HERE/tests/script_parser_cases.txt"
 exit $fail

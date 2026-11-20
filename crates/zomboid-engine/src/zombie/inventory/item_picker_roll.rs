@@ -23,7 +23,7 @@ use crate::zombie::scripting::objects::resource_location::ResourceLocation;
 
 mod classes;
 mod clothing;
-mod firearm;
+pub(crate) mod firearm;
 mod food;
 pub use classes::AlarmState;
 pub use firearm::WeaponState;
@@ -32,7 +32,7 @@ pub use food::FoodState;
 /// The generator the rolls draw from (`Rand.rand`, a `RandStandard` in the game; a seeded `java.util.Random` here).
 pub type LootRand = RandAbstract<Random>;
 
-fn unported(msg: impl std::fmt::Display) -> String {
+pub(crate) fn unported(msg: impl std::fmt::Display) -> String {
     format!("not ported: {msg}")
 }
 
@@ -201,7 +201,7 @@ impl JMap {
 }
 
 /// ItemContainer.floatingPointCorrection
-fn floating_point_correction(val: f32) -> f32 {
+pub(crate) fn floating_point_correction(val: f32) -> f32 {
     let tmp = val * 100.0f32;
     let t = tmp as i32;
     let r = if tmp - (t as f32) >= 0.5f32 {
@@ -212,29 +212,29 @@ fn floating_point_correction(val: f32) -> f32 {
     (r as i32) as f32 / 100.0f32
 }
 
-fn script_float(item: &Item, name: &str) -> f32 {
+pub(crate) fn script_float(item: &Item, name: &str) -> f32 {
     match item.get(name) {
         Some(Value::F32(v)) => *v,
         _ => 0.0,
     }
 }
-fn script_int(item: &Item, name: &str) -> i32 {
+pub(crate) fn script_int(item: &Item, name: &str) -> i32 {
     match item.get(name) {
         Some(Value::I32(v)) => *v,
         _ => 0,
     }
 }
-fn script_bool(item: &Item, name: &str) -> bool {
+pub(crate) fn script_bool(item: &Item, name: &str) -> bool {
     matches!(item.get(name), Some(Value::Bool(true)))
 }
-fn script_str<'i>(item: &'i Item, name: &str) -> Option<&'i str> {
+pub(crate) fn script_str<'i>(item: &'i Item, name: &str) -> Option<&'i str> {
     match item.get(name) {
         Some(Value::Str(Some(s))) => Some(s.as_str()),
         _ => None,
     }
 }
 /// The text of the last `COMPLEX` parameter `key` (lower case) of the script.
-fn script_complex<'i>(item: &'i Item, key: &str) -> Option<&'i str> {
+pub(crate) fn script_complex<'i>(item: &'i Item, key: &str) -> Option<&'i str> {
     item.unported
         .iter()
         .rev()
@@ -260,7 +260,7 @@ fn has_tag(item: &Item, tag: &str) -> bool {
 }
 
 /// `Item.itemType`: `ItemType` (default `NORMAL`).
-fn script_item_type(item: &Item) -> Result<ItemType, String> {
+pub(crate) fn script_item_type(item: &Item) -> Result<ItemType, String> {
     match script_complex(item, "itemtype") {
         None => Ok(ItemType::Normal),
         Some(v) => {
@@ -271,7 +271,7 @@ fn script_item_type(item: &Item) -> Result<ItemType, String> {
 
 /// `Item.actualWeight` and `Item.capacity` after the script's `Weight`/`Capacity` parameters in script order
 /// (`Capacity` is capped at 50 minus the weight set so far).
-fn script_weight_capacity(item: &Item) -> (f32, i32) {
+pub(crate) fn script_weight_capacity(item: &Item) -> (f32, i32) {
     let mut weight = 1.0f32;
     let mut capacity = 0i32;
     for (k, v) in &item.unported {
@@ -297,7 +297,7 @@ fn script_weight_capacity(item: &Item) -> (f32, i32) {
 }
 
 /// Item.getActualWeight
-fn script_actual_weight(item: &Item) -> f32 {
+pub(crate) fn script_actual_weight(item: &Item) -> f32 {
     let w = script_weight_capacity(item).0;
     if w < 0.0 {
         0.0

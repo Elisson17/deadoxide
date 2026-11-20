@@ -1,5 +1,5 @@
 //! The Open Asset Import Library (assimp 5.3, the build inside the game's `libjassimp`) as far as the game uses it
-//! through `jassimp.Jassimp.importFile`: the DirectX `.x` importer, the post-processing steps the game asks for, and
+//! through `jassimp.Jassimp.importFile`: the DirectX `.x`, FBX and glTF2 importers, the post-processing steps the game asks for, and
 //! the `aiScene` they work on. Each source file names the assimp file it follows.
 //!
 //! assimp is distributed under the 3-clause BSD license (Copyright (c) 2006-2023, assimp team); this port is a derived
@@ -13,6 +13,8 @@
 //! for some results (the quaternion -> matrix -> quaternion round trip of the X importer's rotation keys); it is not
 //! the reference.
 pub mod fast_atof;
+pub mod fbx;
+pub mod gltf2;
 pub mod post_process;
 pub mod scene;
 pub mod std_sort;
@@ -26,6 +28,14 @@ pub fn import_file(path: &str, bytes: &[u8], spec: &str) -> Result<scene::Scene,
     let lower = path.to_lowercase();
     let mut scene = if lower.ends_with(".x") {
         x_file_importer::import(bytes)?
+    } else if lower.ends_with(".fbx") {
+        let mut scene = fbx::import(bytes)?;
+        post_process::scene_preprocessor::process_scene(&mut scene);
+        scene
+    } else if lower.ends_with(".glb") {
+        let mut scene = gltf2::import(bytes)?;
+        post_process::scene_preprocessor::process_scene(&mut scene);
+        scene
     } else {
         return Err(format!(
             "No suitable reader found for the file format of file \"{path}\"."

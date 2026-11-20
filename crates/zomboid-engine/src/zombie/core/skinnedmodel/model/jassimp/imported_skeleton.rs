@@ -154,6 +154,10 @@ impl ImportedSkeleton {
             let Some(bone) = find_ai_bone(node_bone_name, bones) else {
                 continue;
             };
+            // `bone.getOffsetMatrix(wrapper) != null`: jassimp sets no offset matrix on a bone without weights
+            if bone.weights.is_empty() {
+                continue;
+            }
             let skin_offset = get_matrix_from_ai_matrix(&bone.offset_matrix);
             let mut skin_offseti = skin_offset;
             invert_in_place(&mut skin_offseti);
@@ -161,7 +165,9 @@ impl ImportedSkeleton {
             let parent = tree.nodes[node].parent.ok_or(NPE)?;
             let parent_bone_name = &tree.nodes[parent].name;
             if let Some(pbone) = find_ai_bone(parent_bone_name, bones) {
-                skin_offset_parent = get_matrix_from_ai_matrix(&pbone.offset_matrix);
+                if !pbone.weights.is_empty() {
+                    skin_offset_parent = get_matrix_from_ai_matrix(&pbone.offset_matrix);
+                }
             }
             let mut skin_offset_parenti = skin_offset_parent;
             invert_in_place(&mut skin_offset_parenti);

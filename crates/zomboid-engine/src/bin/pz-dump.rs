@@ -12,8 +12,15 @@
 //!   pz-dump recipes <game root>               (pairs with RecipesProbe.java)
 //!   pz-dump animsets <game root> <scratch dir>   (pairs with AnimSetsProbe.java)
 //!   pz-dump sounds <game root> [<command file> <scratch dir>]   (pairs with SoundsProbe.java)
+//!   pz-dump fmodbanks <game root> <scratch, unused> banks   (pairs with FmodBanksProbe.java)
+#[path = "pz-dump-fmod/mod.rs"]
+mod fmod_dump;
+#[path = "pz-dump-inventory/mod.rs"]
+mod inventory_dump;
 #[path = "pz-dump-models/mod.rs"]
 mod models;
+#[path = "pz-dump-path/mod.rs"]
+mod path_dump;
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -65,14 +72,15 @@ fn main() {
             a.get(5).map(Path::new),
         ),
         Some("txtmodels") if a.len() >= 3 => models::txtmodels(Path::new(&a[2]), &a[3..]),
-        Some("aiscene" | "xscene" | "xmodelscene" | "animscene" | "fbxscene" | "glbscene")
-            if a.len() >= 3 =>
-        {
-            models::aiscene(Path::new(&a[2]), &a[3..])
-        }
-        Some("xmodels" | "animclips" | "processedscene") if a.len() >= 3 => {
-            models::processed(Path::new(&a[2]), &a[3..])
-        }
+        Some(
+            "aiscene" | "xscene" | "xmodelscene" | "animscene" | "fbxscene" | "fbxmodelscene"
+            | "fbxanimscene" | "glbscene" | "glbmodelscene" | "glbanimscene",
+        ) if a.len() >= 3 => models::aiscene(Path::new(&a[2]), &a[3..]),
+        Some("fbxdoc") if a.len() >= 3 => models::fbxdoc(Path::new(&a[2]), &a[3..]),
+        Some(
+            "xmodels" | "animclips" | "fbxmodels" | "fbxanims" | "glbmodels" | "glbanims"
+            | "processedscene",
+        ) if a.len() >= 3 => models::processed(Path::new(&a[2]), &a[3..]),
         Some("mapver") if a.len() == 5 => mapver(Path::new(&a[3]), Path::new(&a[4])),
         Some("erosionini") if a.len() == 5 => erosionini(Path::new(&a[3]), Path::new(&a[4])),
         Some("isoregion") if a.len() == 5 => isoregion(Path::new(&a[3]), Path::new(&a[4])),
@@ -99,7 +107,17 @@ fn main() {
         Some("zombie") if a.len() >= 4 => zombie(Path::new(&a[2]), &a[3..]),
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
+        Some("inventory") if a.len() == 4 => {
+            inventory_dump::inventory(Path::new(&a[2]), Path::new(&a[3]))
+        }
         Some("zombieai") | Some("zombiehit") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
+        Some("pathfind" | "pathgraph" | "pathsearch") if a.len() >= 4 => {
+            path_dump::pathfind(Path::new(&a[2]), &a[3..])
+        }
+        Some("fmodbanks" | "fmodstrings" | "fmodevents" | "fmodsamples") if a.len() >= 5 => {
+            fmod_dump::dump(Path::new(&a[2]), &a[4], &a[5..])
+        }
+        Some("fmodcandidates") if a.len() == 3 => fmod_dump::candidates(Path::new(&a[2])),
         Some("moddata") if a.len() == 4 => moddata(Path::new(&a[3])),
         Some("outfits") if a.len() == 4 => outfits(Path::new(&a[2]), Path::new(&a[3])),
         Some("clothingitems") if a.len() == 3 => clothingitems(Path::new(&a[2])),

@@ -1,0 +1,711 @@
+# Cases of tests/original_probe/InventoryProbe.java (read its header for the commands); `create` first.
+create
+
+# AddItem(String), queries by type, tag and category; the item ids come from the seeded generator
+reset 11 tod=9,nights=0
+container pack Base.Bag 20
+add pack a1 Base.Apple
+add pack a2 Base.Apple
+add pack a3 Base.Banana
+add pack b1 Base.Bandage
+add pack b2 Base.BandageDirty
+add pack bat Base.Battery
+add pack book Base.BookAiming1
+add pack none Base.NoSuchItem
+add pack ammo Base.3030Bullets
+items pack
+q pack has Apple
+q pack has Base.Apple
+q pack has Base.Banana
+q pack has Pear
+q pack has Apple/Banana
+q pack hasr Apple
+q pack hasnb Apple
+q pack count Apple
+q pack count Base.Banana
+q pack alltype Apple
+q pack alltype Apple/Banana
+q pack alltype Base.Bandage
+q pack alltag base:ammo
+q pack alltag base:hasmetal
+q pack counttag base:ammo
+q pack allcat Food
+q pack allcat Item
+q pack allcat Literature
+q pack allcat Weapon
+q pack firsttype Banana
+q pack firstcat Item
+q pack firsttag base:ammo
+q pack some Apple 1
+q pack some Apple 5
+q pack find Apple
+q pack numberof Base.Apple
+q pack numberof Apple
+q pack withmodule Base.Apple
+q pack withmodule Other.Apple
+q pack withmoduledelta Base.Battery
+q pack stack Apple
+q pack contains a1
+q pack weight
+show a1
+show bat
+show book
+
+# capacity: the weight of the contents, room for another item, free capacity
+reset 12
+container small Base.Crate 3
+add small box Base.BandageBox
+q small weight
+q small room box
+q small roomw 2.0
+q small roomw 2.01
+add small book Base.BookAimingSet
+q small weight
+q small room book
+q small roomw 0.01
+new big Base.BookAimingSet
+q small room big
+put small big
+q small weight
+q small roomw 0
+q small roomw -1
+
+# the capacity is capped at 100 for a container that is not a bag
+reset 13
+container huge Base.Crate 500
+q huge weight
+container odd Base.Crate 7
+add odd x Base.Apple
+add odd y Base.Apple
+add odd z Base.Apple
+q odd weight
+q odd roomw 0.5
+
+# OnlyAcceptCategory
+reset 14
+container food Base.Cupboard 30 accept=Food
+new a Base.Apple
+new b Base.Bandage
+new c Base.BookAiming1
+q food allowed a
+q food allowed b
+q food allowed c
+container lit Base.Shelf 30 accept=literature
+q lit allowed c
+q lit allowed a
+
+# Remove, RemoveAll, RemoveOneOf, Remove(String); an item moves to the container it is put into
+reset 15
+container one Base.Box 50
+container two Base.Box 50
+add one a1 Base.Apple
+add one a2 Base.Apple
+add one a3 Base.Apple
+add one b Base.Bandage
+add one bat Base.Battery
+items one
+put two a1
+items one
+items two
+show a1
+remove one a2
+items one
+show a2
+put one a2
+put one a2
+items one
+removetype one Apple
+items one
+removeall one Apple 1
+items one
+removeall one Base.Apple
+items one
+removeone one Bandage
+items one
+set bat uses 5
+show bat
+removeone one Battery
+show bat
+removetype one Battery
+show bat
+items one
+removetype one Battery
+show bat
+items one
+q two contains a1
+q one contains a1
+
+# best condition: the highest above zero, the first of equals
+reset 16
+container tools Base.Box 50
+add tools a Base.Bandage
+add tools b Base.Bandage
+add tools c Base.Bandage
+set a cond 3
+set b cond 7
+set c cond 7
+q tools best Bandage
+q tools best Base.Bandage
+q tools find Bandage
+set b cond 0
+set c cond 0
+set a cond 0
+q tools best Bandage
+q tools find Bandage
+q tools hasnb Bandage
+q tools has Bandage
+
+# drainable weights follow the uses
+reset 17
+container pack Base.Bag 20
+add pack bat Base.Battery
+show bat
+set bat uses 0
+show bat
+set bat usesf 0.5
+show bat
+set bat usesf 2
+show bat
+add pack candle Base.Candle
+show candle
+set candle usesf 0.25
+show candle
+
+# Food: what age, cooking, burning and freezing change in what it reports; setCurrentUses consumes hunger
+reset 21
+container box Base.Box 50
+add box a Base.Apple
+set a age 4.99
+set a age 5
+set a age 7.99
+set a age 8
+set a age 0
+set a cooked true
+set a burnt true
+set a cooked false
+set a burnt false
+set a freeze 100
+set a freeze 50
+set a freeze 0
+add box ice Base.Icecream
+set ice freeze 100
+add box st Base.Steak
+set st cooked true
+set st burnt true
+set st age 30
+add box beans Base.TinnedBeans
+set beans uses 50
+set beans uses 0
+set beans uses 200
+add box ap2 Base.Apple
+set ap2 uses 8
+set ap2 uses 20
+show ap2
+removetype box Apple
+show a
+removeone box Apple
+show a
+show ap2
+
+# Food.updateAge: the clock moves, the item ages (0.04166667 days per hour at the default rot speed)
+reset 22 tod=9,nights=0
+container box Base.Box 50
+add box a Base.Apple
+ageupdate a
+set a lastaged 0
+ageupdate a
+clock tod=15
+ageupdate a
+clock nights=2,tod=8
+ageupdate a
+set a heat 2
+set a lastaged 54.5
+clock tod=8.1
+ageupdate a
+clock tod=8.2
+ageupdate a
+clock tod=9.5
+ageupdate a
+add box b Base.Banana
+set b lastaged 50
+ageupdate b
+set b age 6
+set b lastaged 40
+clock nights=5,tod=10
+ageupdate b
+show b
+
+# Food in a fridge, a freezer and a hot container: temperature, fridge factor, the shut-off of the power
+reset 23 tod=9,nights=0
+container fr fridge 50
+container fz freezer 50
+container hot Base.Oven 50 temp=2.5
+add fr a Base.Apple
+add fz b Base.Apple
+add hot c Base.Apple
+q fr weight
+q hot weight
+set a lastaged 0
+set b lastaged 0
+set c lastaged 0
+clock nights=3
+ageupdate a
+ageupdate b
+ageupdate c
+clock nights=20
+ageupdate a
+ageupdate b
+
+reset 24 tod=9,nights=0,sb.ElecShutModifier=0
+container fr fridge 50
+add fr a Base.Apple
+q fr weight
+set a lastaged 0
+clock tod=10
+q fr weight
+ageupdate a
+clock nights=1,tod=12
+q fr weight
+ageupdate a
+
+reset 25 tod=9,nights=0,sb.FoodRotSpeed=1,sb.FridgeFactor=5
+container fr fridge 50
+add fr a Base.Apple
+container box Base.Box 50
+add box b Base.Apple
+set a lastaged 0
+set b lastaged 0
+clock nights=4
+ageupdate a
+ageupdate b
+
+# thawing: a frozen item in a box thaws in an hour and a half, faster in a warm place, and ages not at all while frozen
+reset 26 tod=9,nights=0
+container box Base.Box 50
+container hot Base.Oven 50 temp=2
+add box a Base.Apple
+add hot b Base.Apple
+set a freeze 100
+set b freeze 100
+set a lastaged 0
+set b lastaged 0
+set a heat 0.5
+clock tod=9.5
+ageupdate a
+ageupdate b
+clock tod=10.5
+ageupdate a
+ageupdate b
+clock tod=12
+ageupdate a
+ageupdate b
+show a
+
+# put moves an item between containers; a food updates its age on the way
+reset 27
+container cold Base.Box 50
+container hot Base.Oven 50 temp=2.5
+add cold a Base.Apple
+set a lastaged 1.9
+put hot a
+show a
+set a lastaged 1.95
+put cold a
+show a
+items cold
+items hot
+
+# Time: wet items, rotting, cooking, drainables, use (the tick command moves the clock then calls update())
+# wet items dry out: WetCooldown counts down by the time multiplier per update, then the dry item replaces it
+reset 31 tod=9,nights=0
+container box Base.Box 50
+add box t Base.BathTowelWet
+show t
+tick t 100 0
+tick t 12399 0
+tick t 1 0
+items box
+tick t 1 0
+items box
+show t
+add box d Base.DishClothWet
+set d wetcd 2
+tick d 2 0.01
+tick d 1 0.01
+items box
+reset 32 tod=9,nights=0,mult=2
+container box Base.Box 50
+add box t Base.BathTowelWet
+tick t 100 0.01
+set t wetcd 1
+tick t 1 0
+
+# Food rotting: replaceOnRotten, removal of rotten food
+reset 33 tod=9,nights=0
+container box Base.Box 50
+add box ice Base.Icecream
+set ice lastaged 2
+show ice
+tick ice 1 0
+items box
+clock nights=1
+tick ice 1 0
+items box
+pick m box 0
+show m
+clock nights=3
+tick ice 1 0
+items box
+tick m 1 0
+items box
+show m
+
+reset 34 tod=9,nights=0,sb.DaysForRottenFoodRemoval=1
+container box Base.Box 50
+add box a Base.Apple
+set a lastaged 2
+tick a 1 0
+clock nights=5
+tick a 1 0
+show a
+clock nights=9
+tick a 1 0
+items box
+show a
+clock nights=11
+tick a 1 0
+items box
+show a
+add box b Base.Bread
+set b lastaged 100
+tick b 1 0
+show b
+
+# cooking: a food heats towards the container, cooks and burns by the minute; replaceOnCooked, microwave, tainted
+reset 41 tod=9,nights=0
+container oven Base.Oven 50 temp=2.5
+add oven st Base.Steak
+set st heat 2
+tick st 5 0.02
+tick st 40 0.02
+tick st 200 0.02
+tick st 400 0.02
+show st
+add oven bs Base.BreadSlices
+set bs heat 2
+tick bs 100 0.02
+tick bs 1000 0.02
+items oven
+add oven dough Base.BreadDough
+show dough
+set dough heat 2.5
+tick dough 50 0.02
+tick dough 100 0.02
+tick dough 100 0.02
+show dough
+add oven bag Base.BaguetteDough
+set bag heat 2.5
+tick bag 800 0.02
+items oven
+
+reset 42 tod=9,nights=0
+container mw microwave 50 temp=2.5
+container cool Base.Box 50
+add mw pot Base.SugarBeetPulpPot
+set pot heat 2.5
+tick pot 300 0.02
+tick pot 300 0.02
+show pot
+add cool st Base.Steak
+set st heat 2.5
+tick st 100 0.02
+show st
+set st heat 1
+add cool ap Base.Apple
+set ap taint true
+set ap heat 2
+tick ap 20 0.02
+set ap heat 2.5
+tick ap 20 0.02
+show ap
+
+# drainables: use, depletion, replaceOnDeplete, UseWhileUnequipped ticks
+reset 43 tod=9,nights=0
+container pack Base.Bag 20
+add pack bat Base.Battery
+use bat
+use bat
+set bat uses 2
+use bat
+use bat
+items pack
+add pack tw Base.BathTowel
+set tw uses 1
+use tw
+items pack
+add pack tw2 Base.BathTowel
+set tw2 uses 0
+tick tw2 1 0
+items pack
+add pack tw3 Base.BathTowel
+show tw3
+useitem tw3
+useitem tw3 true
+set tw3 uses 1
+useitem tw3
+items pack
+add pack c Base.CandleLit
+show c
+tick c 50 0.01
+tick c 500 0.01
+set c uses 3
+tick c 120 0.01
+show c
+items pack
+tick c 10 0.01
+
+# InventoryItem.Use and ItemUser.UseItem on foods and plain items
+reset 44 tod=9,nights=0
+container box Base.Box 50
+add box beans Base.TinnedBeans
+show beans
+use beans
+use beans
+set beans uses 1
+use beans
+items box
+add box b Base.Bandage
+use b
+items box
+add box a Base.Apple
+useitem a
+useitem a false false 5
+show a
+useitem a false false 100
+items box
+add box b2 Base.Bandage
+useitem b2 false true 1 true
+show b2
+useitem b2 false false 1 false true
+items box
+add box bb Base.3030Bullets
+show bb
+useitem bb
+items box
+
+# items outside any container: heat settles to 1, a Literature does nothing
+reset 45 tod=9,nights=0
+new bat Base.Battery
+set bat dheat 2
+tick bat 100 0
+tick bat 1100 0
+new a Base.Apple
+set a heat 2
+tick a 19 0
+tick a 1 0
+tick a 40 0
+new book Base.BookAiming1
+tick book 10 0.1
+new b Base.Bandage
+tick b 10 0.1
+
+# stage 4: the registry ids, then the save of every modelled script, then each flag of the writers
+
+# WorldDictionary.getItemRegistryID of every script
+reset 1
+regs
+
+# every modelled script made, saved, loaded and saved again
+reset 51
+createsave
+
+# InventoryItem.save: each header flag in turn on a ComboItem (the item `d`), a roundtrip after each change
+reset 52
+new d Base.Bandage
+new a Base.Apple
+new b Base.Battery
+new c Base.BookAiming1
+save d
+set d cond 4
+roundtrip d d1
+set d cond 10
+field d customColor true
+roundtrip d d1
+field d col 0.5,0.25,0.75,0.5
+roundtrip d d1
+field d col 1,1,1,1
+field d customColor false
+field d itemCapacity 3.5
+roundtrip d d1
+field d itemCapacity -1
+mod d a.b.c s deep
+mod d #1 d 7
+mod d #2 b false
+mod d z t x
+roundtrip d d1
+field d activated true
+field d haveBeenRepaired 3
+roundtrip d d1
+field d name Renamed
+roundtrip d d1
+field d customName true
+field d customWeight true
+roundtrip d d1
+field d keyId 77
+field d remoteControlId 5
+roundtrip d d1
+field d remoteControlId -1
+field d remoteRange 9
+roundtrip d d1
+field d colorRed 0.5
+field d colorBlue 0.125
+roundtrip d d1
+field d worker Bob
+field d wetCooldown 2.5
+field d favorite true
+field d stashMap Map1
+field d zombieInfected true
+field d currentAmmoCount 4
+roundtrip d d1
+field d attachedSlot 2
+field d attachedSlotType Belt
+field d attachedToModel Axe
+field d maxCapacity 8
+field d worldScale 2.0
+field d modelIndex 3
+field d worldXRotation 10
+field d worldYRotation 20
+field d worldZRotation 30
+roundtrip d d1
+# the writer of a recorded media item (the loader needs the world's RecordedMedia: not modelled)
+field d recordedMediaIndex 7
+save d
+field d recordedMediaIndex -1
+field d isInitialised false
+bytes d aabbcc00ff
+list d extraItems Base.Apple,Base.Bandage
+roundtrip d d1
+list d extraItems empty
+bytes d null
+field d worldXRotation 0
+field d worldYRotation 0
+field d worldZRotation -1
+roundtrip d d1
+
+# Drainable (uses, delta, heat), Food (every flag of the header and of the int header), Literature
+set b usesf 0.5
+roundtrip b b1
+set b uses 3
+roundtrip b b1
+set b dheat 2
+roundtrip b b1
+field a calories 0
+field a proteins 1.5
+roundtrip a a1
+field a proteins 0
+field a calories 10
+field a lipids 2
+field a carbohydrates 3
+field a hungChange -0.5
+field a baseHunger -0.25
+field a unhappyChange 5
+field a boredomChange 6
+field a thirstChange -3
+field a age 0.5
+field a lastAged 1.5
+roundtrip a a1
+field a heat 2
+field a lastCookMinute 33
+field a cookingTime 4
+field a cooked true
+field a burnt true
+field a isCookable true
+field a dangerousUncooked true
+roundtrip a a1
+field a poisonDetectionLevel 3
+list a spices Salt,Pepper
+field a poisonPower 7
+field a chef Chef
+field a offAge 3
+field a offAgeMax 7
+field a painReduction 1.5
+field a fluReduction 4
+field a foodSicknessChange 6
+field a poison true
+field a useForPoison 9
+roundtrip a a1
+field a freezingTime 10
+field a frozen true
+field a lastFrozenUpdate 5
+field a rottenTime 12
+field a compostTime 13
+field a cookedInMicrowave true
+field a fatigueChange 0.5
+field a endChange 0.25
+field a milkQty 2
+field a milkType Cow
+field a stressChange 0.75
+roundtrip a a1
+list a spices empty
+roundtrip a a1
+list a spices null
+field a poisonDetectionLevel -1
+field a offAge 1000000000
+field a offAgeMax 1000000000
+roundtrip a a1
+field c alreadyReadPages 12
+roundtrip c c1
+field c canBeWrite true
+list c customPages Page one,Page two,Page three
+roundtrip c c1
+field c lockedBy Someone
+list c learnedRecipes Make Thing,Make Other
+field c numberOfPages 300
+roundtrip c c1
+list c learnedRecipes empty
+list c customPages empty
+field c lockedBy null
+roundtrip c c1
+
+# a loaded item saves again with its customName modData; a second round of the same bytes
+roundtrip d1 d2
+roundtrip a1 a2
+roundtrip b1 b2
+roundtrip c1 c2
+
+# the poisonous berry and mushroom of the world
+new e Base.BerryGeneric2
+save e
+new f Base.MushroomGeneric3
+save f
+roundtrip e e1
+roundtrip f f1
+
+# ItemContainer.save and CompressIdenticalItems: identical items stack, a different one does not, ids differ
+reset 53
+container box Box 50
+add box i1 Base.Apple
+add box i2 Base.Apple
+add box i3 Base.Apple
+add box i4 Base.Bandage
+add box i5 Base.Apple
+add box i6 Base.Battery
+add box i7 Base.Battery
+csave box
+cload box box2
+container empty Box 10
+csave empty
+cload empty empty2
+# identical items that differ in one field, and in byteData
+field i2 favorite true
+bytes i3 0102
+bytes i5 0102
+csave box
+cload box box3
+# the explored and looted flags and the capacity
+container crate Crate 77 explored=true,looted=true
+add crate j1 Base.BookAiming1
+add crate j2 Base.BookAiming1
+add crate j3 Base.BookAiming2
+csave crate
+cload crate crate2

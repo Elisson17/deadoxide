@@ -375,6 +375,98 @@ fn zombieai_matches_original() {
 }
 
 #[test]
+fn pathfind_matches_original() {
+    // PathProbe's scenarios; keep in step with the `pathfind` line of tools/oracle.sh
+    check(
+        "pathfind",
+        &[
+            "lcc:1033:1457:1038:1462:4000:7",
+            "lcc:1008:1448:1015:1455:4000:11",
+        ],
+    );
+}
+
+#[test]
+fn pathgraph_matches_original() {
+    // keep in step with the `pathgraph` line of tools/oracle.sh
+    check(
+        "pathgraph",
+        &["pgraph:1033:1457:1038:1462", "pgraph:1008:1448:1015:1455"],
+    );
+}
+
+#[test]
+fn pathsearch_matches_original() {
+    // keep in step with the `pathsearch` line of tools/oracle.sh
+    check(
+        "pathsearch",
+        &[
+            "psearch:1033:1457:1038:1462:100:7:zombie",
+            "psearch:1033:1457:1038:1462:100:8:player",
+            "psearch:1033:1457:1038:1462:150:21:zombie:sq",
+            "psearch:1033:1457:1038:1462:150:22:player:sq",
+            "psearch:1033:1457:1038:1462:100:23:crawler:sq",
+            "psearch:1008:1448:1015:1455:150:24:player:sq",
+            "psearch:1008:1448:1015:1455:150:25:zombie:sq",
+        ],
+    );
+}
+
+#[test]
+fn zombiehit_matches_original() {
+    // ZombieAiProbe's hit scenarios; keep in step with the `zombiehit` line of tools/oracle.sh
+    check(
+        "zombiehit",
+        &[
+            "zai:11:150:2.0:0:hit20@Base.BaseballBat@1.0",
+            "zai:11:150:2.0:0:hit20@Base.Axe@1.0",
+            "zai:11:150:2.0:0:hit20@Base.HuntingKnife@1.0",
+            "zai:11:150:2.0:0:hit20@Base.LeadPipe@1.0",
+            "zai:11:150:2.0:0:hit20@Base.BareHands@1.0",
+            "zai:11:150:0.5:0:hit20@Base.BaseballBat@1.0",
+            "zai:11:150:0.5:0:hit20@Base.Axe@1.0",
+            "zai:11:150:0.5:0:hit20@Base.HuntingKnife@1.0",
+            "zai:11:150:0.5:0:hit20@Base.LeadPipe@1.0",
+            "zai:11:150:0.5:0:hit20@Base.BareHands@1.0",
+            "zai:12:150:2.0:0:hit20@Base.BaseballBat@1.0",
+            "zai:12:150:2.0:0:hit20@Base.Axe@1.0",
+            "zai:12:150:2.0:0:hit20@Base.HuntingKnife@1.0",
+            "zai:12:150:2.0:0:hit20@Base.LeadPipe@1.0",
+            "zai:12:150:2.0:0:hit20@Base.BareHands@1.0",
+            "zai:12:150:0.5:0:hit20@Base.BaseballBat@1.0",
+            "zai:12:150:0.5:0:hit20@Base.Axe@1.0",
+            "zai:12:150:0.5:0:hit20@Base.HuntingKnife@1.0",
+            "zai:12:150:0.5:0:hit20@Base.LeadPipe@1.0",
+            "zai:12:150:0.5:0:hit20@Base.BareHands@1.0",
+            "zai:21:200:2.0:0:hit20@Base.BaseballBat@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.Axe@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.HuntingKnife@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.LeadPipe@1.0@c",
+            "zai:21:200:2.0:0:hit20@Base.BareHands@1.0@c",
+            "zai:31:400:3.0:0:hit20@Base.BaseballBat@1.0@c",
+            "zai:32:400:3.0:0:hit20@Base.Axe@1.0@c",
+            "zai:33:400:3.0:0:hit20@Base.HuntingKnife@1.0@c",
+            "zai:34:400:3.0:0:hit20@Base.LeadPipe@1.0@c",
+            "zai:35:400:3.0:0:hit20@Base.BareHands@1.0@c",
+            "zai:36:400:4.0:-3.0:hit30@Base.BaseballBat@1.0@c",
+            "zai:41:200:0:2.0:hit20@Base.BaseballBat@1.0",
+            "zai:42:200:-2.0:0:hit20@Base.Axe@1.0",
+            "zai:43:200:0:-2.0:hit20@Base.LeadPipe@1.0",
+            "zai:44:200:1.5:1.5:hit20@Base.HuntingKnife@1.0",
+            "zai:45:200:-1.5:-1.5:hit20@Base.BareHands@1.0",
+            "zai:46:200:0:0.5:hit20@Base.BaseballBat@1.0@c",
+            "zai:47:180:-0.5:0:hit20@Base.Axe@1.0@c",
+            "zai:48:200:3.0:3.0:hit25@Base.LeadPipe@1.0@c",
+            "zai:51:250:2.0:0:hit20,60@Base.BaseballBat@1.0",
+            "zai:52:250:0.5:0:hit20,50,80,110,140@Base.LeadPipe@1.0",
+            "zai:53:250:3.0:0:hit20,25,30,35,40@Base.BareHands@1.0",
+            "zai:54:250:2.0:0:hit20,60,100@Base.Axe@0.5",
+            "zai:55:250:0.5:0:hit20,24@Base.HuntingKnife@0.5",
+        ],
+    );
+}
+
+#[test]
 fn mod_data_matches_original() {
     let Some(save) = profile_save() else {
         eprintln!("SKIPPED moddata: the isolated profile's save is not present");
@@ -620,6 +712,116 @@ fn animclips_matches_original() {
     );
 }
 
+/// assimp's FBX importer (E63) over every `.fbx` of `media/models_X` and `media/textures` (2032 files, binary and ASCII), no
+/// post-processing step; `+mat` also dumps every material property.
+#[test]
+fn fbxscene_matches_original() {
+    check(
+        "fbxscene",
+        &["none+mat", "fbx", "media/models_X", "media/textures"],
+    );
+}
+
+/// The same files with the mesh flags of `FileTask_LoadMesh` (TriangulateProcess, JoinIdenticalVertices, LimitBoneWeights,
+/// OptimizeMeshes, RemoveRedundantMaterials, FindInstances, MakeLeftHanded) (E63).
+#[test]
+fn fbxmodelscene_matches_original() {
+    check(
+        "fbxmodelscene",
+        &["mesh", "fbx", "media/models_X", "media/textures"],
+    );
+}
+
+/// The same files with the animation flags of `FileTask_LoadAnimation` (E63).
+#[test]
+fn fbxanimscene_matches_original() {
+    check(
+        "fbxanimscene",
+        &["anim", "fbx", "media/models_X", "media/textures"],
+    );
+}
+
+/// `ProcessedAiScene.process` (E63) on the scenes of every `.fbx` model, with the `.fbx` scale/rotation modifiers: Normal and
+/// StaticMesh mode, by mesh name, all meshes, and skinned to another skeleton.
+#[test]
+fn fbxmodels_matches_original() {
+    check(
+        "fbxmodels",
+        &[
+            "Normal:fbx,StaticMesh:fbx,Normal:last+fbx,StaticMesh:all+fbx,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx",
+            "mesh",
+            "fbx",
+            "media/models_X",
+            "media/textures",
+        ],
+    );
+}
+
+/// `ProcessedAiScene.process` (E63) on every `.fbx` as an animation (`FileTask_LoadAnimation.loadFBX`): the clips with their
+/// keyframes, and skinned to another skeleton.
+#[test]
+fn fbxanims_matches_original() {
+    check(
+        "fbxanims",
+        &[
+            "AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx",
+            "anim",
+            "fbx",
+            "media/models_X",
+            "media/textures",
+        ],
+    );
+}
+
+/// assimp's glTF2 importer (E66) over every `.glb` of `media/models_X` (59 files), no post-processing step; `+mat` also dumps
+/// every material property.
+#[test]
+fn glbscene_matches_original() {
+    check("glbscene", &["none+mat", "glb", "media/models_X"]);
+}
+
+/// The same files with the mesh flags of `FileTask_LoadMesh.loadGLTF` (E66).
+#[test]
+fn glbmodelscene_matches_original() {
+    check("glbmodelscene", &["mesh", "glb", "media/models_X"]);
+}
+
+/// The same files with the animation flags of `FileTask_LoadAnimation.loadGLTF` (E66).
+#[test]
+fn glbanimscene_matches_original() {
+    check("glbanimscene", &["anim", "glb", "media/models_X"]);
+}
+
+/// `ProcessedAiScene.process` (E66) on every `.glb` model (`FileTask_LoadMesh.loadGLTF`: scale 1.0, no rotation): Normal and
+/// StaticMesh mode, by mesh name, all meshes, and skinned to another skeleton.
+#[test]
+fn glbmodels_matches_original() {
+    check(
+        "glbmodels",
+        &[
+            "Normal,StaticMesh,Normal:last,StaticMesh:all,Normal:skin=media/models_X/Skinned/Cow_Skeleton.x",
+            "mesh",
+            "glb",
+            "media/models_X",
+        ],
+    );
+}
+
+/// `ProcessedAiScene.process` (E66) on every `.glb` as an animation (`FileTask_LoadAnimation.loadGLTF`, scale 0.01 and the -90
+/// degree rotation about x): the clips with their keyframes, and skinned to another skeleton.
+#[test]
+fn glbanims_matches_original() {
+    check(
+        "glbanims",
+        &[
+            "AnimationOnly:fbx,AnimationOnly:skin=media/models_X/Skinned/Cow_Skeleton.x+fbx",
+            "anim",
+            "glb",
+            "media/models_X",
+        ],
+    );
+}
+
 /// `ModelLoader.loadTxt` (E59) on every `media/models/*.txt` and `media/animsold/*.txt` in several
 /// (static, reverse, skinnedTo) combinations: vertices, elements, bones, matrices, clips and keyframes.
 #[test]
@@ -635,6 +837,57 @@ fn body_matches_original() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let cases = root.join("tests/body_cases.txt");
     check("body", &[cases.to_str().expect("utf-8 path")]);
+}
+
+/// The FMOD bank list of `FMODManager.init()` (per-bank event and VCA counts) and the RIFF container of the bank files.
+#[test]
+fn fmodbanks_matches_original() {
+    check("fmodbanks", &["-", "banks"]);
+}
+
+/// The FMOD string table: the events (path and GUID) and VCAs of every bank, `FMODManager`'s sorted path list, the
+/// parameter names and GetBus/GetVCA over the candidate paths the port writes from its own table.
+#[test]
+fn fmodstrings_matches_original() {
+    let Some(root) = game_root() else {
+        eprintln!("SKIPPED fmodstrings: no game install next to the workspace");
+        return;
+    };
+    let cand = Path::new(env!("CARGO_TARGET_TMPDIR")).join("fmod_candidates.txt");
+    let out = Command::new(env!("CARGO_BIN_EXE_pz-dump"))
+        .arg("fmodcandidates")
+        .arg(&root)
+        .output()
+        .expect("run pz-dump");
+    assert!(out.status.success(), "pz-dump fmodcandidates failed");
+    std::fs::write(&cand, &out.stdout).expect("write candidates");
+    check(
+        "fmodstrings",
+        &["-", "strings", cand.to_str().expect("utf-8 path")],
+    );
+    let _ = std::fs::remove_file(&cand);
+}
+
+/// The FMOD event and parameter records: sustain flag, length and parameters of every event, the global parameter list
+/// and `FMODManager`'s parameter table.
+#[test]
+fn fmodevents_matches_original() {
+    check("fmodevents", &["-", "events"]);
+}
+
+/// The FSB5 sample banks: header numbers, stream count, frequency, channels and lengths of every stream, names.
+#[test]
+fn fmodsamples_matches_original() {
+    check("fmodsamples", &["-", "samples"]);
+}
+
+/// Inventory items and containers, the item classes and ItemContainer (InventoryProbe in the booted server) over the cases of
+/// tests/inventory_cases.txt.
+#[test]
+fn inventory_matches_original() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = root.join("tests/inventory_cases.txt");
+    check("inventory", &[cases.to_str().expect("utf-8 path")]);
 }
 
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.

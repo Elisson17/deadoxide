@@ -54,8 +54,8 @@ pub struct Item {
     pub values: Vec<Value>,
     /// Parameters with non-trivial handling in the original (`COMPLEX`), as (lower-case name, value text), in script order.
     pub unported: Vec<(String, String)>,
-    /// Parameters the original has no branch for at all.
-    pub unknown: Vec<String>,
+    /// Parameters the original has no branch for at all, as (name, value): `Item.DoParam` puts them into `defaultModData`.
+    pub unknown: Vec<(String, String)>,
     /// `itemTags`: the locations of the `Tags` entries (`ItemTag.get(ResourceLocation.of(tag))`, a null for a
     /// location the ItemTag registry does not hold), in script order.
     pub tags: Vec<ResourceLocation>,
@@ -294,6 +294,16 @@ impl Item {
         self.components.iter().any(|c| c == id)
     }
 
+    /// zombie.scripting.entity.GameEntityScript.hasComponents: a `component` block, or an attribute parameter (`Sharpness`,
+    /// `HeadCondition`, ...), which `DoParam` routes to `LoadAttribute` and so to an Attributes component script.
+    pub fn has_components(&self) -> bool {
+        !self.components.is_empty()
+            || self
+                .unported
+                .iter()
+                .any(|(k, _)| ATTRIBUTES.contains(&k.as_str()))
+    }
+
     /// `module.name`, the original's `moduleDotType`.
     pub fn full_name(&self) -> String {
         format!("{}.{}", self.module, self.name)
@@ -386,7 +396,7 @@ impl Item {
             if COMPLEX.contains(&lower.as_str()) {
                 self.unported.push((lower, val.to_string()));
             } else {
-                self.unknown.push(param.to_string());
+                self.unknown.push((param.to_string(), val.to_string()));
             }
             return Ok(());
         };
