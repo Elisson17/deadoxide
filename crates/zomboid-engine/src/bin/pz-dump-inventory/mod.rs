@@ -35,6 +35,32 @@ fn unhex(h: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
+/// InventoryProbe.origName: the name a save's block holds as modData `customName` (see the probe: the loader writes the
+/// name of the loading game's language over it, so it is put back before an item is saved again).
+fn orig_name(raw: &[u8], from: usize, to: usize) -> Option<String> {
+    const KEY: [u8; 14] = [
+        0, 0, 10, b'c', b'u', b's', b't', b'o', b'm', b'N', b'a', b'm', b'e', 0,
+    ];
+    let mut i = from;
+    while i + KEY.len() + 2 <= to {
+        if raw[i..i + KEY.len()] == KEY {
+            let p = i + KEY.len();
+            let len = (usize::from(raw[p]) << 8) | usize::from(raw[p + 1]);
+            if p + 2 + len > to {
+                return None;
+            }
+            return Some(String::from_utf8_lossy(&raw[p + 2..p + 2 + len]).into_owned());
+        }
+        i += 1;
+    }
+    None
+}
+
+/// InventoryProbe.int32
+fn int32(r: &[u8], p: usize) -> usize {
+    u32::from_be_bytes([r[p], r[p + 1], r[p + 2], r[p + 3]]) as usize
+}
+
 /// InventoryProbe.bits
 fn bits_text(w: &ByteBufferWriter) -> String {
     format!("len={} {}", w.position(), hexs(w.bytes()))
@@ -1136,6 +1162,12 @@ impl<'a> Scenario<'a> {
                     let _ = writeln!(out, "SKIPPED {}", p[1]);
                     return Ok(());
                 }
+                if let Some(name) = orig_name(&raw, 0, raw.len()) {
+                    self.world.mod_data(back).rawset(
+                        LuaValue::String("customName".into()),
+                        LuaValue::String(name),
+                    );
+                }
                 let mut again = ByteBufferWriter::new();
                 self.world.save_item_with_size(back, &mut again)?;
                 let same = again.bytes() == &raw[..];
@@ -1160,16 +1192,14 @@ impl<'a> Scenario<'a> {
                 let raw = unhex(p[2])?;
                 let mut inp = ByteBuffer::wrap(&raw);
                 let n = self.world.new_container("", 50);
-                match self.world.container_load(n, &mut inp, WORLD_VERSION) {
+                let saved_items = match self.world.container_load(n, &mut inp, WORLD_VERSION) {
                     Err(e) if e.starts_with("not ported") => {
                         eprintln!("SKIPPED {}: {e}", p[1]);
                         let _ = writeln!(out, "SKIPPED {}", p[1]);
                         return Ok(());
                     }
-                    r => {
-                        r?;
-                    }
-                }
+                    r => r?,
+                };
                 let items: Vec<ItemId> = self.world.containers[n].items.clone();
                 if items
                     .iter()
@@ -1177,6 +1207,31 @@ impl<'a> Scenario<'a> {
                 {
                     let _ = writeln!(out, "SKIPPED {}", p[1]);
                     return Ok(());
+                }
+                // the groups of CompressIdenticalItems: the name each block holds goes back to the items it made
+                let mut pos = 2 + ((usize::from(raw[0]) << 8) | usize::from(raw[1])) + 1;
+                let groups = (usize::from(raw[pos]) << 8) | usize::from(raw[pos + 1]);
+                pos += 2;
+                let mut k = 0;
+                for _ in 0..groups {
+                    let (identical, len) = (int32(&raw, pos), int32(&raw, pos + 4));
+                    let name = orig_name(&raw, pos + 8, pos + 8 + len);
+                    for j in 0..identical {
+                        if let (Some(Some(id)), Some(name)) = (saved_items.get(k + j), &name) {
+                            self.world.mod_data(*id).rawset(
+                                LuaValue::String("customName".into()),
+                                LuaValue::String(name.clone()),
+                            );
+                        }
+                    }
+                    k += identical;
+                    pos += 8
+                        + len
+                        + if identical > 1 {
+                            (identical - 1) * 4
+                        } else {
+                            0
+                        };
                 }
                 let mut again = ByteBufferWriter::new();
                 self.world.container_save(n, &mut again)?;

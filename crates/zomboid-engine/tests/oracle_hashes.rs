@@ -793,6 +793,34 @@ fn inventory_matches_original() {
     check("inventory", &[cases.to_str().expect("utf-8 path")]);
 }
 
+/// The same inventory code over the item and container bytes of the player's save (`pz-dump invcorpus` finds them).
+#[test]
+fn invbytes_matches_original() {
+    let Some(save) = profile_save() else {
+        eprintln!("SKIPPED invbytes: the isolated profile's save is not present");
+        return;
+    };
+    let Some(root) = game_root() else {
+        eprintln!("SKIPPED invbytes: no game install next to the workspace");
+        return;
+    };
+    let out = Command::new(env!("CARGO_BIN_EXE_pz-dump"))
+        .arg("invcorpus")
+        .arg(&root)
+        .arg(&save)
+        .output()
+        .expect("run pz-dump invcorpus");
+    assert!(
+        out.status.success(),
+        "pz-dump invcorpus failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let cases = std::env::temp_dir().join(format!("pz-invbytes-{}.cases", std::process::id()));
+    std::fs::write(&cases, &out.stdout).expect("write the corpus");
+    check("invbytes", &[cases.to_str().expect("utf-8 path")]);
+    let _ = std::fs::remove_file(&cases);
+}
+
 /// zombie.scripting.ScriptParser over the crafted cases of tests/script_parser_cases.txt.
 #[test]
 fn scriptparser_matches_original() {

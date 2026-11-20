@@ -346,6 +346,17 @@ sel animclips && ai_case animclips ProcessedSceneProbe AnimationOnly,AnimationOn
 sel body && server_case body BodyProbe "$HERE/tests/body_cases.txt"
 # zombie.inventory item classes and containers (E67): InventoryItemFactory.CreateItem and what the item and container classes report, in the booted server
 sel inventory && server_case inventory InventoryProbe "$HERE/tests/inventory_cases.txt"
+# the same item and container code over the bytes the real game wrote (E67): every container and item that the port's chunk, vehicle
+# and player loaders find in the isolated profile's save (`pz-dump invcorpus` writes them as rawitem/rawcont cases; nothing of the save
+# is committed), loaded by the original and by the port, their state printed, and saved again (equal to the game's bytes or not)
+if sel invbytes; then
+  if [ -f "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13/players.db" ] \
+     && ./target/release/pz-dump invcorpus "$ROOT" "$HERE/profile/Saves/Sandbox/2026-11-07_22-34-13" >target/oracle/invbytes.cases 2>target/oracle/invbytes.corpus.err; then
+    server_case invbytes InventoryProbe "$HERE/target/oracle/invbytes.cases"
+  else
+    echo "FAIL invbytes: no corpus (the isolated profile's save, or pz-dump invcorpus)"; fail=1
+  fi
+fi
 # the same for every .fbx of media/models_X and media/textures (2032 files, binary and ASCII): the port of assimp's FBX importer
 # (FBXConverter: meshes, the $AssimpFbx$ chain nodes, skins, materials, animations). fbxscene: the importer alone (+mat also prints every
 # material property: key, semantic, index, type, data); fbxmodelscene/fbxanimscene: after the game's own flags (TriangulateProcess,
