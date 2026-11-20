@@ -13,6 +13,9 @@ pub struct ItemContainer {
     pub items: Vec<InventoryItem>,
     pub has_been_looted: bool,
     pub capacity: i32,
+    /// The bytes `load` read (the type through the capacity), kept so that a writer can be compared with the save the
+    /// game wrote. Empty for a container that was not loaded.
+    pub raw: Vec<u8>,
 }
 
 impl ItemContainer {
@@ -24,12 +27,14 @@ impl ItemContainer {
         world_version: i32,
         factory: &dyn ItemFactory,
     ) -> Result<Vec<Option<InventoryItem>>, String> {
+        let raw_start = b.position();
         self.r#type = read_string(b)?;
         self.explored = b.get()? != 0;
         let saved = compress_identical_items::load(b, world_version, factory)?;
         self.items = saved.iter().flatten().cloned().collect();
         self.has_been_looted = b.get()? != 0;
         self.capacity = b.get_int()?;
+        self.raw = b.array()[raw_start..b.position()].to_vec();
         Ok(saved)
     }
 }

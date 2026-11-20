@@ -230,6 +230,9 @@ pub struct InventoryItem {
     pub texture: Option<String>,
     pub model_index: i32,
     pub kind: ItemKind,
+    /// The bytes `loadItem` read for this item (the length int, the registry id, the save type and the body), kept so
+    /// that a writer can be compared with the save the game wrote. Empty for an item that was not loaded.
+    pub raw: Vec<u8>,
 }
 
 impl InventoryItem {
@@ -287,6 +290,7 @@ impl InventoryItem {
             texture: None,
             model_index: -1,
             kind: ItemKind::Plain,
+            raw: Vec::new(),
         }
     }
 
@@ -307,6 +311,7 @@ impl InventoryItem {
         world_version: i32,
         factory: &dyn ItemFactory,
     ) -> Result<Option<Self>, String> {
+        let raw_start = b.position();
         let data_len = b.get_int()?;
         if data_len <= 0 {
             return Err(format!(
@@ -329,6 +334,10 @@ impl InventoryItem {
             }
             None => None,
         };
+        let mut item = item;
+        if let Some(it) = item.as_mut() {
+            it.raw = b.array().get(raw_start..end).unwrap_or_default().to_vec();
+        }
         if item.is_some() {
             if b.position() != end {
                 b.set_position(end)?;

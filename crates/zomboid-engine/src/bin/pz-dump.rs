@@ -99,6 +99,8 @@ fn main() {
         Some("basements") if a.len() == 7 => basements(Path::new(&a[2]), &a[3..7]),
         Some("worlddictionary") if a.len() == 4 => worlddictionary(Path::new(&a[3])),
         Some("chunksave") if a.len() == 4 => chunksave(Path::new(&a[2]), Path::new(&a[3])),
+        // the item and container byte ranges of a save, as the cases of `invbytes` (tools/oracle.sh)
+        Some("invcorpus") if a.len() == 4 => invcorpus(Path::new(&a[2]), Path::new(&a[3])),
         Some("mapmeta") if a.len() == 4 => mapmeta(Path::new(&a[2]), Path::new(&a[3])),
         Some("animalzones") if a.len() == 4 => animalzones(Path::new(&a[2]), Path::new(&a[3])),
         Some("gametime") if a.len() == 4 => gametime(Path::new(&a[3])),
@@ -108,6 +110,10 @@ fn main() {
         Some("actioncontext") if a.len() >= 4 => actioncontext(Path::new(&a[2]), &a[3..]),
         Some("body") if a.len() == 4 => body(Path::new(&a[2]), Path::new(&a[3])),
         Some("inventory") if a.len() == 4 => {
+            inventory_dump::inventory(Path::new(&a[2]), Path::new(&a[3]))
+        }
+        // the inventory commands over the item and container bytes of the player's save (tools/oracle.sh invbytes)
+        Some("invbytes") if a.len() == 4 => {
             inventory_dump::inventory(Path::new(&a[2]), Path::new(&a[3]))
         }
         Some("zombieai") if a.len() >= 4 => zombieai(Path::new(&a[2]), &a[3..]),
@@ -5982,7 +5988,32 @@ mod save_dump {
             sb.push('\n');
         }
     }
+    thread_local! {
+        /// The byte ranges of the containers and items the dump prints, while `invcorpus` collects them:
+        /// (`CONT` or `ITEM`, hex of the bytes the original wrote), first seen first.
+        static CORPUS: std::cell::RefCell<Option<Vec<(&'static str, String)>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    pub fn corpus_begin() {
+        CORPUS.with(|c| *c.borrow_mut() = Some(Vec::new()));
+    }
+    pub fn corpus_take() -> Vec<(&'static str, String)> {
+        CORPUS.with(|c| c.borrow_mut().take().unwrap_or_default())
+    }
+    fn corpus_add(kind: &'static str, raw: &[u8]) {
+        if raw.is_empty() {
+            return;
+        }
+        CORPUS.with(|c| {
+            if let Some(v) = c.borrow_mut().as_mut() {
+                let hex: String = raw.iter().map(|x| format!("{x:02x}")).collect();
+                v.push((kind, hex));
+            }
+        });
+    }
+
     fn container(sb: &mut String, dict: &DictionaryData, c: &ItemContainer) {
+        corpus_add("CONT", &c.raw);
         let _ = write!(
             sb,
             "C\t{}\t{}\t{}\t{}",
@@ -6494,6 +6525,7 @@ mod save_dump {
 
     /// The I and J lines ChunkSaveProbe.java prints for an item (and its bag's contents).
     pub fn item(sb: &mut String, dict: &DictionaryData, it: &InventoryItem) {
+        corpus_add("ITEM", &it.raw);
         let cls = it.item_type.class_name().unwrap_or("?");
         let tinted = matches!(
             it.item_type,
@@ -7321,6 +7353,30 @@ mod save_dump {
 
 /// Every chunk of a save loaded through the port of IsoChunk.LoadFromDiskOrBuffer, in the world the oracle server
 /// runs (seeded basements merged into the meta grid); pairs with ChunkSaveProbe.java.
+/// The cases of oracle `invbytes`: every container and item of the chunks, vehicles and players of a save, as the bytes the
+/// game wrote (`raw` of the loaded structures), once each, with `reset` lines first. `rawcont`/`rawitem` of
+/// `tests/original_probe/InventoryProbe.java`.
+pub fn invcorpus(root: &Path, save: &Path) -> Result<String, String> {
+    save_dump::corpus_begin();
+    let r = chunksave(root, save);
+    let ranges = save_dump::corpus_take();
+    r?;
+    let dir: String = save
+        .to_string_lossy()
+        .bytes()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let mut out = format!("reset 1 tod=7.5,nights=1000\nrecordedmedia {dir}\n");
+    let mut seen = std::collections::HashSet::new();
+    for (n, (kind, hex)) in ranges.into_iter().enumerate() {
+        if seen.insert((kind, hex.clone())) {
+            let cmd = if kind == "CONT" { "rawcont" } else { "rawitem" };
+            let _ = writeln!(out, "{cmd} s{n} {hex}");
+        }
+    }
+    Ok(out)
+}
+
 pub fn chunksave(root: &Path, save: &Path) -> Result<String, String> {
     use zomboid_engine::zombie::basements::Basements;
     use zomboid_engine::zombie::inventory::inventory_item_factory::InventoryItemFactory;

@@ -61,6 +61,10 @@ import zombie.scripting.objects.ResourceLocation;
 //   csave <container>            ItemContainer.save: the bytes
 //   cload <container> <newcontainer>   a new container that loads those bytes, then its items and its bytes again
 //   createsave                   every modelled script made, saved, loaded and saved again
+//   recordedmedia <hex of a save dir>   the media ids of that save's recorded_media.bin become the indexes of the world's RecordedMedia (no output)
+//   rawitem <name> <hex>         a block of a real save (InventoryItem.saveWithSize format): loadItem, the state, saved again, equal or not
+//   rawcont <name> <hex>         the bytes of an ItemContainer.save of a real save: load, the items' state, save again, equal or not
+//                                (both print SKIPPED when an item is of a class, script or kind this probe does not model)
 // The server flag is cleared while the probe runs, so that the items' update() reads the game clock and not the wall
 // clock (InventoryItem.calculateTimeMultiplier).
 public class InventoryProbe {
@@ -341,6 +345,32 @@ public class InventoryProbe {
         byte[] r = new byte[h.length() / 2];
         for (int i = 0; i < r.length; i++) r[i] = (byte) Integer.parseInt(h.substring(2 * i, 2 * i + 2), 16);
         return r;
+    }
+
+    // InventoryItem.load ends with setCustomName(), which rewrites modData customName with the item's name in the language
+    // of the loading game; a save written by a game in another language would not save again byte for byte. The name the
+    // save held is found in the block's table (key type 0, WriteString "customName", value type 0, WriteString name) and
+    // put back before the item is saved again, so that "same" tells the writers, not the language.
+    static final byte[] NAME_KEY = {0, 0, 10, 'c', 'u', 's', 't', 'o', 'm', 'N', 'a', 'm', 'e', 0};
+
+    static String origName(byte[] raw, int from, int to) {
+        outer:
+        for (int i = from; i + NAME_KEY.length + 2 <= to; i++) {
+            for (int k = 0; k < NAME_KEY.length; k++) if (raw[i + k] != NAME_KEY[k]) continue outer;
+            int p = i + NAME_KEY.length;
+            int len = ((raw[p] & 0xff) << 8) | (raw[p + 1] & 0xff);
+            if (p + 2 + len > to) return null;
+            return new String(raw, p + 2, len, java.nio.charset.StandardCharsets.UTF_8);
+        }
+        return null;
+    }
+
+    static int int32(byte[] r, int p) {
+        return ((r[p] & 0xff) << 24) | ((r[p + 1] & 0xff) << 16) | ((r[p + 2] & 0xff) << 8) | (r[p + 3] & 0xff);
+    }
+
+    static void restoreName(InventoryItem it, String name) {
+        if (it != null && name != null) ((KahluaTableImpl) it.getModData()).rawset("customName", name);
     }
 
     static String bits(ByteBuffer bb) {
@@ -646,6 +676,62 @@ public class InventoryProbe {
                     + " read=" + in.position() + "/" + in.limit() + " draws=" + draws());
                 for (InventoryItem i : n.getItems()) out.println("LOADED " + p[2] + " " + show(i) + fields(i));
                 out.println("CAGAIN " + p[2] + " " + bits(again));
+            }
+            case "recordedmedia" -> {
+                // the media ids of a save (recorded_media.bin of the folder p[1]) become the indexes of the world's RecordedMedia, so
+                // that a recorded-media index of the save names the media the game made it for (no output: the Rust side has no media)
+                Object rm = zombie.radio.ZomboidRadio.getInstance().getRecordedMedia();
+                Field idxf = rm.getClass().getDeclaredField("indexes");
+                idxf.setAccessible(true);
+                @SuppressWarnings("unchecked") ArrayList<String> idx = (ArrayList<String>) idxf.get(rm);
+                ByteBuffer mb = ByteBuffer.wrap(Files.readAllBytes(Paths.get(new String(unhex(p[1]), java.nio.charset.StandardCharsets.UTF_8), "recorded_media.bin")));
+                mb.getInt();
+                ArrayList<String> ids = new ArrayList<>();
+                for (int n = mb.getInt(); n > 0; n--) ids.add(zombie.GameWindow.ReadString(mb));
+                for (String id : idx) if (!ids.contains(id)) ids.add(id);
+                idx.clear();
+                idx.addAll(ids);
+            }
+            case "rawitem" -> {
+                // a block of a real save (the length, the registry id, the save type, the body): loaded, its state, saved again
+                byte[] raw = unhex(p[2]);
+                ByteBuffer in = ByteBuffer.wrap(raw);
+                InventoryItem back = InventoryItem.loadItem(in, WORLD_VERSION);
+                if (back == null) { out.println("RAWITEM " + p[1] + " null"); return; }
+                String why = skip(back.getScriptItem());
+                if (why != null || back.getFullType().equals("Base.CorpseAnimal") || back.isRecordedMedia()) { out.println("SKIPPED " + p[1]); return; }
+                restoreName(back, origName(raw, 0, raw.length));
+                ByteBuffer again = savedSized(back);
+                boolean same = java.util.Arrays.equals(raw, java.util.Arrays.copyOf(again.array(), again.position()));
+                out.println("RAWITEM " + p[1] + " " + show(back) + fields(back) + " read=" + in.position() + "/" + in.limit() + " same=" + (same ? 1 : 0)
+                    + (same ? "" : " again=" + bits(again)));
+            }
+            case "rawcont" -> {
+                // the bytes of an ItemContainer.save of a real save: loaded, every item's state, saved again
+                byte[] raw = unhex(p[2]);
+                ByteBuffer in = ByteBuffer.wrap(raw);
+                ItemContainer n = new ItemContainer();
+                ArrayList<InventoryItem> savedItems = n.load(in, WORLD_VERSION);
+                for (InventoryItem i : n.getItems()) {
+                    if (skip(i.getScriptItem()) != null || i.getFullType().equals("Base.CorpseAnimal") || i.isRecordedMedia()) { out.println("SKIPPED " + p[1]); return; }
+                }
+                // the groups of CompressIdenticalItems: the name each block holds goes back to the items it made
+                int pos = 2 + (((raw[0] & 0xff) << 8) | (raw[1] & 0xff)) + 1;
+                int groups = ((raw[pos] & 0xff) << 8) | (raw[pos + 1] & 0xff);
+                pos += 2;
+                for (int g = 0, k = 0; g < groups; g++) {
+                    int identical = int32(raw, pos), len = int32(raw, pos + 4);
+                    String nm = origName(raw, pos + 8, pos + 8 + len);
+                    for (int j = 0; j < identical; j++) restoreName(savedItems.get(k + j), nm);
+                    k += identical;
+                    pos += 8 + len + (identical > 1 ? (identical - 1) * 4 : 0);
+                }
+                ByteBuffer again = ByteBuffer.allocate(1 << 20);
+                n.save(again);
+                boolean same = java.util.Arrays.equals(raw, java.util.Arrays.copyOf(again.array(), again.position()));
+                out.println("RAWCONT " + p[1] + " type=" + n.getType() + " capacity=" + n.getCapacity() + " explored=" + n.isExplored() + " looted=" + n.isHasBeenLooted()
+                    + " items=" + n.getItems().size() + " read=" + in.position() + "/" + in.limit() + " same=" + (same ? 1 : 0) + (same ? "" : " again=" + bits(again)));
+                for (InventoryItem i : n.getItems()) out.println("LOADED " + p[1] + " " + show(i) + fields(i));
             }
             case "createsave" -> createsave(out);
             case "regs" -> {
