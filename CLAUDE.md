@@ -68,6 +68,14 @@ cargo run -q --release -p zomboid-client -- .. 32_45 --shot screenshots/p.png -2
 cargo run -q --release -p zomboid-ctl -- imgdiff .. screenshots/game.png screenshots/p.png 650 300 1280 600
 ```
 
+## Reading aid (not an oracle)
+
+`../pz-rosetta/rosetta/` (outside the repo, shared by every worktree; a shallow clone of PZ-Umbrella/pz-rosetta-source, CC-BY-4.0, never committed)
+holds community notes per Java member: `java/<package path>/<Class>.yml` (378 of the 2501 `zombie/*` classes have notes; the biggest:
+`IsoGameCharacter`, `Item`, `GameTime`, `BodyDamage`, `InventoryItem`) and `events.yml` (282 Lua events with context server/singleplayer and
+parameters). `grep` it for a class before porting it. It only describes; behaviour still comes from the decompiled Java and the oracle diff.
+ZomboidDecompiler (demiurgeQuantified) is the same Vineflower as `tools/decompile.sh` plus Javadoc comments, so it is not used.
+
 ## Known traps (found the hard way)
 
 - Windows shell: Bash heredocs lose backslashes; use the Write tool for files. `cargo` may be missing from PATH: `$HOME/.cargo/bin`.

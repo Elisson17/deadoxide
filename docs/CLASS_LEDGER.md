@@ -4,13 +4,13 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 470 of 3432 classes touched, 1902 of 46318 method names cited (4.1%), 965313 decompiled lines.**
+**Total: 471 of 3432 classes touched, 1907 of 46318 method names cited (4.1%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
-| zombie.iso | 346 | 79 | 7277 | 446 (6.1%) | 144530 |
-| zombie.core | 450 | 95 | 5920 | 231 (3.9%) | 93574 |
+| zombie.iso | 346 | 79 | 7277 | 451 (6.2%) | 144530 |
+| zombie.core | 450 | 96 | 5920 | 231 (3.9%) | 93574 |
 | zombie.characters | 200 | 51 | 5028 | 192 (3.8%) | 77144 |
 | zombie.network | 436 | 4 | 3229 | 4 (0.1%) | 60679 |
 | zombie.scripting | 205 | 37 | 2713 | 177 (6.5%) | 52509 |
@@ -233,6 +233,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.core.random.Rand | 1 / 5 | crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandAbstract | 1 / 2 | crates/zomboid-content/src/rng.rs, crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
 | zombie.core.random.RandInterface | 2 / 2 | crates/zomboid-engine/src/zombie/characters/body_damage/body_update.rs, crates/zomboid-engine/src/zombie/core/random/rand_abstract.rs |
+| zombie.core.skinnedmodel.HelperFunctions | 0 / 31 | crates/zomboid-engine/src/zombie/core/skinnedmodel/helper_functions.rs |
 | zombie.core.skinnedmodel.advancedanimation.AdvancedAnimator | 0 / 57 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/advanced_animator.rs |
 | zombie.core.skinnedmodel.advancedanimation.Anim2DBlend | 0 / 0 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/anim_2d_blend.rs |
 | zombie.core.skinnedmodel.advancedanimation.Anim2DBlendPicker | 4 / 13 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/anim_2d_blend_picker.rs |
@@ -389,7 +390,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.iso.SpriteDetails.IsoFlagType | 3 / 4 | crates/zomboid-engine/src/zombie/iso/sprite_details/iso_flag_type.rs |
 | zombie.iso.SpriteDetails.IsoObjectType | 3 / 4 | crates/zomboid-engine/src/zombie/iso/sprite_details/iso_object_type.rs |
 | zombie.iso.TileOverlays | 2 / 14 | crates/zomboid-engine/src/zombie/iso/tile_overlays.rs |
-| zombie.iso.Vector2 | 6 / 33 | crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs, crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_player.rs, crates/zomboid-engine/src/zombie/iso/vector2.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
+| zombie.iso.Vector2 | 11 / 33 | crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs, crates/zomboid-engine/src/zombie/core/skinnedmodel/animation/animation_player.rs, crates/zomboid-engine/src/zombie/iso/vector2.rs, crates/zomboid-engine/src/zombie/lua/exposed_methods.rs |
 | zombie.iso.areas.DesignationZone | 1 / 31 | crates/zomboid-engine/src/zombie/iso/areas/designation_zone.rs |
 | zombie.iso.areas.IsoBuilding | 1 / 34 | crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
 | zombie.iso.areas.IsoRoom | 0 / 45 | crates/zomboid-engine/src/zombie/iso/iso_meta_grid.rs |
