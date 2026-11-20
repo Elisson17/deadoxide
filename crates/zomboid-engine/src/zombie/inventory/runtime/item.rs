@@ -1,5 +1,6 @@
 //! zombie.inventory.InventoryItem and the item classes `Item.InstanceItem` makes of the scripts the port models:
 //! ComboItem (`ItemType.NORMAL`), DrainableComboItem, Food and Literature.
+use crate::se::krka::kahlua::j2se::kahlua_table_impl::{KahluaTable, LuaValue};
 use crate::zombie::inventory::inventory_item::ItemType;
 use crate::zombie::inventory::item_picker_roll::firearm::ammo_item_key;
 use crate::zombie::inventory::item_picker_roll::{
@@ -71,6 +72,8 @@ pub struct FoodData {
     pub temperature_time_accum: f32,
     pub chef: Option<String>,
     pub spices: Option<Vec<String>>,
+    pub milk_qty: i32,
+    pub milk_type: Option<String>,
 }
 
 /// zombie.inventory.types.DrainableComboItem: the fields that class adds to `InventoryItem`.
@@ -106,6 +109,10 @@ pub struct LiteratureData {
     pub already_read_pages: i32,
     pub can_be_write: bool,
     pub page_to_write: i32,
+    /// `customPages` (a HashMap of page number 1.. to text): the texts in page order
+    pub custom_pages: Option<Vec<String>>,
+    pub locked_by: Option<String>,
+    pub learned_recipes: Option<Vec<String>>,
 }
 
 /// The class of an item (what `Item.InstanceItem` made of the script) with the fields only that class has.
@@ -180,6 +187,32 @@ pub struct LiveItem {
     pub have_been_repaired: i32,
     pub time_multiplier: f32,
     pub last_update_ms: i64,
+    /// `itemCapacity`
+    pub item_capacity: f32,
+    pub custom_color: bool,
+    /// `col` (r, g, b, a)
+    pub col: [f32; 4],
+    pub color_red: f32,
+    pub color_green: f32,
+    pub color_blue: f32,
+    /// `table` (modData): `None` until `getModData()` makes it
+    pub mod_data: Option<KahluaTable>,
+    pub byte_data: Option<Vec<u8>>,
+    pub custom_name: bool,
+    pub remote_control_id: i32,
+    pub remote_range: i32,
+    pub worker: Option<String>,
+    pub stash_map: Option<String>,
+    pub zombie_infected: bool,
+    pub attached_slot: i32,
+    pub attached_slot_type: Option<String>,
+    pub attached_to_model: Option<String>,
+    pub max_capacity: i32,
+    pub recorded_media_index: i16,
+    pub world_x_rotation: f32,
+    pub world_y_rotation: f32,
+    pub world_z_rotation: f32,
+    pub world_scale: f32,
 }
 
 fn text(item: &Item, name: &str) -> Option<String> {
@@ -265,6 +298,29 @@ impl LiveItem {
             have_been_repaired: 0,
             time_multiplier: 0.0,
             last_update_ms: -1,
+            item_capacity: -1.0,
+            custom_color: false,
+            col: [1.0; 4],
+            color_red: 1.0,
+            color_green: 1.0,
+            color_blue: 1.0,
+            mod_data: None,
+            byte_data: None,
+            custom_name: false,
+            remote_control_id: -1,
+            remote_range: 0,
+            worker: None,
+            stash_map: None,
+            zombie_infected: false,
+            attached_slot: -1,
+            attached_slot_type: None,
+            attached_to_model: None,
+            max_capacity: -1,
+            recorded_media_index: -1,
+            world_x_rotation: 0.0,
+            world_y_rotation: 0.0,
+            world_z_rotation: -1.0,
+            world_scale: 1.0,
         };
         match item_type {
             ItemType::Food => {
@@ -323,6 +379,8 @@ impl LiveItem {
                     temperature_time_accum: 0.0,
                     chef: None,
                     spices: None,
+                    milk_qty: 0,
+                    milk_type: None,
                 }));
                 it.off_age = script_int(item, "daysFresh");
                 it.off_age_max = script_int(item, "daysTotallyRotten");
@@ -343,6 +401,9 @@ impl LiveItem {
                     already_read_pages: 0,
                     can_be_write: script_bool(item, "canBeWrite"),
                     page_to_write: script_int(item, "pageToWrite"),
+                    custom_pages: None,
+                    locked_by: None,
+                    learned_recipes: None,
                 });
                 it.set_replace_on_use(text(item, "replaceOnUse"));
             }
@@ -397,6 +458,40 @@ impl LiveItem {
         it.is_wet = script_bool(item, "isWet");
         it.wet_cooldown = script_float(item, "wetCooldown");
         it.item_when_dry = text(item, "itemWhenDry");
+        // `if (colorRed < 255 || ...) item.setColor(new Color(r / 255.0F, g / 255.0F, b / 255.0F))` (alpha 1, no clamping)
+        let (cr, cg, cb) = (
+            script_int(item, "colorRed"),
+            script_int(item, "colorGreen"),
+            script_int(item, "colorBlue"),
+        );
+        if cr < 255 || cg < 255 || cb < 255 {
+            it.col = [
+                cr as f32 / 255.0f32,
+                cg as f32 / 255.0f32,
+                cb as f32 / 255.0f32,
+                1.0,
+            ];
+        }
+        it.color_red = cr as f32 / 255.0f32;
+        it.color_green = cg as f32 / 255.0f32;
+        it.color_blue = cb as f32 / 255.0f32;
+        it.remote_range = script_int(item, "remoteRange");
+        it.item_capacity = script_int(item, "itemCapacity") as f32;
+        it.max_capacity = script_int(item, "maxCapacity");
+        // `item.copyModData(this.defaultModData)` (the parameters `DoParam` has no branch for: a number when the value
+        // parses as a double, else the text), then `item.setTooltip(this.tooltip)`: `getModData().rawset("Tooltip", tooltip)`
+        let mut table = KahluaTable::default();
+        for (k, v) in &item.unknown {
+            let value = match crate::java::parse_double(crate::java::trim(v)) {
+                Some(d) => LuaValue::Number(d),
+                None => LuaValue::String(v.clone()),
+            };
+            table.rawset(LuaValue::String(crate::java::trim(k).to_string()), value);
+        }
+        if let Some(t) = text(item, "tooltip") {
+            table.rawset(LuaValue::String("Tooltip".into()), LuaValue::String(t));
+        }
+        it.mod_data = Some(table);
         Ok(it)
     }
 

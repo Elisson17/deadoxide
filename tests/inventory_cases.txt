@@ -508,3 +508,204 @@ new book Base.BookAiming1
 tick book 10 0.1
 new b Base.Bandage
 tick b 10 0.1
+
+# stage 4: the registry ids, then the save of every modelled script, then each flag of the writers
+
+# WorldDictionary.getItemRegistryID of every script
+reset 1
+regs
+
+# every modelled script made, saved, loaded and saved again
+reset 51
+createsave
+
+# InventoryItem.save: each header flag in turn on a ComboItem (the item `d`), a roundtrip after each change
+reset 52
+new d Base.Bandage
+new a Base.Apple
+new b Base.Battery
+new c Base.BookAiming1
+save d
+set d cond 4
+roundtrip d d1
+set d cond 10
+field d customColor true
+roundtrip d d1
+field d col 0.5,0.25,0.75,0.5
+roundtrip d d1
+field d col 1,1,1,1
+field d customColor false
+field d itemCapacity 3.5
+roundtrip d d1
+field d itemCapacity -1
+mod d a.b.c s deep
+mod d #1 d 7
+mod d #2 b false
+mod d z t x
+roundtrip d d1
+field d activated true
+field d haveBeenRepaired 3
+roundtrip d d1
+field d name Renamed
+roundtrip d d1
+field d customName true
+field d customWeight true
+roundtrip d d1
+field d keyId 77
+field d remoteControlId 5
+roundtrip d d1
+field d remoteControlId -1
+field d remoteRange 9
+roundtrip d d1
+field d colorRed 0.5
+field d colorBlue 0.125
+roundtrip d d1
+field d worker Bob
+field d wetCooldown 2.5
+field d favorite true
+field d stashMap Map1
+field d zombieInfected true
+field d currentAmmoCount 4
+roundtrip d d1
+field d attachedSlot 2
+field d attachedSlotType Belt
+field d attachedToModel Axe
+field d maxCapacity 8
+field d worldScale 2.0
+field d modelIndex 3
+field d worldXRotation 10
+field d worldYRotation 20
+field d worldZRotation 30
+roundtrip d d1
+# the writer of a recorded media item (the loader needs the world's RecordedMedia: not modelled)
+field d recordedMediaIndex 7
+save d
+field d recordedMediaIndex -1
+field d isInitialised false
+bytes d aabbcc00ff
+list d extraItems Base.Apple,Base.Bandage
+roundtrip d d1
+list d extraItems empty
+bytes d null
+field d worldXRotation 0
+field d worldYRotation 0
+field d worldZRotation -1
+roundtrip d d1
+
+# Drainable (uses, delta, heat), Food (every flag of the header and of the int header), Literature
+set b usesf 0.5
+roundtrip b b1
+set b uses 3
+roundtrip b b1
+set b dheat 2
+roundtrip b b1
+field a calories 0
+field a proteins 1.5
+roundtrip a a1
+field a proteins 0
+field a calories 10
+field a lipids 2
+field a carbohydrates 3
+field a hungChange -0.5
+field a baseHunger -0.25
+field a unhappyChange 5
+field a boredomChange 6
+field a thirstChange -3
+field a age 0.5
+field a lastAged 1.5
+roundtrip a a1
+field a heat 2
+field a lastCookMinute 33
+field a cookingTime 4
+field a cooked true
+field a burnt true
+field a isCookable true
+field a dangerousUncooked true
+roundtrip a a1
+field a poisonDetectionLevel 3
+list a spices Salt,Pepper
+field a poisonPower 7
+field a chef Chef
+field a offAge 3
+field a offAgeMax 7
+field a painReduction 1.5
+field a fluReduction 4
+field a foodSicknessChange 6
+field a poison true
+field a useForPoison 9
+roundtrip a a1
+field a freezingTime 10
+field a frozen true
+field a lastFrozenUpdate 5
+field a rottenTime 12
+field a compostTime 13
+field a cookedInMicrowave true
+field a fatigueChange 0.5
+field a endChange 0.25
+field a milkQty 2
+field a milkType Cow
+field a stressChange 0.75
+roundtrip a a1
+list a spices empty
+roundtrip a a1
+list a spices null
+field a poisonDetectionLevel -1
+field a offAge 1000000000
+field a offAgeMax 1000000000
+roundtrip a a1
+field c alreadyReadPages 12
+roundtrip c c1
+field c canBeWrite true
+list c customPages Page one,Page two,Page three
+roundtrip c c1
+field c lockedBy Someone
+list c learnedRecipes Make Thing,Make Other
+field c numberOfPages 300
+roundtrip c c1
+list c learnedRecipes empty
+list c customPages empty
+field c lockedBy null
+roundtrip c c1
+
+# a loaded item saves again with its customName modData; a second round of the same bytes
+roundtrip d1 d2
+roundtrip a1 a2
+roundtrip b1 b2
+roundtrip c1 c2
+
+# the poisonous berry and mushroom of the world
+new e Base.BerryGeneric2
+save e
+new f Base.MushroomGeneric3
+save f
+roundtrip e e1
+roundtrip f f1
+
+# ItemContainer.save and CompressIdenticalItems: identical items stack, a different one does not, ids differ
+reset 53
+container box Box 50
+add box i1 Base.Apple
+add box i2 Base.Apple
+add box i3 Base.Apple
+add box i4 Base.Bandage
+add box i5 Base.Apple
+add box i6 Base.Battery
+add box i7 Base.Battery
+csave box
+cload box box2
+container empty Box 10
+csave empty
+cload empty empty2
+# identical items that differ in one field, and in byteData
+field i2 favorite true
+bytes i3 0102
+bytes i5 0102
+csave box
+cload box box3
+# the explored and looted flags and the capacity
+container crate Crate 77 explored=true,looted=true
+add crate j1 Base.BookAiming1
+add crate j2 Base.BookAiming1
+add crate j3 Base.BookAiming2
+csave crate
+cload crate crate2

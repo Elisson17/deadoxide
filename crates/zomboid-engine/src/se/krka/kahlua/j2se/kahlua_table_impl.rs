@@ -4,7 +4,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::java_nio::{read_string, read_string_stream, ByteBuffer};
+use crate::java_nio::{
+    read_string, read_string_stream, write_string, ByteBuffer, ByteBufferWriter,
+};
 use crate::se::krka::kahlua::vm::coroutine::FrameRef;
 use crate::se::krka::kahlua::vm::kahlua_thread::KahluaThread;
 use crate::se::krka::kahlua::vm::object::{
@@ -60,6 +62,54 @@ impl KahluaTable {
             .iter()
             .find(|(k, _)| same_key(k, key))
             .map(|(_, v)| v)
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.getKeyByte: a string is 0, a number 1, anything else -1.
+    fn key_byte(k: &LuaValue) -> i8 {
+        match k {
+            LuaValue::String(_) => 0,
+            LuaValue::Number(_) => 1,
+            _ => -1,
+        }
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.getValueByte: string 0, number 1, boolean 3, table 2.
+    fn value_byte(v: &LuaValue) -> i8 {
+        match v {
+            LuaValue::String(_) => 0,
+            LuaValue::Number(_) => 1,
+            LuaValue::Boolean(_) => 3,
+            LuaValue::Table(_) => 2,
+        }
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.save (ByteBuffer): the number of entries that can be saved, then each with
+    /// its type byte (an entry whose key is neither a string nor a number is skipped).
+    pub fn save(&self, w: &mut ByteBufferWriter) {
+        let count = self
+            .entries
+            .iter()
+            .filter(|(k, v)| Self::key_byte(k) != -1 && Self::value_byte(v) != -1)
+            .count();
+        w.put_int(count as i32);
+        for (k, v) in &self.entries {
+            let (kb, vb) = (Self::key_byte(k), Self::value_byte(v));
+            if kb != -1 && vb != -1 {
+                Self::save_value(w, kb, k);
+                Self::save_value(w, vb, v);
+            }
+        }
+    }
+
+    /// se.krka.kahlua.j2se.KahluaTableImpl.save (ByteBuffer, byte, Object)
+    fn save_value(w: &mut ByteBufferWriter, sbyt: i8, o: &LuaValue) {
+        w.put(sbyt);
+        match o {
+            LuaValue::String(s) => write_string(w, Some(s)),
+            LuaValue::Number(d) => w.put_double(*d),
+            LuaValue::Boolean(b) => w.put(i8::from(*b)),
+            LuaValue::Table(t) => t.save(w),
+        }
     }
 
     /// se.krka.kahlua.j2se.KahluaTableImpl.load (ByteBuffer, int): a count, then typed keys and values (world
