@@ -4,26 +4,26 @@ Source: decompiled `projectzomboid.jar` sha256 `e1a69eb743ede60b213a0fe7f8b83d4f
 A method counts as cited when a Rust doc comment names it. Citing is a pointer for reviewers, not proof of parity: evidence lives in docs/COMPATIBILITY.md.
 Method counts are distinct method names per top-level file (overloads and inner classes merged).
 
-**Total: 501 of 3432 classes touched, 2050 of 46318 method names cited (4.4%), 965313 decompiled lines.**
+**Total: 506 of 3432 classes touched, 2064 of 46318 method names cited (4.5%), 965313 decompiled lines.**
 
 | Package | Classes | Touched | Method names | Cited | Lines |
 |---|---:|---:|---:|---:|---:|
 | generation | 145 | 0 | 2113 | 0 (0.0%) | 193849 |
 | zombie.iso | 346 | 80 | 7277 | 454 (6.2%) | 144530 |
 | zombie.core | 450 | 96 | 5920 | 231 (3.9%) | 93574 |
-| zombie.characters | 200 | 51 | 5028 | 192 (3.8%) | 77144 |
+| zombie.characters | 200 | 51 | 5028 | 195 (3.9%) | 77144 |
 | zombie.network | 436 | 4 | 3229 | 4 (0.1%) | 60679 |
 | zombie.scripting | 205 | 37 | 2713 | 177 (6.5%) | 52509 |
 | zombie.entity | 156 | 10 | 2517 | 14 (0.6%) | 36294 |
 | zombie.inventory | 40 | 17 | 2100 | 25 (1.2%) | 28391 |
 | zombie.vehicles | 42 | 13 | 1411 | 14 (1.0%) | 28275 |
-| zombie | 60 | 13 | 1192 | 112 (9.4%) | 22185 |
+| zombie | 60 | 14 | 1192 | 113 (9.5%) | 22185 |
 | zombie.randomizedWorld | 149 | 1 | 783 | 0 (0.0%) | 19518 |
 | zombie.pathfind | 90 | 28 | 823 | 132 (16.0%) | 18680 |
 | zombie.worldMap | 85 | 7 | 1328 | 5 (0.4%) | 18604 |
 | zombie.ui | 52 | 7 | 1026 | 53 (5.2%) | 16932 |
 | zombie.Lua | 8 | 4 | 875 | 19 (2.2%) | 14841 |
-| zombie.ai | 99 | 9 | 875 | 19 (2.2%) | 14312 |
+| zombie.ai | 99 | 13 | 875 | 29 (3.3%) | 14312 |
 | zombie.erosion | 23 | 22 | 216 | 95 (44.0%) | 13296 |
 | se | 70 | 21 | 692 | 210 (30.3%) | 11221 |
 | zombie.gameStates | 19 | 2 | 429 | 12 (2.8%) | 9502 |
@@ -110,6 +110,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | se.krka.kahlua.vm.Prototype | 0 / 11 | crates/zomboid-engine/src/se/krka/kahlua/vm/lua_closure.rs, crates/zomboid-engine/src/se/krka/kahlua/vm/prototype.rs |
 | se.krka.kahlua.vm.UpValue | 3 / 5 | crates/zomboid-engine/src/se/krka/kahlua/vm/coroutine.rs |
 | zombie.AmbientStreamManager | 1 / 28 | crates/zomboid-engine/src/zombie/iso/meta_tracker.rs |
+| zombie.CombatManager | 1 / 109 | crates/zomboid-engine/src/zombie/characters/iso_zombie_hit.rs |
 | zombie.FileGuidPair | 0 / 0 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.FileGuidTable | 5 / 6 | crates/zomboid-engine/src/zombie/file_guid_table.rs |
 | zombie.GameSounds | 9 / 21 | crates/zomboid-engine/src/bin/pz-dump.rs, crates/zomboid-engine/src/zombie/game_sounds.rs, crates/zomboid-engine/src/zombie/scripting/script_manager.rs |
@@ -132,9 +133,13 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.ai.states.AttackState | 4 / 9 | crates/zomboid-engine/src/zombie/ai/states/attack_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
 | zombie.ai.states.LungeState | 2 / 7 | crates/zomboid-engine/src/zombie/ai/states/lunge_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
 | zombie.ai.states.PathFindState | 3 / 7 | crates/zomboid-engine/src/zombie/ai/states/path_find_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.StaggerBackState | 3 / 8 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_hit.rs |
 | zombie.ai.states.WalkTowardState | 3 / 9 | crates/zomboid-engine/src/zombie/ai/states/walk_toward_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
 | zombie.ai.states.ZombieFaceTargetState | 1 / 5 | crates/zomboid-engine/src/zombie/ai/states/zombie_face_target_state.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.ZombieFallDownState | 2 / 6 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_fall.rs |
+| zombie.ai.states.ZombieGetUpState | 2 / 4 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_fall.rs |
 | zombie.ai.states.ZombieIdleState | 3 / 7 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs |
+| zombie.ai.states.ZombieOnGroundState | 3 / 8 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_fall.rs |
 | zombie.asset.AssetManager | 1 / 21 | crates/zomboid-engine/src/zombie/core/skinnedmodel/advancedanimation/anim_node_asset_manager.rs |
 | zombie.audio.GameSound | 5 / 10 | crates/zomboid-engine/src/zombie/audio/game_sound.rs |
 | zombie.audio.GameSoundClip | 4 / 16 | crates/zomboid-engine/src/zombie/audio/game_sound.rs |
@@ -164,9 +169,9 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.characters.CheatType | 0 / 5 | crates/zomboid-engine/src/zombie/characters/player_cheats.rs |
 | zombie.characters.ClothingWetness | 1 / 3 | crates/zomboid-engine/src/zombie/characters/body_damage/body_update.rs |
 | zombie.characters.Faction | 1 / 26 | crates/zomboid-engine/src/zombie/characters/faction.rs, crates/zomboid-engine/src/zombie/iso/map_meta.rs |
-| zombie.characters.IsoGameCharacter | 11 / 1273 | crates/zomboid-engine/src/zombie/characters/body_damage/body_sim.rs, crates/zomboid-engine/src/zombie/characters/body_damage/body_update.rs, crates/zomboid-engine/src/zombie/characters/iso_game_character.rs |
+| zombie.characters.IsoGameCharacter | 12 / 1273 | crates/zomboid-engine/src/zombie/characters/body_damage/body_sim.rs, crates/zomboid-engine/src/zombie/characters/body_damage/body_update.rs, crates/zomboid-engine/src/zombie/characters/iso_game_character.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_hit.rs |
 | zombie.characters.IsoPlayer | 2 / 485 | crates/zomboid-engine/src/zombie/characters/body_damage/body_sim.rs, crates/zomboid-engine/src/zombie/characters/iso_player.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs |
-| zombie.characters.IsoZombie | 17 / 259 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs |
+| zombie.characters.IsoZombie | 19 / 259 | crates/zomboid-engine/src/zombie/characters/iso_zombie.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_fall.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_hit.rs, crates/zomboid-engine/src/zombie/characters/iso_zombie_sp.rs |
 | zombie.characters.Moodles.Moodle | 1 / 10 | crates/zomboid-engine/src/zombie/characters/moodles/moodle.rs |
 | zombie.characters.Moodles.MoodleStat | 0 / 12 | crates/zomboid-engine/src/zombie/characters/moodles/moodle_stat.rs |
 | zombie.characters.Moodles.Moodles | 1 / 12 | crates/zomboid-engine/src/zombie/characters/moodles/mod.rs, crates/zomboid-engine/src/zombie/characters/moodles/moodles.rs |
@@ -352,7 +357,7 @@ Method counts are distinct method names per top-level file (overloads and inner 
 | zombie.inventory.types.ComboItem | 0 / 1 | crates/zomboid-engine/src/zombie/inventory/runtime/item.rs |
 | zombie.inventory.types.DrainableComboItem | 0 / 49 | crates/zomboid-engine/src/zombie/inventory/runtime/item.rs |
 | zombie.inventory.types.Food | 2 / 182 | crates/zomboid-engine/src/zombie/inventory/runtime/food.rs, crates/zomboid-engine/src/zombie/inventory/runtime/item.rs, crates/zomboid-engine/src/zombie/inventory/runtime/save.rs, crates/zomboid-engine/src/zombie/inventory/types/food.rs |
-| zombie.inventory.types.HandWeapon | 1 / 299 | crates/zomboid-engine/src/zombie/inventory/types/hand_weapon.rs |
+| zombie.inventory.types.HandWeapon | 1 / 299 | crates/zomboid-engine/src/zombie/characters/iso_zombie_hit.rs, crates/zomboid-engine/src/zombie/inventory/types/hand_weapon.rs |
 | zombie.inventory.types.InventoryContainer | 1 / 28 | crates/zomboid-engine/src/zombie/inventory/types/mod.rs |
 | zombie.inventory.types.Key | 1 / 14 | crates/zomboid-engine/src/zombie/inventory/types/mod.rs |
 | zombie.inventory.types.Literature | 2 / 47 | crates/zomboid-engine/src/zombie/inventory/runtime/item.rs, crates/zomboid-engine/src/zombie/inventory/runtime/save.rs, crates/zomboid-engine/src/zombie/inventory/types/literature.rs |

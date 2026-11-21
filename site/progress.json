@@ -1,14 +1,14 @@
 {
-  "generated": "2026-11-20",
+  "generated": "2026-11-21",
   "game": "Project Zomboid 42.21.0 (Steam build 25485521)",
   "overall": 25.6,
   "note": "Overall and area percentages are subjective weighted estimates, not measured game parity. Facts list the limited measured cases. Full compatibility is unknown.",
   "engine": {
-    "classesTouched": 501,
+    "classesTouched": 506,
     "classes": 3432,
-    "methodsCited": 2050,
+    "methodsCited": 2064,
     "methods": 46318,
-    "methodPercent": 4.43,
+    "methodPercent": 4.46,
     "oracleCases": [
       "actioncontext",
       "animalzones",
@@ -44,6 +44,7 @@
       "glbmodelscene",
       "glbscene",
       "gos",
+      "invbytes",
       "inventory",
       "isoregion",
       "items",
@@ -93,6 +94,7 @@
       "xui",
       "zombie",
       "zombieai",
+      "zombiehit",
       "zoneoutlines",
       "zonetriangles"
     ]
@@ -106,7 +108,7 @@
       "score": 0.8125,
       "how": "share of the game's format families we read (list below); coverage inside each family is also incomplete",
       "facts": [
-        "direct port from decompiled Java: 2050 of 46318 method names (4.43%) in 501 of 3432 classes; byte-identical to the original in 85 oracle cases (actioncontext, animalzones, animclips, animscene, animsets, basements, body, chunkobjects, chunksave, climate, clothingitems, collide, doortoggle, entitysprites, erosion, erosionini, fbxanims, fbxanimscene, fbxmodels, fbxmodelscene, fbxscene, fdlibm, fmodbanks, fmodevents, fmodsamples, fmodstrings, fonts, gametime, glbanims, glbanimscene, glbmodels, glbmodelscene, glbscene, gos, inventory, isoregion, items, javachars, loot, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luagame, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapver, mapzone, metagrid, moddata, mods, outfitrandom, outfits, pathfind, pathgraph, pathsearch, radio, recipes, sandbox, savemeta, scriptparser, sounds, specialcollide, stairs, tiledefs, translator, txtmodels, vehicles, visited, worlddictionary, xmodels, xmodelscene, xscene, xui, zombie, zombieai, zoneoutlines, zonetriangles)",
+        "direct port from decompiled Java: 2064 of 46318 method names (4.46%) in 506 of 3432 classes; byte-identical to the original in 87 oracle cases (actioncontext, animalzones, animclips, animscene, animsets, basements, body, chunkobjects, chunksave, climate, clothingitems, collide, doortoggle, entitysprites, erosion, erosionini, fbxanims, fbxanimscene, fbxmodels, fbxmodelscene, fbxscene, fdlibm, fmodbanks, fmodevents, fmodsamples, fmodstrings, fonts, gametime, glbanims, glbanimscene, glbmodels, glbmodelscene, glbscene, gos, invbytes, inventory, isoregion, items, javachars, loot, los, losdoors, lotheaders, lotpack, luaboot, luaclient, luacompile, luagame, luaload, luaos, luaserver, luastring, luavm, mapmeta, mapver, mapzone, metagrid, moddata, mods, outfitrandom, outfits, pathfind, pathgraph, pathsearch, radio, recipes, sandbox, savemeta, scriptparser, sounds, specialcollide, stairs, tiledefs, translator, txtmodels, vehicles, visited, worlddictionary, xmodels, xmodelscene, xscene, xui, zombie, zombieai, zombiehit, zoneoutlines, zonetriangles)",
         "format families read: 13 of 16",
         "cell header parsed: 120687 of 123391 bytes",
         "tile names resolved: 25981 of 26063",
@@ -149,8 +151,8 @@
       "name": "Gameplay and zombies",
       "weight": 25,
       "measured": false,
-      "score": 0.046261385299724636,
-      "how": "share of the method names of the gameplay packages (iso, characters, inventory, vehicles, entity, ai, pathfind, erosion, radio, popman and the like) that a Rust doc comment cites: 1092 of 23605. An upper bound, because a cited method is not proof of parity (the evidence is the oracle cases in docs/COMPATIBILITY.md).",
+      "score": 0.04685447998305444,
+      "how": "share of the method names of the gameplay packages (iso, characters, inventory, vehicles, entity, ai, pathfind, erosion, radio, popman and the like) that a Rust doc comment cites: 1106 of 23605. An upper bound, because a cited method is not proof of parity (the evidence is the oracle cases in docs/COMPATIBILITY.md).",
       "facts": [
         "ported by direct port and compared with the original: zombie construction and the idle tick, ActionContext and the animator, the player's body and needs (BodyDamage, Thermoregulator, Moodles), loot generation, erosion, radio",
         "not yet: zombie targeting and attack (E62 in progress), pathfinding beyond the first steps, the player's actions and inventory, vehicles in motion, world cell loading",
@@ -161,7 +163,7 @@
         "zombies: placeholder",
         "inventory, crafting, skills, health: none"
       ],
-      "percent": 4.6
+      "percent": 4.7
     },
     {
       "id": "saves",
